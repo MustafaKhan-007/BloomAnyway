@@ -1,22 +1,21 @@
-"""Idempotent seed script.
+"""Idempotent seed script — content only, never credentials.
 
-- Creates/promotes the admin: ADMIN_EMAIL (env var) with ADMIN_PASSWORD
-  (env var; a strong password is generated and printed if unset).
 - Loads data/quotes_seed.json, skipping quotes whose text already exists
   (case-insensitive).
 - Creates starter FAQ items and legal page stubs if none exist.
 
+The owner/admin account is created in the browser at /setup (one-time page,
+locks itself after the owner's first sign-in). Passwords are never written
+by this script, so password changes always survive redeploys.
+
 Run after `flask db upgrade`:  python seed.py
 """
 import json
-import os
-import secrets
-import sys
 from pathlib import Path
 
 from app import create_app
 from app.extensions import db
-from app.models import FaqItem, Page, Quote, User, utcnow
+from app.models import FaqItem, Page, Quote
 
 SEED_FILE = Path(__file__).parent / "data" / "quotes_seed.json"
 
@@ -55,35 +54,7 @@ LEGAL_STUBS = {
 def seed():
     app = create_app()
     with app.app_context():
-        # 1. admin user (email + password, pre-verified)
-        admin_email = os.environ.get("ADMIN_EMAIL", "").strip().lower()
-        admin_password = os.environ.get("ADMIN_PASSWORD", "").strip()
-        if admin_email:
-            user = User.query.filter_by(email=admin_email).first()
-            generated = False
-            if not admin_password and (user is None or not user.password_hash):
-                admin_password = secrets.token_urlsafe(12)
-                generated = True
-            if user is None:
-                user = User(email=admin_email, is_admin=True, email_verified_at=utcnow())
-                user.set_password(admin_password)
-                db.session.add(user)
-                print(f"Created admin user {admin_email}")
-            else:
-                user.is_admin = True
-                user.email_verified_at = user.email_verified_at or utcnow()
-                if admin_password:
-                    user.set_password(admin_password)
-                print(f"Updated admin {admin_email}")
-            if admin_password:
-                if generated:
-                    print(f"Admin password (generated \u2014 save it now): {admin_password}")
-                else:
-                    print("Admin password set from ADMIN_PASSWORD.")
-        else:
-            print("ADMIN_EMAIL not set \u2014 skipping admin creation.", file=sys.stderr)
-
-        # 2. quotes (idempotent on lowercase text)
+        # 1. quotes (idempotent on lowercase text)
         payload = json.loads(SEED_FILE.read_text(encoding="utf-8"))
         existing = {q.text.strip().lower() for q in Quote.query.all()}
         added = 0
@@ -97,13 +68,13 @@ def seed():
             added += 1
         print(f"Quotes: added {added}, skipped {len(payload['quotes']) - added} existing")
 
-        # 3. starter FAQ
+        # 2. starter FAQ
         if FaqItem.query.count() == 0:
             for question, answer, order in STARTER_FAQS:
                 db.session.add(FaqItem(question=question, answer_md=answer, sort_order=order))
             print(f"Added {len(STARTER_FAQS)} starter FAQ items")
 
-        # 4. legal page stubs
+        # 3. legal page stubs
         for slug, (title, body) in LEGAL_STUBS.items():
             if Page.query.filter_by(slug=slug).first() is None:
                 db.session.add(Page(slug=slug, title=title, body_md=body))

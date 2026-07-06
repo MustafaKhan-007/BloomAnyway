@@ -14,8 +14,8 @@ import re
 import secrets
 from datetime import datetime, timedelta
 
-from flask import (current_app, flash, redirect, render_template, request,
-                   session, url_for)
+from flask import (abort, current_app, flash, redirect, render_template,
+                   request, session, url_for)
 from flask_login import current_user, login_required, login_user, logout_user
 
 from ..extensions import db, limiter
@@ -103,6 +103,54 @@ def _log_in(user: User, remember: bool = True):
     login_user(user, remember=remember)
     session["logged_in_at"] = datetime.utcnow().isoformat()
     log.info("auth: user %s logged in (ip=%s)", user.id, request.remote_addr)
+
+
+# ============================ FIRST-RUN SETUP ================================
+
+def _setup_available() -> bool:
+    """The owner account can be claimed until an admin has logged in once.
+
+    This lets the site be set up entirely in the browser (no env vars, no
+    shell) and survives redeploys: once the owner has signed in a single
+    time, /setup locks itself forever.
+    """
+    claimed = User.query.filter(
+        User.is_admin.is_(True), User.last_login_at.isnot(None)
+    ).first()
+    return claimed is None
+
+
+@bp.route("/setup", methods=["GET", "POST"])
+@limiter.limit("10 per hour", methods=["POST"])
+def setup():
+    if not _setup_available():
+        abort(404)
+    if request.method == "GET":
+        return render_template("auth/setup.html")
+
+    email = _normalize(request.form.get("email"))
+    password = _password()
+    if not EMAIL_RE.match(email) or len(email) > 255:
+        flash("That doesn't look like an email address \u2014 mind checking it?", "error")
+        return render_template("auth/setup.html", email=request.form.get("email", "")), 400
+    if len(password) < MIN_PASSWORD_LEN:
+        flash(f"Your password needs at least {MIN_PASSWORD_LEN} characters.", "error")
+        return render_template("auth/setup.html", email=email), 400
+
+    user = User.query.filter_by(email=email).first()
+    if user is None:
+        user = User(email=email)
+        db.session.add(user)
+    user.set_password(password)
+    user.is_admin = True
+    user.email_verified_at = user.email_verified_at or utcnow()
+    user.deleted_at = None
+    db.session.commit()
+
+    _log_in(user)
+    log.info("auth: owner account claimed by user %s (ip=%s)", user.id, request.remote_addr)
+    flash("Welcome \u2014 this is your studio. The setup page is now locked.", "success")
+    return redirect(url_for("admin.dashboard"))
 
 
 # ================================ REGISTER ===================================
@@ -200,7 +248,8 @@ def login():
     if request.method == "GET":
         if current_user.is_authenticated:
             return redirect(url_for("main.account"))
-        return render_template("auth/login.html", next=request.args.get("next", ""))
+        return render_template("auth/login.html", next=request.args.get("next", ""),
+                               setup_available=_setup_available())
 
     email = _normalize(request.form.get("email"))
     password = _password()
@@ -211,7 +260,8 @@ def login():
         log.info("auth: failed login (ip=%s)", request.remote_addr)
         flash("That email and password don't match. Take a breath and try again \u2014 or reset your password below.", "error")
         return render_template("auth/login.html", next=next_path,
-                               email=request.form.get("email", "")), 401
+                               email=request.form.get("email", ""),
+                               setup_available=_setup_available()), 401
 
     if not user.is_verified:
         sent = _issue_code(user, "confirm")

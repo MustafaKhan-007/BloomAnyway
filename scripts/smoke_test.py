@@ -60,10 +60,6 @@ with app.app_context():
     seed = json.loads((Path(__file__).parents[1] / "data" / "quotes_seed.json").read_text(encoding="utf-8"))
     for row in seed["quotes"]:
         db.session.add(Quote(text=row["text"], author=row.get("author"), category=row["category"]))
-    from app.models import utcnow
-    admin_user = User(email="owner@example.com", is_admin=True, email_verified_at=utcnow())
-    admin_user.set_password(ADMIN_PW)
-    db.session.add(admin_user)
     db.session.commit()
     n_quotes = Quote.query.count()
 
@@ -89,7 +85,21 @@ with app.app_context():
 ok("Rotation changes across days (some day differs)",
    today_q.id != tomorrow_q.id or today_q.id != day_after.id)
 
-# --- 2. email + password auth with confirmation codes ---------------------------
+# --- 2a. first-run owner setup ----------------------------------------------------
+setup_client = app.test_client()
+r = setup_client.get("/setup")
+ok("Setup page available on fresh install", r.status_code == 200)
+r = setup_client.get("/login")
+ok("Login page advertises setup on fresh install", "Claim the owner account" in r.get_data(as_text=True))
+r = setup_client.post("/setup", data={"email": "owner@example.com", "password": ADMIN_PW},
+                      follow_redirects=False)
+ok("Owner account claimed via setup", r.status_code == 302 and "/admin" in r.headers["Location"])
+r = setup_client.get("/admin/")
+ok("Owner lands in studio after setup", r.status_code == 200)
+r = app.test_client().get("/setup")
+ok("Setup locks after owner signs in", r.status_code == 404)
+
+# --- 2b. email + password auth with confirmation codes ---------------------------
 USER_PW = "sunrise-day-1"
 
 r = client.post("/register", data={"email": "newperson@example.com", "password": "short"})

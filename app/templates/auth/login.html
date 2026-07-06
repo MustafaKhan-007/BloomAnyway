@@ -31,6 +31,12 @@
     <p class="field-help">
       New here? <a href="{{ url_for('auth.register', next=next) }}">Create your account</a> — it takes a minute.
     </p>
+    {% if setup_available %}
+    <p class="field-help" style="background: var(--gold-soft); padding: 12px 16px; border-radius: 12px;">
+      Setting up this site for the first time?
+      <a href="{{ url_for('auth.setup') }}"><strong>Claim the owner account</strong></a>.
+    </p>
+    {% endif %}
   </div>
 </section>
 {% endblock %}

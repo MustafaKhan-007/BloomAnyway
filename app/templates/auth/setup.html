@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Set up your studio — {{ site.site_title }}{% endblock %}
+
+{% block content %}
+<section class="section">
+  <div class="container auth-card" style="max-width: 480px;">
+    <div class="sun-disc" aria-hidden="true"></div>
+    <h1>Claim your studio</h1>
+    <hr class="horizon-rule horizon-rule--heading">
+    <p>This one-time page creates the <strong>owner account</strong> — the one that manages
+       products, quotes, and everything else. Choose the email and password you'll sign in with.
+       As soon as you've signed in once, this page locks itself.</p>
+    <form method="post" action="{{ url_for('auth.setup') }}" style="margin-top: 24px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="field">
+        <label for="email">Your email</label>
+        <input type="email" id="email" name="email" required maxlength="255"
+               autocomplete="email" value="{{ email or '' }}" autofocus>
+      </div>
+      <div class="field">
+        <label for="password">Your password</label>
+        <div class="password-wrap">
+          <input type="password" id="password" name="password" required minlength="8"
+                 autocomplete="new-password">
+          <button type="button" class="password-toggle" data-toggles="password"
+                  aria-label="Show password" aria-pressed="false">Show</button>
+        </div>
+        <p class="field-help">At least 8 characters. You can change it later from your account page.</p>
+      </div>
+      <button class="btn btn--primary btn--wide" type="submit">Create the owner account</button>
+    </form>
+  </div>
+</section>
+{% endblock %}

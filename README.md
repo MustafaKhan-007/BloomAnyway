@@ -34,18 +34,19 @@ copy .env.example .env        # cp on macOS/Linux — then edit ADMIN_EMAIL at l
 set FLASK_APP=app:create_app  # PowerShell: $env:FLASK_APP = "app:create_app"
 flask db upgrade
 
-# create the admin user + load 150 quotes + starter FAQ/legal stubs
-# (set ADMIN_EMAIL first; leave ADMIN_PASSWORD empty to have a strong one
-#  generated and printed once — save it)
+# load 150 quotes + starter FAQ/legal stubs (content only — no credentials)
 python seed.py
 
 flask run
 ```
 
-Open http://localhost:5000. Sign in at `/login` with the admin email/password
-from `seed.py`, then visit http://localhost:5000/admin. **Email in dev:** when
-`SMTP_HOST` is empty, every email (including registration confirmation codes)
-is printed to the terminal running `flask run`.
+Open http://localhost:5000/setup and **claim the owner account** in the
+browser (choose your email + password). The setup page locks itself as soon
+as the owner has signed in once; after that you manage everything from
+`/admin`, and password changes (yours included) always stick — nothing ever
+resets them on deploy. **Email in dev:** when `SMTP_HOST` is empty, every
+email (including registration confirmation codes) is printed to the terminal
+running `flask run`.
 
 ### Environment variables
 
@@ -107,13 +108,15 @@ PY
 3. Fill in the `sync: false` env vars (secrets) in the Render dashboard.
 4. Deploy. The build runs
    `pip install -r requirements.txt && flask db upgrade && python seed.py` —
-   migrations and seeding (quotes, admin account, FAQ/legal stubs) happen
-   automatically on every deploy; the seed is idempotent so re-deploys are safe.
-   Set `ADMIN_PASSWORD` before the first deploy, or check the build logs for the
-   generated one. The server is
+   migrations and content seeding (quotes, FAQ/legal stubs) happen
+   automatically on every deploy; the seed is idempotent and **never touches
+   accounts or passwords**, so re-deploys are safe. The server is
    `gunicorn "app:create_app()" --workers 2 --threads 4 --timeout 60`
    with health checks on `/healthz`.
-5. Point the Lemon Squeezy webhook (section 2) at your Render URL.
+5. Visit `https://<your-app>.onrender.com/setup` right after the first deploy
+   and claim the owner account (email + password, chosen in the browser).
+   The page locks itself once the owner has signed in — do this promptly.
+6. Point the Lemon Squeezy webhook (section 2) at your Render URL.
 
 ### Things to know about Render
 
@@ -142,7 +145,11 @@ PY
 
 ## 5. Security notes
 
-- Passwords: hashed with werkzeug (scrypt), minimum 8 characters, never logged.
+- Passwords: hashed with werkzeug (scrypt), minimum 8 characters, never logged,
+  never stored in env vars, and never reset by deploys or the seed script.
+- Owner bootstrap: the one-time `/setup` page creates the admin in the browser
+  and locks itself permanently after the owner's first sign-in. Claim it right
+  after the first deploy.
 - Email codes (confirmation + password reset): 6 random digits, only the
   SHA-256 hash stored, single-use, 15-minute expiry, max 5 wrong attempts per
   code. Password reset uses uniform responses (no account enumeration) and
