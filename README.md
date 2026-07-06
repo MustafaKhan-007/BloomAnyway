@@ -112,13 +112,18 @@ PY
 2. In Render: *New → Blueprint*, pick the repo. Render creates the web service
    and the database, wiring `DATABASE_URL` automatically.
 3. Fill in the `sync: false` env vars (secrets) in the Render dashboard.
-4. Deploy. The build runs
-   `pip install -r requirements.txt && flask db upgrade && python seed.py` —
-   migrations and content seeding (quotes, FAQ/legal stubs) happen
-   automatically on every deploy; the seed is idempotent and **never touches
-   accounts or passwords**, so re-deploys are safe. The server is
-   `gunicorn "app:create_app()" --workers 2 --threads 4 --timeout 60`
-   with health checks on `/healthz`.
+4. Deploy. The **build** just installs dependencies
+   (`pip install -r requirements.txt`). The **start** command runs
+   `flask db upgrade && python seed.py && gunicorn "app:create_app()" --workers 2 --threads 4 --timeout 60`
+   — migrations + content seeding (quotes, FAQ/legal stubs) run at *runtime*,
+   because Render's internal `DATABASE_URL` hostname only resolves once the
+   service is live (it is unreachable during the build phase). The seed is
+   idempotent and **never touches accounts or passwords**, so re-deploys are
+   safe. Health checks are on `/healthz`.
+
+   > If you created the service manually (not via the Blueprint), set the
+   > **Build Command** and **Start Command** above by hand in the dashboard,
+   > and make sure `FLASK_APP=app:create_app` is set.
 5. Visit `https://<your-app>.onrender.com/setup` right after the first deploy
    and claim the owner account (email + password, chosen in the browser).
    The page locks itself once the owner has signed in — do this promptly.

@@ -3,8 +3,10 @@ services:
     name: first-light
     runtime: python
     plan: starter
-    buildCommand: pip install -r requirements.txt && flask db upgrade && python seed.py
-    startCommand: gunicorn "app:create_app()" --workers 2 --threads 4 --timeout 60
+    # DB migrations/seed must run at RUNTIME (start), not at build: Render's
+    # internal database hostname only resolves once the service is running.
+    buildCommand: pip install -r requirements.txt
+    startCommand: flask db upgrade && python seed.py && gunicorn "app:create_app()" --workers 2 --threads 4 --timeout 60
     healthCheckPath: /healthz
     envVars:
       - key: PYTHON_VERSION
