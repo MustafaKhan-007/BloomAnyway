@@ -33,6 +33,12 @@ def _normalize(email: str) -> str:
     return (email or "").strip().lower()
 
 
+def _password(form_field: str = "password") -> str:
+    """Trim surrounding whitespace — copy-pasted passwords often carry a
+    trailing space/newline, and a leading/trailing blank is never intended."""
+    return (request.form.get(form_field) or "").strip()
+
+
 def _email_key():
     return _normalize(request.form.get("email", "")) or (request.remote_addr or "ip")
 
@@ -101,7 +107,7 @@ def register():
         return render_template("auth/register.html", next=request.args.get("next", ""))
 
     email = _normalize(request.form.get("email"))
-    password = request.form.get("password") or ""
+    password = _password()
     next_path = request.form.get("next", "")
 
     errors = []
@@ -183,7 +189,7 @@ def login():
         return render_template("auth/login.html", next=request.args.get("next", ""))
 
     email = _normalize(request.form.get("email"))
-    password = request.form.get("password") or ""
+    password = _password()
     next_path = request.form.get("next", "")
 
     user = User.query.filter_by(email=email).first()
@@ -244,7 +250,7 @@ def reset_password():
     if request.method == "GET":
         return render_template("auth/reset_password.html", email=email)
 
-    password = request.form.get("password") or ""
+    password = _password()
     if len(password) < MIN_PASSWORD_LEN:
         flash(f"Your new password needs at least {MIN_PASSWORD_LEN} characters.", "error")
         return render_template("auth/reset_password.html", email=email), 400

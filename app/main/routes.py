@@ -160,8 +160,8 @@ def update_profile():
 @bp.route("/account/password", methods=["POST"])
 @login_required
 def change_password():
-    current = request.form.get("current_password") or ""
-    new = request.form.get("new_password") or ""
+    current = (request.form.get("current_password") or "").strip()
+    new = (request.form.get("new_password") or "").strip()
     if not current_user.check_password(current):
         flash("Your current password didn't match \u2014 no changes made.", "error")
         return redirect(url_for("main.account"))
