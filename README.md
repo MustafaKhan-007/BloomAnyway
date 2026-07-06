@@ -105,11 +105,15 @@ PY
 2. In Render: *New → Blueprint*, pick the repo. Render creates the web service
    and the database, wiring `DATABASE_URL` automatically.
 3. Fill in the `sync: false` env vars (secrets) in the Render dashboard.
-4. Deploy. The build runs `pip install -r requirements.txt && flask db upgrade`;
-   the server is `gunicorn "app:create_app()" --workers 2 --threads 4 --timeout 60`
+4. Deploy. The build runs
+   `pip install -r requirements.txt && flask db upgrade && python seed.py` —
+   migrations and seeding (quotes, admin account, FAQ/legal stubs) happen
+   automatically on every deploy; the seed is idempotent so re-deploys are safe.
+   Set `ADMIN_PASSWORD` before the first deploy, or check the build logs for the
+   generated one. The server is
+   `gunicorn "app:create_app()" --workers 2 --threads 4 --timeout 60`
    with health checks on `/healthz`.
-5. Open a shell on the service (or a one-off job) and run `python seed.py` once.
-6. Point the Lemon Squeezy webhook (section 2) at your Render URL.
+5. Point the Lemon Squeezy webhook (section 2) at your Render URL.
 
 ### Things to know about Render
 

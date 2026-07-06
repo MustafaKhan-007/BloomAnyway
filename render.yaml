@@ -3,7 +3,7 @@ services:
     name: first-light
     runtime: python
     plan: starter
-    buildCommand: pip install -r requirements.txt && flask db upgrade
+    buildCommand: pip install -r requirements.txt && flask db upgrade && python seed.py
     startCommand: gunicorn "app:create_app()" --workers 2 --threads 4 --timeout 60
     healthCheckPath: /healthz
     envVars:
