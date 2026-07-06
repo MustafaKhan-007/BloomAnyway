@@ -16,6 +16,36 @@
   </form>
 </div>
 
+<form method="get" class="admin-panel" style="display: flex; gap: 16px; align-items: end; flex-wrap: wrap;">
+  <div class="field" style="margin: 0; min-width: 260px;">
+    <label for="product">Show insights for</label>
+    <select id="product" name="product">
+      <option value="">Everything (all products)</option>
+      {% for p in products %}
+      <option value="{{ p.id }}" {{ 'selected' if selected_product and selected_product.id == p.id }}>
+        {{ p.title }} ({{ p.type_label() }})
+      </option>
+      {% endfor %}
+    </select>
+  </div>
+  <button class="btn btn--primary btn--sm" type="submit">Apply</button>
+  {% if selected_product %}
+  <a class="btn btn--secondary btn--sm" href="{{ url_for('admin.dashboard') }}">Back to everything</a>
+  {% endif %}
+</form>
+
+{% if selected_product %}
+<p class="field-help" style="margin: -12px 0 20px;">
+  Showing <strong>{{ selected_product.title }}</strong> only &mdash; all-time:
+  <strong>${{ '%.2f'|format(lifetime.revenue) }}</strong> across <strong>{{ lifetime.orders }}</strong> orders.
+</p>
+{% else %}
+<p class="field-help" style="margin: -12px 0 20px;">
+  All-time across everything: <strong>${{ '%.2f'|format(lifetime.revenue) }}</strong>
+  from <strong>{{ lifetime.orders }}</strong> orders.
+</p>
+{% endif %}
+
 <div class="admin-cards">
   <div class="stat-card">
     <div class="label">Revenue (30d)</div>
@@ -38,8 +68,22 @@
   </div>
 </div>
 
+<div class="admin-panel" style="border-left: 4px solid var(--gold);">
+  <h2>Today's quote</h2>
+  {% if today_quote %}
+    <p style="font-family: var(--font-display); font-style: italic; font-size: 18px; margin: 0 0 6px;">
+      &ldquo;{{ today_quote.text }}&rdquo;</p>
+    <p class="field-help" style="margin: 0 0 12px;">
+      {{ today_quote.category }}{% if tomorrow_quote %} &middot; tomorrow: &ldquo;{{ tomorrow_quote.text[:70] }}{{ '…' if tomorrow_quote.text|length > 70 }}&rdquo;{% endif %}
+    </p>
+  {% else %}
+    <p>No active quotes yet.</p>
+  {% endif %}
+  <a class="btn btn--gold btn--sm" href="{{ url_for('admin.quotes') }}">Manage quotes — add, remove, pin</a>
+</div>
+
 <div class="chart-panel">
-  <h2>Revenue by day (90 days)</h2>
+  <h2>Revenue by day (90 days){% if selected_product %} — {{ selected_product.title }}{% endif %}</h2>
   <canvas id="chart-revenue" height="80"></canvas>
 </div>
 
@@ -56,7 +100,7 @@
 
 <div class="admin-grid-2">
   <div class="admin-panel">
-    <h2>Recent orders</h2>
+    <h2>Recent orders{% if selected_product %} — {{ selected_product.title }}{% endif %}</h2>
     <table class="admin-table">
       <thead><tr><th>Date</th><th>Product</th><th>Buyer</th><th>Amount</th><th>Status</th></tr></thead>
       <tbody>

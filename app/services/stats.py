@@ -13,21 +13,29 @@ def _dt(day: date) -> datetime:
     return datetime.combine(day, time.min)
 
 
-def _window_sums(days: int = 30) -> dict:
+def _product_filter(query, product_id):
+    if product_id:
+        return query.filter(Order.product_id == product_id)
+    return query
+
+
+def _window_sums(days: int = 30, product_id: int | None = None) -> dict:
     """Revenue/orders/subscribers for the last `days` days + previous window."""
     today = date.today()
     cur_start = _dt(today - timedelta(days=days - 1))
     prev_start = _dt(today - timedelta(days=2 * days - 1))
 
     def revenue(start, end):
-        return db.session.query(func.coalesce(func.sum(Order.total_cents), 0)).filter(
-            Order.status.in_(PAID_STATUSES), Order.created_at >= start, Order.created_at < end
-        ).scalar()
+        return _product_filter(
+            db.session.query(func.coalesce(func.sum(Order.total_cents), 0)).filter(
+                Order.status.in_(PAID_STATUSES), Order.created_at >= start, Order.created_at < end
+            ), product_id).scalar()
 
     def orders(start, end):
-        return db.session.query(func.count(Order.id)).filter(
-            Order.status.in_(PAID_STATUSES), Order.created_at >= start, Order.created_at < end
-        ).scalar()
+        return _product_filter(
+            db.session.query(func.count(Order.id)).filter(
+                Order.status.in_(PAID_STATUSES), Order.created_at >= start, Order.created_at < end
+            ), product_id).scalar()
 
     def subs(start, end):
         return db.session.query(func.count(Subscriber.id)).filter(
@@ -45,8 +53,8 @@ def _window_sums(days: int = 30) -> dict:
     }
 
 
-def dashboard_cards() -> dict:
-    sums = _window_sums(30)
+def dashboard_cards(product_id: int | None = None) -> dict:
+    sums = _window_sums(30, product_id)
     active_streak_users = db.session.query(func.count(func.distinct(CheckIn.user_id))).filter(
         CheckIn.date == date.today()
     ).scalar()
@@ -67,15 +75,16 @@ def dashboard_cards() -> dict:
     }
 
 
-def revenue_by_day(days: int = 90) -> dict:
+def revenue_by_day(days: int = 90, product_id: int | None = None) -> dict:
     today = date.today()
     start = today - timedelta(days=days - 1)
-    rows = db.session.query(
-        func.date(Order.created_at).label("day"),
-        func.sum(Order.total_cents),
-    ).filter(
-        Order.status.in_(PAID_STATUSES), Order.created_at >= _dt(start)
-    ).group_by("day").all()
+    rows = _product_filter(
+        db.session.query(
+            func.date(Order.created_at).label("day"),
+            func.sum(Order.total_cents),
+        ).filter(
+            Order.status.in_(PAID_STATUSES), Order.created_at >= _dt(start)
+        ), product_id).group_by("day").all()
     by_day = {str(day): (cents or 0) / 100 for day, cents in rows}
     labels = [(start + timedelta(days=i)).isoformat() for i in range(days)]
     return {"labels": labels, "values": [by_day.get(d, 0) for d in labels]}
@@ -116,8 +125,20 @@ def signups_by_week(weeks: int = 12) -> dict:
     return {"labels": labels, "users": users, "subscribers": subs}
 
 
-def recent_orders(limit: int = 10):
-    return Order.query.order_by(Order.created_at.desc()).limit(limit).all()
+def recent_orders(limit: int = 10, product_id: int | None = None):
+    return _product_filter(Order.query, product_id)\
+        .order_by(Order.created_at.desc()).limit(limit).all()
+
+
+def lifetime_totals(product_id: int | None = None) -> dict:
+    """All-time revenue and order count (optionally for one product)."""
+    revenue = _product_filter(
+        db.session.query(func.coalesce(func.sum(Order.total_cents), 0)).filter(
+            Order.status.in_(PAID_STATUSES)), product_id).scalar()
+    orders = _product_filter(
+        db.session.query(func.count(Order.id)).filter(
+            Order.status.in_(PAID_STATUSES)), product_id).scalar()
+    return {"revenue": revenue / 100, "orders": orders}
 
 
 def top_products(limit: int = 5):

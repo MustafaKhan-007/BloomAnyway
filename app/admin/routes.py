@@ -54,13 +54,27 @@ def slugify(text: str) -> str:
 @bp.route("/")
 @admin_required
 def dashboard():
+    product_id = None
+    raw = request.args.get("product", "")
+    if raw.isdigit():
+        product_id = int(raw)
+    selected_product = db.session.get(Product, product_id) if product_id else None
+    if product_id and selected_product is None:
+        product_id = None
+
+    today = date.today()
     return render_template(
         "admin/dashboard.html",
-        cards=stats.dashboard_cards(),
-        chart_revenue=stats.revenue_by_day(90),
+        today_quote=quotes_service.quote_for(today),
+        tomorrow_quote=quotes_service.quote_for(today + timedelta(days=1)),
+        products=Product.query.order_by(Product.title).all(),
+        selected_product=selected_product,
+        cards=stats.dashboard_cards(product_id),
+        lifetime=stats.lifetime_totals(product_id),
+        chart_revenue=stats.revenue_by_day(90, product_id),
         chart_products=stats.orders_by_product(90),
         chart_signups=stats.signups_by_week(12),
-        recent_orders=stats.recent_orders(10),
+        recent_orders=stats.recent_orders(10, product_id),
         top_products=stats.top_products(5),
         most_visited=stats.most_visited(7),
     )

@@ -205,6 +205,11 @@ ok("Buyer email lowercased", orders[0].buyer_email == "buyer@example.com")
 
 r = admin.get("/admin/")
 ok("Dashboard shows revenue after order", "$49.00" in r.get_data(as_text=True))
+r = admin.get("/admin/?product=1")
+body = r.get_data(as_text=True)
+ok("Dashboard filters by product", r.status_code == 200 and "Begin Again" in body and "$49.00" in body)
+r = admin.get("/admin/?product=999")
+ok("Unknown product filter falls back to everything", r.status_code == 200)
 
 # --- 5. streak grace rule --------------------------------------------------------
 with app.app_context():

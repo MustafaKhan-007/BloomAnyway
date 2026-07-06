@@ -49,8 +49,11 @@ def _safe_next(target: str | None) -> str:
     return url_for("main.account")
 
 
-def _issue_code(user: User, purpose: str) -> None:
-    """Create a fresh code (invalidating older ones for the purpose) and email it."""
+def _issue_code(user: User, purpose: str) -> bool:
+    """Create a fresh code (invalidating older ones for the purpose) and email it.
+
+    Returns False when the email could not be sent (SMTP down/misconfigured).
+    """
     VerificationCode.query.filter_by(user_id=user.id, purpose=purpose, used_at=None)\
         .update({"used_at": utcnow()})
     code = f"{secrets.randbelow(1_000_000):06d}"
@@ -62,8 +65,14 @@ def _issue_code(user: User, purpose: str) -> None:
         request_ip=request.remote_addr,
     ))
     db.session.commit()
-    send_verification_code(user.email, code, purpose)
-    log.info("auth: %s code issued for user %s (ip=%s)", purpose, user.id, request.remote_addr)
+    sent = send_verification_code(user.email, code, purpose)
+    log.info("auth: %s code issued for user %s (sent=%s, ip=%s)",
+             purpose, user.id, sent, request.remote_addr)
+    return sent
+
+
+EMAIL_TROUBLE = ("We couldn't send the email just now \u2014 the site's email service "
+                 "didn't respond. Please try again in a few minutes.")
 
 
 def _check_code(user: User, purpose: str, submitted: str) -> tuple[bool, str]:
@@ -135,10 +144,13 @@ def register():
         db.session.add(user)
     db.session.commit()
 
-    _issue_code(user, "confirm")
+    sent = _issue_code(user, "confirm")
     session["pending_verify_email"] = email
     session["auth_next"] = next_path
-    flash("One more step \u2014 we've emailed you a 6-digit code.", "success")
+    if sent:
+        flash("One more step \u2014 we've emailed you a 6-digit code.", "success")
+    else:
+        flash(EMAIL_TROUBLE, "error")
     return redirect(url_for("auth.verify_email"))
 
 
@@ -155,8 +167,10 @@ def verify_email():
         return redirect(url_for("auth.register"))
 
     if request.form.get("action") == "resend":
-        _issue_code(user, "confirm")
-        flash("A fresh code is on its way. It works for 15 minutes.", "success")
+        if _issue_code(user, "confirm"):
+            flash("A fresh code is on its way. It works for 15 minutes.", "success")
+        else:
+            flash(EMAIL_TROUBLE, "error")
         return render_template("auth/verify_email.html", email=email)
 
     if user.is_verified:
@@ -200,14 +214,20 @@ def login():
                                email=request.form.get("email", "")), 401
 
     if not user.is_verified:
-        _issue_code(user, "confirm")
+        sent = _issue_code(user, "confirm")
         session["pending_verify_email"] = user.email
         session["auth_next"] = next_path
-        flash("Almost there \u2014 confirm your email first. We've sent you a fresh code.", "info")
+        if sent:
+            flash("Almost there \u2014 confirm your email first. We've sent you a fresh code.", "info")
+        else:
+            flash(EMAIL_TROUBLE, "error")
         return redirect(url_for("auth.verify_email"))
 
     _log_in(user)
-    return redirect(_safe_next(next_path or None))
+    if next_path:
+        return redirect(_safe_next(next_path))
+    # admins land in the studio, everyone else in their space
+    return redirect(url_for("admin.dashboard") if user.is_admin else url_for("main.account"))
 
 
 @bp.route("/logout", methods=["POST"])
