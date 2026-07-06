@@ -157,6 +157,23 @@ def update_profile():
     return redirect(url_for("main.account"))
 
 
+@bp.route("/account/password", methods=["POST"])
+@login_required
+def change_password():
+    current = request.form.get("current_password") or ""
+    new = request.form.get("new_password") or ""
+    if not current_user.check_password(current):
+        flash("Your current password didn't match \u2014 no changes made.", "error")
+        return redirect(url_for("main.account"))
+    if len(new) < 8:
+        flash("Your new password needs at least 8 characters.", "error")
+        return redirect(url_for("main.account"))
+    current_user.set_password(new)
+    db.session.commit()
+    flash("Password updated.", "success")
+    return redirect(url_for("main.account"))
+
+
 @bp.route("/account/delete", methods=["POST"])
 @login_required
 def delete_account():

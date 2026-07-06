@@ -106,7 +106,7 @@
   var dataEl = document.getElementById("dashboard-data");
   if (dataEl && window.Chart) {
     var data = JSON.parse(dataEl.textContent);
-    var plum = "#4A2C3F", rose = "#C9928A", gold = "#D9A441";
+    var plum = "#7A2E62", rose = "#E08A6D", gold = "#EFA733";
 
     var revenueCtx = document.getElementById("chart-revenue");
     if (revenueCtx) {
@@ -118,7 +118,7 @@
             label: "Revenue",
             data: data.revenue.values,
             borderColor: gold,
-            backgroundColor: "rgba(217, 164, 65, 0.15)",
+            backgroundColor: "rgba(239, 167, 51, 0.15)",
             fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2
           }]
         },

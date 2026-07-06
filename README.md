@@ -10,7 +10,8 @@ What's inside:
 - Full catalog with filterable shop, rich product pages, and overlay checkout
 - Daily motivational quote with deterministic rotation, pinning, and a
   kind-by-design check-in streak system
-- Passwordless magic-link login (no passwords anywhere)
+- Email + password accounts with 6-digit email confirmation codes on
+  registration, plus code-based password reset
 - Admin studio: dashboard with revenue charts, product/quote/testimonial/FAQ/page
   management, subscriber & order CSV exports, site settings
 - Lemon Squeezy webhook receiver (signed, idempotent) + manual API reconciliation
@@ -34,15 +35,17 @@ set FLASK_APP=app:create_app  # PowerShell: $env:FLASK_APP = "app:create_app"
 flask db upgrade
 
 # create the admin user + load 150 quotes + starter FAQ/legal stubs
+# (set ADMIN_EMAIL first; leave ADMIN_PASSWORD empty to have a strong one
+#  generated and printed once — save it)
 python seed.py
 
 flask run
 ```
 
-Open http://localhost:5000. **Email in dev:** when `SMTP_HOST` is empty, every
-email (including your magic login link) is printed to the terminal running
-`flask run` — copy the link from there to sign in as admin, then visit
-http://localhost:5000/admin.
+Open http://localhost:5000. Sign in at `/login` with the admin email/password
+from `seed.py`, then visit http://localhost:5000/admin. **Email in dev:** when
+`SMTP_HOST` is empty, every email (including registration confirmation codes)
+is printed to the terminal running `flask run`.
 
 ### Environment variables
 
@@ -135,9 +138,13 @@ PY
 
 ## 5. Security notes
 
-- Magic links: 32-byte random tokens, only the SHA-256 hash stored, single-use,
-  15-minute expiry, uniform responses (no account enumeration), 3/email/hour +
-  10/IP/hour rate limits, `next` restricted to relative paths.
+- Passwords: hashed with werkzeug (scrypt), minimum 8 characters, never logged.
+- Email codes (confirmation + password reset): 6 random digits, only the
+  SHA-256 hash stored, single-use, 15-minute expiry, max 5 wrong attempts per
+  code. Password reset uses uniform responses (no account enumeration) and
+  `next` is restricted to relative paths.
+- Rate limits: 20/hour on login and code entry, 5/minute per email on login,
+  10/hour on registration, 3/email/hour on reset requests.
 - Sessions: `Secure`/`HttpOnly`/`SameSite=Lax`, 30-day remember cookie. Admin
   routes require `is_admin` **and** a login fresher than 24h, and return 404 to
   everyone else.

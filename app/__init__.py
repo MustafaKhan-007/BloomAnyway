@@ -38,7 +38,7 @@ def create_app(config_class=None):
 
     login_manager.init_app(app)
     login_manager.login_view = "auth.login"
-    login_manager.login_message = "We'll email you a one-time link to sign in."
+    login_manager.login_message = "Sign in to keep going."
 
     from .models import User
 

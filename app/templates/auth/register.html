@@ -1,12 +1,13 @@
 {% extends "base.html" %}
-{% block title %}Sign in — {{ site.site_title }}{% endblock %}
+{% block title %}Create your account — {{ site.site_title }}{% endblock %}
 
 {% block content %}
 <section class="section">
   <div class="container auth-card" style="max-width: 460px;">
-    <h1>Welcome back</h1>
+    <h1>Make yourself a space</h1>
     <hr class="horizon-rule horizon-rule--heading">
-    <form method="post" action="{{ url_for('auth.login') }}" style="margin-top: 24px;">
+    <p>Daily check-ins, streaks, and saved quotes — free, always.</p>
+    <form method="post" action="{{ url_for('auth.register') }}" style="margin-top: 24px;">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="next" value="{{ next }}">
       <div class="field">
@@ -17,19 +18,18 @@
       <div class="field">
         <label for="password">Password</label>
         <div class="password-wrap">
-          <input type="password" id="password" name="password" required
-                 autocomplete="current-password">
+          <input type="password" id="password" name="password" required minlength="8"
+                 autocomplete="new-password" aria-describedby="password-hint">
           <button type="button" class="password-toggle" data-toggles="password"
                   aria-label="Show password" aria-pressed="false">Show</button>
         </div>
+        <p class="field-help" id="password-hint">At least 8 characters. A short sentence you'll remember works beautifully.</p>
       </div>
-      <button class="btn btn--primary btn--wide" type="submit">Sign in</button>
+      <button class="btn btn--primary btn--wide" type="submit">Create my account</button>
     </form>
     <p class="field-help" style="margin-top: 20px;">
-      <a href="{{ url_for('auth.forgot_password') }}">Forgot your password?</a>
-    </p>
-    <p class="field-help">
-      New here? <a href="{{ url_for('auth.register', next=next) }}">Create your account</a> — it takes a minute.
+      We'll email you a 6-digit code to confirm it's really you.
+      Already have an account? <a href="{{ url_for('auth.login', next=next) }}">Sign in</a>.
     </p>
   </div>
 </section>

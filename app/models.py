@@ -2,6 +2,7 @@
 from datetime import datetime, timezone
 
 from flask_login import UserMixin
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from .extensions import db
 
@@ -21,14 +22,16 @@ class User(UserMixin, db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(255), unique=True, nullable=False, index=True)
+    password_hash = db.Column(db.String(255))
+    email_verified_at = db.Column(db.DateTime)
     display_name = db.Column(db.String(80))
     is_admin = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
     last_login_at = db.Column(db.DateTime)
     deleted_at = db.Column(db.DateTime)
 
-    login_tokens = db.relationship("LoginToken", backref="user", lazy="dynamic",
-                                   cascade="all, delete-orphan")
+    codes = db.relationship("VerificationCode", backref="user", lazy="dynamic",
+                            cascade="all, delete-orphan")
     check_ins = db.relationship("CheckIn", backref="user", lazy="dynamic",
                                 cascade="all, delete-orphan")
     favorites = db.relationship("QuoteFavorite", backref="user", lazy="dynamic",
@@ -38,21 +41,49 @@ class User(UserMixin, db.Model):
     def is_active(self):  # Flask-Login: soft-deleted users cannot log in
         return self.deleted_at is None
 
+    @property
+    def is_verified(self):
+        return self.email_verified_at is not None
+
+    def set_password(self, password: str) -> None:
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password: str) -> bool:
+        if not self.password_hash:
+            return False
+        return check_password_hash(self.password_hash, password)
+
     def first_name(self):
         if self.display_name:
             return self.display_name.split()[0]
         return None
 
 
-class LoginToken(db.Model):
-    __tablename__ = "login_tokens"
+class VerificationCode(db.Model):
+    """One-time 6-digit email codes (account confirmation / password reset).
+
+    Only the SHA-256 hash of the code is stored. Codes are single-use,
+    expire after 15 minutes, and allow at most 5 wrong attempts.
+    """
+    __tablename__ = "verification_codes"
+
+    PURPOSES = ("confirm", "reset")
+    MAX_ATTEMPTS = 5
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    token_hash = db.Column(db.String(64), unique=True, nullable=False)
+    code_hash = db.Column(db.String(64), nullable=False)
+    purpose = db.Column(db.String(10), nullable=False)
     expires_at = db.Column(db.DateTime, nullable=False)
     used_at = db.Column(db.DateTime)
+    attempts = db.Column(db.Integer, nullable=False, default=0)
     request_ip = db.Column(db.String(45))
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+
+    def is_usable(self) -> bool:
+        return (self.used_at is None
+                and self.expires_at > utcnow()
+                and self.attempts < self.MAX_ATTEMPTS)
 
 
 class Product(db.Model):

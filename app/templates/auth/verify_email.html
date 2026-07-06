@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Confirm your email — {{ site.site_title }}{% endblock %}
+
+{% block content %}
+<section class="section">
+  <div class="container auth-card text-center" style="max-width: 460px;">
+    <div class="sun-disc" aria-hidden="true"></div>
+    <h1>Check your inbox</h1>
+    <p>We sent a 6-digit code{% if email %} to <strong>{{ email }}</strong>{% endif %}.
+       It works for 15 minutes — spam folders eat these sometimes.</p>
+    <form method="post" action="{{ url_for('auth.verify_email') }}" style="margin-top: 24px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {% if not email %}
+      <div class="field" style="text-align: left;">
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" required maxlength="255" autocomplete="email">
+      </div>
+      {% else %}
+      <input type="hidden" name="email" value="{{ email }}">
+      {% endif %}
+      <div class="field">
+        <label for="code" class="visually-hidden">6-digit code</label>
+        <input class="code-input" type="text" id="code" name="code" inputmode="numeric"
+               pattern="[0-9]{6}" maxlength="6" placeholder="••••••" required
+               autocomplete="one-time-code" autofocus>
+      </div>
+      <button class="btn btn--primary btn--wide" type="submit">Confirm my email</button>
+    </form>
+    <form method="post" action="{{ url_for('auth.verify_email') }}" style="margin-top: 16px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="email" value="{{ email }}">
+      <input type="hidden" name="action" value="resend">
+      <button class="btn--quiet" type="submit">Didn't get it? Send a fresh code</button>
+    </form>
+  </div>
+</section>
+{% endblock %}

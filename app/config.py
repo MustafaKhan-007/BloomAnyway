@@ -34,7 +34,7 @@ class Config:
     REMEMBER_COOKIE_DURATION = timedelta(days=30)
     REMEMBER_COOKIE_HTTPONLY = True
     REMEMBER_COOKIE_SAMESITE = "Lax"
-    MAGIC_LINK_MAX_AGE_MINUTES = 15
+    CODE_MAX_AGE_MINUTES = 15
     ADMIN_FRESH_LOGIN_HOURS = 24
 
     # Email (SMTP relay: Resend, Postmark, any)

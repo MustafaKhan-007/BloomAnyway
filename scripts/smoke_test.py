@@ -48,17 +48,22 @@ def ok(name, condition, detail=""):
 
 app = create_app(TestConfig)
 
-# capture login links instead of emailing
-sent_links = []
+# capture verification codes instead of emailing
+sent_codes = []
 import app.auth.routes as auth_routes
-auth_routes.send_login_link = lambda to, link: sent_links.append((to, link)) or True
+auth_routes.send_verification_code = lambda to, code, purpose: sent_codes.append((to, code, purpose)) or True
+
+ADMIN_PW = "owner-strong-pass-1"
 
 with app.app_context():
     db.create_all()
     seed = json.loads((Path(__file__).parents[1] / "data" / "quotes_seed.json").read_text(encoding="utf-8"))
     for row in seed["quotes"]:
         db.session.add(Quote(text=row["text"], author=row.get("author"), category=row["category"]))
-    db.session.add(User(email="owner@example.com", is_admin=True))
+    from app.models import utcnow
+    admin_user = User(email="owner@example.com", is_admin=True, email_verified_at=utcnow())
+    admin_user.set_password(ADMIN_PW)
+    db.session.add(admin_user)
     db.session.commit()
     n_quotes = Quote.query.count()
 
@@ -84,37 +89,63 @@ with app.app_context():
 ok("Rotation changes across days (some day differs)",
    today_q.id != tomorrow_q.id or today_q.id != day_after.id)
 
-# --- 2. magic-link auth --------------------------------------------------------
-r = client.post("/login", data={"email": "newperson@example.com"}, follow_redirects=True)
-msg_new = r.get_data(as_text=True)
-r = client.post("/login", data={"email": "owner@example.com"}, follow_redirects=True)
-msg_known = r.get_data(as_text=True)
-uniform = "a login link is on" in msg_new and "a login link is on" in msg_known
-ok("Uniform success message for unknown + known email", uniform)
-ok("Two login links captured", len(sent_links) == 2, str(len(sent_links)))
+# --- 2. email + password auth with confirmation codes ---------------------------
+USER_PW = "sunrise-day-1"
 
-link = sent_links[0][1].replace("http://localhost:5000", "")
-r = client.get(link, follow_redirects=False)
-ok("Magic link logs in and redirects to /account", r.status_code == 302 and "/account" in r.headers["Location"])
+r = client.post("/register", data={"email": "newperson@example.com", "password": "short"})
+ok("Weak password rejected on registration", r.status_code == 400)
+
+r = client.post("/register", data={"email": "newperson@example.com", "password": USER_PW},
+                follow_redirects=False)
+ok("Registration redirects to verify page", r.status_code == 302 and "verify-email" in r.headers["Location"])
+ok("Confirmation code emailed", len(sent_codes) == 1 and sent_codes[0][2] == "confirm")
+
+# unverified account can't just log in — it gets sent back to verification
+r = client.post("/login", data={"email": "newperson@example.com", "password": USER_PW},
+                follow_redirects=False)
+ok("Unverified login redirects to verification", r.status_code == 302 and "verify-email" in r.headers["Location"])
+
+# wrong code fails with attempts feedback, right code confirms + logs in
+r = client.post("/verify-email", data={"email": "newperson@example.com", "code": "000000"})
+wrong_ok = r.status_code == 400 and "tries left" in r.get_data(as_text=True)
+real_code = sent_codes[-1][1]
+r = client.post("/verify-email", data={"email": "newperson@example.com", "code": real_code},
+                follow_redirects=False)
+ok("Wrong code rejected with tries-left message", wrong_ok)
+ok("Correct code confirms and logs in", r.status_code == 302 and "/account" in r.headers["Location"])
 r = client.get("/account")
-ok("Account page accessible after login", r.status_code == 200)
+ok("Account page accessible after confirmation", r.status_code == 200)
 
-# reuse the same token
+# password checks
 fresh = app.test_client()
-r = fresh.get(link)
-ok("Reused token fails kindly", r.status_code == 400 and "done its work" in r.get_data(as_text=True))
-
-# open-redirect guard (separate client so `client` stays the non-admin user)
-redirect_client = app.test_client()
-r = redirect_client.get(sent_links[1][1].replace("http://localhost:5000", "") + "&next=https://evil.example.com")
+r = fresh.post("/login", data={"email": "newperson@example.com", "password": "wrong-password"})
+ok("Wrong password rejected (401)", r.status_code == 401)
+r = fresh.post("/login", data={"email": "newperson@example.com", "password": USER_PW,
+                               "next": "https://evil.example.com"}, follow_redirects=False)
 ok("Absolute next URL rejected (no open redirect)",
-   r.status_code == 400 or r.headers.get("Location", "/account").startswith("/"))
+   r.status_code == 302 and r.headers["Location"].startswith("/"))
+
+# forgot / reset password flow
+sent_codes.clear()
+reset_client = app.test_client()
+r = reset_client.post("/forgot-password", data={"email": "newperson@example.com"}, follow_redirects=True)
+uniform_known = "reset code is on its way" in r.get_data(as_text=True)
+r = reset_client.post("/forgot-password", data={"email": "ghost@example.com"}, follow_redirects=True)
+uniform_unknown = "reset code is on its way" in r.get_data(as_text=True)
+ok("Uniform reset message for known + unknown email", uniform_known and uniform_unknown)
+ok("Reset code only sent for real account", len(sent_codes) == 1 and sent_codes[0][2] == "reset")
+r = reset_client.post("/reset-password", data={"email": "newperson@example.com",
+                                               "code": sent_codes[0][1],
+                                               "password": "brand-new-pass-9"}, follow_redirects=False)
+ok("Password reset with valid code succeeds", r.status_code == 302)
+r = app.test_client().post("/login", data={"email": "newperson@example.com",
+                                           "password": "brand-new-pass-9"}, follow_redirects=False)
+ok("Login works with the new password", r.status_code == 302 and "/account" in r.headers["Location"])
 
 # --- 3. admin: product lifecycle ----------------------------------------------
 admin = app.test_client()
-sent_links.clear()
-admin.post("/login", data={"email": "owner@example.com"})
-admin.get(sent_links[0][1].replace("http://localhost:5000", ""))
+r = admin.post("/login", data={"email": "owner@example.com", "password": ADMIN_PW}, follow_redirects=False)
+ok("Admin password login works", r.status_code == 302)
 
 r = admin.get("/admin/")
 ok("Admin dashboard loads for admin", r.status_code == 200)
