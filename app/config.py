@@ -37,7 +37,10 @@ class Config:
     CODE_MAX_AGE_MINUTES = 15
     ADMIN_FRESH_LOGIN_HOURS = 24
 
-    # Email (SMTP relay: Resend, Postmark, any)
+    # Email — two transports, first configured one wins:
+    # 1. BREVO_API_KEY: HTTP API (works on hosts that block SMTP, e.g. Render free tier)
+    # 2. SMTP_*: classic SMTP relay (Gmail, Resend, Postmark, any)
+    BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "").strip()
     SMTP_HOST = os.environ.get("SMTP_HOST", "").strip()
     SMTP_PORT = int(os.environ.get("SMTP_PORT", "587") or 587)
     SMTP_USER = os.environ.get("SMTP_USER", "")
@@ -71,22 +74,23 @@ class ProdConfig(Config):
         "SECRET_KEY",
         "DATABASE_URL",
         "LEMONSQUEEZY_WEBHOOK_SECRET",
-        "SMTP_HOST",
-        "SMTP_PORT",
-        "SMTP_USER",
-        "SMTP_PASSWORD",
         "MAIL_FROM",
         "ADMIN_EMAIL",
         "SITE_URL",
     )
+    #: at least one email transport must be configured
+    SMTP_ENV = ("SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD")
 
     @classmethod
     def validate(cls) -> None:
         placeholders = {"", "change-me", "change-me-too", "dev-only-not-secret"}
-        missing = [
-            name for name in cls.REQUIRED_ENV
-            if os.environ.get(name, "").strip() in placeholders
-        ]
+
+        def unset(name):
+            return os.environ.get(name, "").strip() in placeholders
+
+        missing = [name for name in cls.REQUIRED_ENV if unset(name)]
+        if unset("BREVO_API_KEY") and any(unset(name) for name in cls.SMTP_ENV):
+            missing.append("BREVO_API_KEY or all of SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASSWORD")
         if missing:
             raise RuntimeError(
                 "Refusing to start in production. Missing/placeholder env vars: "

@@ -1,12 +1,18 @@
-"""SMTP mailer. Works with Resend, Postmark or any SMTP relay.
+"""Mailer with two transports.
 
-When SMTP_HOST is unset (local dev) emails are printed to the console so the
-magic-link flow is testable without a mail account.
+1. Brevo HTTP API (``BREVO_API_KEY``) — preferred on hosts that block outbound
+   SMTP ports, such as Render's free tier.
+2. Plain SMTP (``SMTP_HOST`` etc.) — Gmail, Resend, Postmark, any relay.
+
+When neither is configured (local dev) emails are printed to the console so the
+auth flows are testable without a mail account.
 """
 import logging
+import re
 import smtplib
 from email.message import EmailMessage
 
+import requests
 from flask import current_app
 
 log = logging.getLogger(__name__)
@@ -35,8 +41,72 @@ _BUTTON = """\
 </p>"""
 
 
+def _parse_from(mail_from: str) -> dict:
+    """Split 'Name <addr@x.com>' into Brevo's {"name": ..., "email": ...}."""
+    match = re.match(r"^\s*(.*?)\s*<([^>]+)>\s*$", mail_from)
+    if match:
+        name, email = match.groups()
+        return {"name": name or "First Light", "email": email}
+    return {"email": mail_from.strip()}
+
+
+def _send_via_brevo(to: str, subject: str, text_body: str, html_body: str | None) -> bool:
+    cfg = current_app.config
+    payload = {
+        "sender": _parse_from(cfg["MAIL_FROM"]),
+        "to": [{"email": to}],
+        "subject": subject,
+        "textContent": text_body,
+    }
+    if html_body:
+        payload["htmlContent"] = _BRAND_WRAPPER.format(body=html_body)
+    try:
+        resp = requests.post(
+            "https://api.brevo.com/v3/smtp/email",
+            json=payload,
+            headers={"api-key": cfg["BREVO_API_KEY"], "accept": "application/json"},
+            timeout=15,
+        )
+        if resp.status_code in (200, 201, 202):
+            return True
+        log.error("Brevo rejected email to %s: %s %s", to, resp.status_code, resp.text)
+        return False
+    except Exception:
+        log.exception("Failed to reach Brevo API for email to %s", to)
+        return False
+
+
+def _send_via_smtp(to: str, msg: EmailMessage) -> bool:
+    cfg = current_app.config
+    try:
+        if int(cfg["SMTP_PORT"]) == 465:
+            server = smtplib.SMTP_SSL(cfg["SMTP_HOST"], cfg["SMTP_PORT"], timeout=15)
+        else:
+            server = smtplib.SMTP(cfg["SMTP_HOST"], cfg["SMTP_PORT"], timeout=15)
+            server.starttls()
+        with server:
+            if cfg["SMTP_USER"]:
+                server.login(cfg["SMTP_USER"], cfg["SMTP_PASSWORD"])
+            server.send_message(msg)
+        return True
+    except Exception:
+        log.exception("Failed to send email to %s via SMTP", to)
+        return False
+
+
 def send_email(to: str, subject: str, text_body: str, html_body: str | None = None) -> bool:
     cfg = current_app.config
+
+    if cfg.get("BREVO_API_KEY"):
+        return _send_via_brevo(to, subject, text_body, html_body)
+
+    if not cfg["SMTP_HOST"]:
+        log.warning("No email transport configured; printing email to console.")
+        print("\n===== EMAIL (console fallback) =====")
+        print(f"To: {to}\nSubject: {subject}\n\n{text_body}")
+        print("====================================\n")
+        return True
+
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = cfg["MAIL_FROM"]
@@ -44,24 +114,7 @@ def send_email(to: str, subject: str, text_body: str, html_body: str | None = No
     msg.set_content(text_body)
     if html_body:
         msg.add_alternative(_BRAND_WRAPPER.format(body=html_body), subtype="html")
-
-    if not cfg["SMTP_HOST"]:
-        log.warning("SMTP not configured; printing email to console.")
-        print("\n===== EMAIL (console fallback) =====")
-        print(f"To: {to}\nSubject: {subject}\n\n{text_body}")
-        print("====================================\n")
-        return True
-
-    try:
-        with smtplib.SMTP(cfg["SMTP_HOST"], cfg["SMTP_PORT"], timeout=15) as server:
-            server.starttls()
-            if cfg["SMTP_USER"]:
-                server.login(cfg["SMTP_USER"], cfg["SMTP_PASSWORD"])
-            server.send_message(msg)
-        return True
-    except Exception:
-        log.exception("Failed to send email to %s", to)
-        return False
+    return _send_via_smtp(to, msg)
 
 
 _CODE_BOX = """\

@@ -50,10 +50,16 @@ running `flask run`.
 
 ### Environment variables
 
-See `.env.example` for the full annotated list. In production ALL of these are
+See `.env.example` for the full annotated list. In production these are
 required (the app refuses to boot otherwise): `SECRET_KEY`, `DATABASE_URL`,
-`LEMONSQUEEZY_WEBHOOK_SECRET`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`,
-`SMTP_PASSWORD`, `MAIL_FROM`, `ADMIN_EMAIL`, `SITE_URL`.
+`LEMONSQUEEZY_WEBHOOK_SECRET`, `MAIL_FROM`, `ADMIN_EMAIL`, `SITE_URL`, plus
+**one email transport** — either `BREVO_API_KEY` (HTTP API, works everywhere)
+or all four of `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER`/`SMTP_PASSWORD`.
+
+> **Render free tier note:** Render blocks outbound SMTP ports (25/465/587)
+> on free web services, so Gmail/any SMTP relay will time out there. Use
+> `BREVO_API_KEY` instead (free Brevo account, ~300 emails/day), or upgrade
+> the Render service to a paid instance to unblock SMTP.
 
 ---
 
