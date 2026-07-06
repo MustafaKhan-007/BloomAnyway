@@ -1,0 +1,49 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Orders{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Orders</h1>
+  <a class="btn btn--secondary btn--sm"
+     href="{{ url_for('admin.orders_export', product=request.args.get('product', ''), **{'from': request.args.get('from', ''), 'to': request.args.get('to', '')}) }}">Export CSV</a>
+</div>
+
+<form method="get" class="admin-panel" style="display: flex; gap: 16px; flex-wrap: wrap; align-items: end;">
+  <div class="field" style="margin: 0;">
+    <label for="product">Product</label>
+    <select id="product" name="product">
+      <option value="">All</option>
+      {% for p in products %}
+      <option value="{{ p.id }}" {{ 'selected' if request.args.get('product') == p.id|string }}>{{ p.title }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="field" style="margin: 0;">
+    <label for="from">From</label>
+    <input type="date" id="from" name="from" value="{{ request.args.get('from', '') }}">
+  </div>
+  <div class="field" style="margin: 0;">
+    <label for="to">To</label>
+    <input type="date" id="to" name="to" value="{{ request.args.get('to', '') }}">
+  </div>
+  <button class="btn btn--primary btn--sm" type="submit">Filter</button>
+</form>
+
+<table class="admin-table">
+  <thead><tr><th>Date</th><th>LS order</th><th>Product</th><th>Buyer</th><th>Amount</th><th>Status</th></tr></thead>
+  <tbody>
+    {% for order in items %}
+    <tr>
+      <td>{{ order.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+      <td>{{ order.ls_order_id }}</td>
+      <td>{{ order.product.title if order.product else '—' }}</td>
+      <td>{{ order.buyer_email }}</td>
+      <td>{{ order.total_display() }}</td>
+      <td><span class="status-pill status-pill--{{ order.status }}">{{ order.status }}</span></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6">No orders match.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

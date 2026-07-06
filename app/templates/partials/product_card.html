@@ -1,0 +1,17 @@
+<a class="card product-card reveal" href="{{ url_for('main.product_detail', slug=product.slug) }}">
+  {% if product.badge %}<span class="ribbon">{{ product.badge }}</span>{% endif %}
+  {% if product.cover_url %}
+    <img class="cover" src="{{ product.cover_url }}" alt="Cover of {{ product.title }}" loading="lazy">
+  {% else %}
+    <div class="cover" role="presentation"></div>
+  {% endif %}
+  <div class="body">
+    <span class="type-pill type-pill--{{ product.type }}">{{ product.type_label() }}</span>
+    <h3>{{ product.title }}</h3>
+    {% if product.promise %}<p class="promise">{{ product.promise }}</p>{% endif %}
+    <div class="price-row">
+      {{ product.price_display() }}
+      {% if product.compare_at_cents %}<del>{{ product.compare_at_display() }}</del>{% endif %}
+    </div>
+  </div>
+</a>

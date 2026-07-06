@@ -1,0 +1,30 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Edit {{ label }}{% endblock %}
+
+{% block content %}
+<h1>{{ label }}</h1>
+
+<form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="admin-panel">
+    <div class="field">
+      <label for="title">Title</label>
+      <input type="text" id="title" name="title" maxlength="160" value="{{ page.title if page else label }}">
+    </div>
+    <div class="field">
+      <label for="body_md">Body (Markdown)</label>
+      <textarea id="body_md" name="body_md" rows="24">{{ page.body_md if page else '' }}</textarea>
+      <p class="field-help">Headings with <code>##</code>, italics with <code>*stars*</code>, images with <code>![](https://...)</code>. Blockquotes (<code>&gt;</code>) render as pull-quotes on the story page.</p>
+    </div>
+  </div>
+  <button class="btn btn--primary" type="submit">Save page</button>
+  <a class="btn btn--secondary" href="{{ url_for('admin.pages') }}">Cancel</a>
+</form>
+
+{% if page and page.body_md %}
+<div class="admin-panel" style="margin-top: 24px;">
+  <h2>Preview</h2>
+  {{ page.body_md|markdown }}
+</div>
+{% endif %}
+{% endblock %}

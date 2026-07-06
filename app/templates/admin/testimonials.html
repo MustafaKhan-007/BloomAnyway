@@ -1,0 +1,77 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Testimonials{% endblock %}
+
+{% block content %}
+<h1>Testimonials</h1>
+
+<div class="admin-panel">
+  <h2>Add a testimonial</h2>
+  <form method="post" action="{{ url_for('admin.testimonial_save') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="field">
+      <label for="quote">Quote</label>
+      <textarea id="quote" name="quote" rows="3" required></textarea>
+    </div>
+    <div class="form-row">
+      <div class="field">
+        <label for="first_name">First name</label>
+        <input type="text" id="first_name" name="first_name" maxlength="60" required>
+      </div>
+      <div class="field">
+        <label for="product_id">Product (optional)</label>
+        <select id="product_id" name="product_id">
+          <option value="">— none / general —</option>
+          {% for p in products %}<option value="{{ p.id }}">{{ p.title }}</option>{% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field">
+        <label for="sort_order">Sort order</label>
+        <input type="number" id="sort_order" name="sort_order" value="0">
+      </div>
+      <div class="field" style="align-self: end;">
+        <label style="display: flex; gap: 8px; align-items: center; font-weight: 600;">
+          <input type="checkbox" name="show_on_home" value="1" style="width: auto;"> Show on the home page
+        </label>
+      </div>
+    </div>
+    <button class="btn btn--primary btn--sm" type="submit">Add testimonial</button>
+  </form>
+</div>
+
+<table class="admin-table">
+  <thead><tr><th>Quote</th><th>Name</th><th>Product</th><th>Home</th><th>Order</th><th></th></tr></thead>
+  <tbody>
+    {% for t in items %}
+    <tr>
+      <td style="max-width: 380px;">
+        <form method="post" action="{{ url_for('admin.testimonial_save', item_id=t.id) }}" id="t-form-{{ t.id }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <textarea name="quote" rows="2">{{ t.quote }}</textarea>
+        </form>
+      </td>
+      <td><input type="text" name="first_name" value="{{ t.first_name }}" form="t-form-{{ t.id }}" style="width: 110px;"></td>
+      <td>
+        <select name="product_id" form="t-form-{{ t.id }}">
+          <option value="">— general —</option>
+          {% for p in products %}<option value="{{ p.id }}" {{ 'selected' if t.product_id == p.id }}>{{ p.title }}</option>{% endfor %}
+        </select>
+      </td>
+      <td><input type="checkbox" name="show_on_home" value="1" form="t-form-{{ t.id }}" {{ 'checked' if t.show_on_home }} style="width: auto;"></td>
+      <td><input type="number" name="sort_order" value="{{ t.sort_order }}" form="t-form-{{ t.id }}" style="width: 64px;"></td>
+      <td style="white-space: nowrap;">
+        <button class="btn btn--primary btn--sm" type="submit" form="t-form-{{ t.id }}">Save</button>
+        <form class="inline-form" method="post" action="{{ url_for('admin.testimonial_delete', item_id=t.id) }}"
+              data-confirm="Delete this testimonial?">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn--danger btn--sm" type="submit">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6">No testimonials yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

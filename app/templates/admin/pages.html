@@ -1,0 +1,18 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Pages{% endblock %}
+
+{% block content %}
+<h1>Pages</h1>
+<table class="admin-table">
+  <thead><tr><th>Page</th><th>Last updated</th><th></th></tr></thead>
+  <tbody>
+    {% for slug, label in editable %}
+    <tr>
+      <td>{{ label }}</td>
+      <td>{{ existing[slug].updated_at.strftime('%Y-%m-%d %H:%M') if slug in existing else 'not written yet' }}</td>
+      <td><a class="btn btn--secondary btn--sm" href="{{ url_for('admin.page_edit', slug=slug) }}">Edit</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

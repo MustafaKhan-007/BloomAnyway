@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Something went sideways — {{ site.site_title }}{% endblock %}
+
+{% block content %}
+<section class="error-page">
+  <div class="sun-disc" aria-hidden="true"></div>
+  <h1>Something went sideways on our end.</h1>
+  <p style="margin: 0 auto 28px;">Not you &mdash; us. Take a breath, try again in a moment.</p>
+  <a class="btn btn--primary" href="{{ url_for('main.index') }}">Back home</a>
+</section>
+{% endblock %}

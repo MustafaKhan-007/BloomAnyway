@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}FAQ — {{ site.site_title }}{% endblock %}
+
+{% block content %}
+<section class="section">
+  <div class="container" style="max-width: 800px;">
+    <h1>Questions, answered</h1>
+    <p>If yours isn't here, <a href="{{ url_for('main.contact') }}">write to me</a> &mdash; I read everything.</p>
+    <div style="margin-top: 36px;">
+      {% for item in items %}
+      <details class="faq-item">
+        <summary>{{ item.question }}</summary>
+        <div class="answer">{{ item.answer_md|markdown }}</div>
+      </details>
+      {% else %}
+      <p>No questions yet &mdash; be the first to <a href="{{ url_for('main.contact') }}">ask one</a>.</p>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}{{ product.meta_title or product.title }} — {{ site.site_title }}{% endblock %}
+{% block meta_description %}{{ product.meta_description or product.promise or '' }}{% endblock %}
+
+{% block og %}
+  <meta property="og:type" content="product">
+  <meta property="og:title" content="{{ product.meta_title or product.title }}">
+  <meta property="og:description" content="{{ product.meta_description or product.promise or '' }}">
+  {% if product.cover_url %}<meta property="og:image" content="{{ product.cover_url }}">{% endif %}
+  <meta property="og:url" content="{{ config.SITE_URL }}{{ request.path }}">
+{% endblock %}
+
+{% block content %}
+<section class="section">
+  <div class="container product-hero">
+    <div>
+      {% if product.cover_url %}
+        <img class="cover" src="{{ product.cover_url }}" alt="Cover of {{ product.title }}">
+      {% endif %}
+    </div>
+    <div>
+      <span class="type-pill type-pill--{{ product.type }}">{{ product.type_label() }}</span>
+      <h1 style="font-size: 40px; margin-top: 14px;">{{ product.title }}</h1>
+      {% if product.promise %}<p class="subline" style="font-size: 19px; color: var(--ink-soft);">{{ product.promise }}</p>{% endif %}
+      <p class="price-large">
+        {% if product.compare_at_cents %}from {% endif %}{{ product.price_display() }}
+        {% if product.compare_at_cents %}<del>{{ product.compare_at_display() }}</del>{% endif %}
+      </p>
+      <a href="{{ product.ls_checkout_url }}" class="btn btn--primary lemonsqueezy-button">Get {{ product.type_label().lower() }} now</a>
+      <p class="trust-line">Secure checkout &middot; Cards &amp; PayPal &middot; Instant delivery by email</p>
+    </div>
+  </div>
+</section>
+
+{% if contents %}
+<section class="section section--band">
+  <div class="container">
+    <h2>What's inside</h2>
+    <ul class="check-list" style="max-width: 68ch;">
+      {% for item in contents %}<li>{{ item }}</li>{% endfor %}
+    </ul>
+  </div>
+</section>
+{% endif %}
+
+{% if product.description_md or product.audience %}
+<section class="section">
+  <div class="container">
+    {% if product.description_md %}
+      <div style="max-width: 68ch;">{{ product.description_md|markdown }}</div>
+    {% endif %}
+    {% if product.audience %}
+      <h2 style="margin-top: 48px;">Who this is for</h2>
+      <p>{{ product.audience }}</p>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+{% if curriculum %}
+<section class="section section--band">
+  <div class="container">
+    <h2>What we'll walk through</h2>
+    <ol class="curriculum" style="max-width: 68ch;">
+      {% for module in curriculum %}
+      <li>
+        <h3>{{ module.title }}</h3>
+        {% if module.description %}<p>{{ module.description }}</p>{% endif %}
+      </li>
+      {% endfor %}
+    </ol>
+  </div>
+</section>
+{% endif %}
+
+{% if testimonials %}
+<section class="section section--rose">
+  <div class="container">
+    <h2>From people who took this one</h2>
+    <div class="grid grid--3">
+      {% for t in testimonials %}
+      <div class="testimonial-card">
+        <div class="stars" aria-label="5 out of 5 stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div>
+        <blockquote>&ldquo;{{ t.quote }}&rdquo;</blockquote>
+        <cite>{{ t.first_name }}</cite>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
+{% if faqs %}
+<section class="section">
+  <div class="container" style="max-width: 800px;">
+    <h2>Common questions</h2>
+    {% for item in faqs %}
+    <details class="faq-item">
+      <summary>{{ item.question }}</summary>
+      <div class="answer">{{ item.answer_md|markdown }}</div>
+    </details>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if related %}
+<section class="section section--band">
+  <div class="container">
+    <h2>You might also like</h2>
+    <div class="grid grid--3">
+      {% for product in related %}
+        {% include "partials/product_card.html" %}
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="https://assets.lemonsqueezy.com/lemon.js" defer></script>
+{% endblock %}

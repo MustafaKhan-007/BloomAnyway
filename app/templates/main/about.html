@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}My story — {{ site.site_title }}{% endblock %}
+
+{% block content %}
+<article class="section">
+  <div class="container" style="max-width: 760px;">
+    {% if page %}
+      <h1>{{ page.title }}</h1>
+      <hr class="horizon-rule horizon-rule--heading">
+      <div class="about-body">{{ page.body_md|markdown }}</div>
+    {% else %}
+      <h1>My story</h1>
+      <hr class="horizon-rule horizon-rule--heading">
+      <p>This page is still being written &mdash; in the best way. Check back soon.</p>
+    {% endif %}
+  </div>
+</article>
+
+<section class="section section--band cta-band">
+  <div class="container">
+    <h2>Ready when you are</h2>
+    <p style="margin: 0 auto 28px;">No pressure. The work will be here when you want it.</p>
+    <a class="btn btn--primary" href="{{ url_for('main.courses') }}">Browse the courses</a>
+  </div>
+</section>
+{% endblock %}
+
+{% block head %}
+<style>
+  /* horizon rules under h2s inside the story body (spec §2.2) */
+  .about-body h2::after {
+    content: "";
+    display: block;
+    width: 64px; height: 3px;
+    background: var(--horizon);
+    border-radius: 3px;
+    margin-top: 12px;
+  }
+  .about-body blockquote {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 24px;
+    line-height: 1.45;
+    color: var(--plum);
+    border-left: 3px solid var(--gold);
+    margin: 36px 0;
+    padding-left: 24px;
+  }
+  .about-body img { border-radius: 20px; margin: 32px 0; }
+</style>
+{% endblock %}

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Courses &amp; Guides — {{ site.site_title }}{% endblock %}
+
+{% block content %}
+<section class="section">
+  <div class="container">
+    <h1>Courses &amp; Guides</h1>
+    <p>Everything here was built for real weeks, not perfect ones.</p>
+
+    <nav class="filter-tabs" aria-label="Filter by type">
+      <a href="{{ url_for('main.courses') }}" class="{{ 'active' if active_type == 'all' }}">All</a>
+      <a href="{{ url_for('main.courses', type='course') }}" class="{{ 'active' if active_type == 'course' }}">Courses</a>
+      <a href="{{ url_for('main.courses', type='guide') }}" class="{{ 'active' if active_type == 'guide' }}">Notebook Guides</a>
+    </nav>
+
+    {% if products %}
+      <div class="grid grid--3">
+        {% for product in products %}
+          {% include "partials/product_card.html" %}
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="text-center" style="padding: 64px 0;">
+        <h2>Nothing here just yet.</h2>
+        <p style="margin: 0 auto 24px;">This shelf is still being filled &mdash; the rest of the catalog is one tab over.</p>
+        <a class="btn btn--secondary" href="{{ url_for('main.courses') }}">See everything</a>
+      </div>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

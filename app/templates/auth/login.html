@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Sign in — {{ site.site_title }}{% endblock %}
+
+{% block content %}
+<section class="section">
+  <div class="container" style="max-width: 480px;">
+    <h1>Welcome back</h1>
+    <hr class="horizon-rule horizon-rule--heading">
+    <p>No passwords here. We'll email you a one-time link &mdash; it works for 15 minutes.</p>
+    <form method="post" action="{{ url_for('auth.login') }}" style="margin-top: 28px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="next" value="{{ next }}">
+      <div class="field">
+        <label for="email">Your email</label>
+        <input type="email" id="email" name="email" required maxlength="255" autocomplete="email" autofocus>
+      </div>
+      <button class="btn btn--primary" type="submit">Send me a login link</button>
+    </form>
+    <p class="field-help" style="margin-top: 20px;">First time? The same button creates your space &mdash; nothing else needed.</p>
+  </div>
+</section>
+{% endblock %}

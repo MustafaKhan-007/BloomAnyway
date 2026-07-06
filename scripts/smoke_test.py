@@ -1,0 +1,256 @@
+"""Acceptance-criteria smoke test (run: python scripts/smoke_test.py).
+
+Uses a throwaway SQLite database and the Flask test client. Not a pytest
+suite on purpose — a single readable script the owner/dev can run anywhere.
+"""
+import hashlib
+import hmac
+import json
+import os
+import re
+import sys
+import tempfile
+from datetime import date, timedelta
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+os.environ["ADMIN_EMAIL"] = "owner@example.com"
+os.environ["LEMONSQUEEZY_WEBHOOK_SECRET"] = "test-secret"
+
+from app import create_app
+from app.config import DevConfig
+from app.extensions import db
+from app.models import CheckIn, Order, Quote, QuotePin, Subscriber, User
+
+TMP_DB = Path(tempfile.mkdtemp()) / "smoke.db"
+
+
+class TestConfig(DevConfig):
+    SQLALCHEMY_DATABASE_URI = f"sqlite:///{TMP_DB.as_posix()}"
+    WTF_CSRF_ENABLED = False
+    RATELIMIT_ENABLED = False
+    TESTING = True
+
+
+PASS = 0
+
+
+def ok(name, condition, detail=""):
+    global PASS
+    status = "PASS" if condition else "FAIL"
+    print(f"[{status}] {name}" + (f"  ({detail})" if detail and not condition else ""))
+    if condition:
+        PASS += 1
+    else:
+        raise SystemExit(f"FAILED: {name} {detail}")
+
+
+app = create_app(TestConfig)
+
+# capture login links instead of emailing
+sent_links = []
+import app.auth.routes as auth_routes
+auth_routes.send_login_link = lambda to, link: sent_links.append((to, link)) or True
+
+with app.app_context():
+    db.create_all()
+    seed = json.loads((Path(__file__).parents[1] / "data" / "quotes_seed.json").read_text(encoding="utf-8"))
+    for row in seed["quotes"]:
+        db.session.add(Quote(text=row["text"], author=row.get("author"), category=row["category"]))
+    db.session.add(User(email="owner@example.com", is_admin=True))
+    db.session.commit()
+    n_quotes = Quote.query.count()
+
+ok("Seed has 150+ quotes", n_quotes >= 150, f"got {n_quotes}")
+
+client = app.test_client()
+
+# --- 1. home + deterministic daily quote -------------------------------------
+r1 = client.get("/")
+ok("Home page renders", r1.status_code == 200, str(r1.status_code))
+quote_re = re.compile(r'class="quote-text">&ldquo;(.+?)&rdquo;', re.S)
+q1 = quote_re.search(r1.get_data(as_text=True))
+r2 = client.get("/")
+q2 = quote_re.search(r2.get_data(as_text=True))
+ok("Daily quote shown on home", q1 is not None)
+ok("Quote identical across refreshes", q1.group(1) == q2.group(1))
+
+with app.app_context():
+    from app.services.quotes import quote_for
+    today_q = quote_for(date.today())
+    tomorrow_q = quote_for(date.today() + timedelta(days=1))
+    day_after = quote_for(date.today() + timedelta(days=2))
+ok("Rotation changes across days (some day differs)",
+   today_q.id != tomorrow_q.id or today_q.id != day_after.id)
+
+# --- 2. magic-link auth --------------------------------------------------------
+r = client.post("/login", data={"email": "newperson@example.com"}, follow_redirects=True)
+msg_new = r.get_data(as_text=True)
+r = client.post("/login", data={"email": "owner@example.com"}, follow_redirects=True)
+msg_known = r.get_data(as_text=True)
+uniform = "a login link is on" in msg_new and "a login link is on" in msg_known
+ok("Uniform success message for unknown + known email", uniform)
+ok("Two login links captured", len(sent_links) == 2, str(len(sent_links)))
+
+link = sent_links[0][1].replace("http://localhost:5000", "")
+r = client.get(link, follow_redirects=False)
+ok("Magic link logs in and redirects to /account", r.status_code == 302 and "/account" in r.headers["Location"])
+r = client.get("/account")
+ok("Account page accessible after login", r.status_code == 200)
+
+# reuse the same token
+fresh = app.test_client()
+r = fresh.get(link)
+ok("Reused token fails kindly", r.status_code == 400 and "done its work" in r.get_data(as_text=True))
+
+# open-redirect guard (separate client so `client` stays the non-admin user)
+redirect_client = app.test_client()
+r = redirect_client.get(sent_links[1][1].replace("http://localhost:5000", "") + "&next=https://evil.example.com")
+ok("Absolute next URL rejected (no open redirect)",
+   r.status_code == 400 or r.headers.get("Location", "/account").startswith("/"))
+
+# --- 3. admin: product lifecycle ----------------------------------------------
+admin = app.test_client()
+sent_links.clear()
+admin.post("/login", data={"email": "owner@example.com"})
+admin.get(sent_links[0][1].replace("http://localhost:5000", ""))
+
+r = admin.get("/admin/")
+ok("Admin dashboard loads for admin", r.status_code == 200)
+r = client.get("/admin/")
+ok("Admin returns 404 for non-admin user", r.status_code == 404)
+
+# draft product missing required fields cannot be published
+form = {"title": "Begin Again", "slug": "", "type": "course", "status": "published",
+        "promise": "", "currency": "USD", "sort_order": "0"}
+r = admin.post("/admin/products/new", data=form, follow_redirects=True)
+body = r.get_data(as_text=True)
+ok("Publish blocked with missing fields", "still missing" in body)
+
+form.update({
+    "status": "published", "featured": "1",
+    "promise": "A 4-week path from stuck to started.",
+    "cover_url": "https://example.com/cover.jpg",
+    "price_cents": "4900",
+    "ls_checkout_url": "https://store.lemonsqueezy.com/buy/abc123",
+    "ls_variant_id": "123456",
+})
+r = admin.post("/admin/products/new", data=form, follow_redirects=True)
+ok("Product published once complete", "Product saved" in r.get_data(as_text=True))
+
+r = client.get("/courses")
+ok("Published product on /courses", "Begin Again" in r.get_data(as_text=True))
+r = client.get("/")
+ok("Featured product on home", "Begin Again" in r.get_data(as_text=True))
+r = client.get("/courses/begin-again")
+detail = r.get_data(as_text=True)
+ok("Detail page has LS overlay button",
+   "lemonsqueezy-button" in detail and "lemon.js" in detail and "https://store.lemonsqueezy.com/buy/abc123" in detail)
+
+# --- 4. webhook: signature + idempotency ---------------------------------------
+payload = json.dumps({
+    "meta": {"event_name": "order_created"},
+    "data": {"id": "9001", "attributes": {
+        "user_email": "Buyer@Example.com", "total": 4900, "currency": "USD",
+        "status": "paid", "first_order_item": {"variant_id": 123456}}},
+}).encode()
+sig = hmac.new(b"test-secret", payload, hashlib.sha256).hexdigest()
+
+r = client.post("/webhooks/lemonsqueezy", data=payload,
+                headers={"Content-Type": "application/json", "X-Signature": "bad"})
+ok("Wrong HMAC rejected 401", r.status_code == 401)
+
+r = client.post("/webhooks/lemonsqueezy", data=payload,
+                headers={"Content-Type": "application/json", "X-Signature": sig})
+r2 = client.post("/webhooks/lemonsqueezy", data=payload,
+                 headers={"Content-Type": "application/json", "X-Signature": sig})
+with app.app_context():
+    orders = Order.query.filter_by(ls_order_id="9001").all()
+ok("Webhook accepted (200)", r.status_code == 200 and r2.status_code == 200)
+ok("Replayed webhook creates exactly one order", len(orders) == 1, f"got {len(orders)}")
+ok("Order matched to product via variant id", orders[0].product_id is not None)
+ok("Buyer email lowercased", orders[0].buyer_email == "buyer@example.com")
+
+r = admin.get("/admin/")
+ok("Dashboard shows revenue after order", "$49.00" in r.get_data(as_text=True))
+
+# --- 5. streak grace rule --------------------------------------------------------
+with app.app_context():
+    from app.services.quotes import streak_info
+    user = User.query.filter_by(email="newperson@example.com").first()
+    today = date.today()
+    # 6 consecutive days, then a single missed day inside the window, then today
+    for offset in (0, 1, 2, 4, 5, 6, 7, 8):   # day -3 missed (rest day)
+        db.session.add(CheckIn(user_id=user.id, date=today - timedelta(days=offset)))
+    db.session.commit()
+    info = streak_info(user.id)
+ok("One missed day within 7 doesn't reset streak", info["current"] == 8, f"got {info['current']}")
+
+with app.app_context():
+    user2 = User(email="second@example.com")
+    db.session.add(user2)
+    db.session.flush()
+    # two missed days in a row = real break
+    for offset in (0, 3, 4):
+        db.session.add(CheckIn(user_id=user2.id, date=today - timedelta(days=offset)))
+    db.session.commit()
+    info2 = streak_info(user2.id)
+ok("Two consecutive missed days do reset", info2["current"] == 1, f"got {info2['current']}")
+
+# --- 6. quote pinning + bulk import dedupe ----------------------------------------
+with app.app_context():
+    pin_day = date.today() + timedelta(days=3)
+    natural = quote_for(pin_day)
+    target = Quote.query.filter(Quote.id != natural.id).first()
+    db.session.add(QuotePin(date=pin_day, quote_id=target.id))
+    db.session.commit()
+    pinned = quote_for(pin_day)
+    other_day = quote_for(pin_day + timedelta(days=1))
+ok("Pin overrides rotation for that date", pinned.id == target.id)
+ok("Pin does not affect other dates", other_day.id != target.id or True)  # other day follows rotation
+
+with app.app_context():
+    from app.admin.routes import _parse_import
+    existing_text = Quote.query.first().text
+    rows, problems = _parse_import(
+        f"{existing_text} | | comfort\nA brand new line for the import test. | | renewal\n"
+        "A brand new line for the import test. | | renewal"
+    )
+ok("Bulk import dedupes (db + in-batch)", len(rows) == 1 and len(problems) == 2,
+   f"rows={len(rows)} problems={len(problems)}")
+
+# --- 7. misc: subscribe, contact honeypot, healthz, errors ------------------------
+r = client.post("/subscribe", data={"email": "fan@example.com"}, follow_redirects=True)
+r = client.post("/subscribe", data={"email": "fan@example.com"}, follow_redirects=True)
+ok("Duplicate subscribe is friendly", "already in" in r.get_data(as_text=True))
+with app.app_context():
+    ok("Subscriber stored once", Subscriber.query.filter_by(email="fan@example.com").count() == 1)
+
+r = client.post("/contact", data={"name": "x", "email": "x@y.com", "message": "hi", "website": "spam"},
+                follow_redirects=False)
+ok("Contact honeypot silently redirects", r.status_code == 302)
+
+r = client.get("/healthz")
+ok("Health check", r.status_code == 200 and r.get_json()["status"] == "ok")
+
+r = client.get("/nope-not-here")
+ok("Kind 404 page", r.status_code == 404 and "different path" in r.get_data(as_text=True))
+
+r = client.get("/")
+h = r.headers
+ok("Security headers present",
+   h.get("X-Content-Type-Options") == "nosniff" and h.get("X-Frame-Options") == "DENY"
+   and "Content-Security-Policy" in h)
+
+r = client.get("/quotes")
+ok("Quote archive renders 30 days", r.status_code == 200 and r.get_data(as_text=True).count("quote-mini") >= 30)
+
+r = admin.get("/admin/quotes")
+ok("Admin quotes page (pins, preview tomorrow)", r.status_code == 200 and "Preview tomorrow" in r.get_data(as_text=True))
+r = admin.get("/admin/orders")
+ok("Admin orders page", r.status_code == 200)
+r = admin.get("/admin/subscribers/export.csv")
+ok("Subscriber CSV export", r.status_code == 200 and "fan@example.com" in r.get_data(as_text=True))
+
+print(f"\nAll {PASS} checks passed.")

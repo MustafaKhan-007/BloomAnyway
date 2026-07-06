@@ -1,0 +1,42 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Settings{% endblock %}
+
+{% block content %}
+<h1>Settings</h1>
+
+<form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="admin-panel">
+    <div class="form-row">
+      <div class="field">
+        <label for="site_title">Site title</label>
+        <input type="text" id="site_title" name="site_title" value="{{ values.site_title }}">
+      </div>
+      <div class="field">
+        <label for="instagram_url">Instagram URL</label>
+        <input type="url" id="instagram_url" name="instagram_url" value="{{ values.instagram_url }}">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field">
+        <label for="portrait_url">Portrait image URL (home hero)</label>
+        <input type="url" id="portrait_url" name="portrait_url" value="{{ values.portrait_url }}" placeholder="https://...">
+      </div>
+      <div class="field">
+        <label for="hero_image_url">Story teaser image URL</label>
+        <input type="url" id="hero_image_url" name="hero_image_url" value="{{ values.hero_image_url }}" placeholder="https://...">
+      </div>
+    </div>
+    <div class="field">
+      <label for="contact_email">Contact email (shown publicly if you choose)</label>
+      <input type="email" id="contact_email" name="contact_email" value="{{ values.contact_email }}">
+    </div>
+    <div class="field">
+      <label for="announcement_text">Announcement bar (leave empty to hide)</label>
+      <input type="text" id="announcement_text" name="announcement_text" value="{{ values.announcement_text }}"
+             placeholder="e.g. The new course opens Monday ☀">
+    </div>
+  </div>
+  <button class="btn btn--primary" type="submit">Save settings</button>
+</form>
+{% endblock %}

@@ -1,0 +1,41 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Products{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Products</h1>
+  <a class="btn btn--primary btn--sm" href="{{ url_for('admin.product_form') }}">New product</a>
+</div>
+
+<table class="admin-table">
+  <thead>
+    <tr><th></th><th>Title</th><th>Type</th><th>Status</th><th>Price</th><th>Featured</th><th></th></tr>
+  </thead>
+  <tbody id="sortable-products"
+         data-reorder-url="{{ url_for('admin.products_reorder') }}"
+         data-csrf="{{ csrf_token() }}">
+    {% for product in products %}
+    <tr data-id="{{ product.id }}">
+      <td><span class="drag-handle" title="Drag to reorder" aria-hidden="true">&#8942;&#8942;</span></td>
+      <td><a href="{{ url_for('admin.product_form', product_id=product.id) }}">{{ product.title }}</a></td>
+      <td>{{ product.type_label() }}</td>
+      <td><span class="status-pill status-pill--{{ product.status }}">{{ product.status }}</span></td>
+      <td>{{ product.price_display() }}</td>
+      <td>{{ '\u2605' if product.featured }}</td>
+      <td style="white-space: nowrap;">
+        <a class="btn btn--secondary btn--sm" href="{{ url_for('admin.product_form', product_id=product.id) }}">Edit</a>
+        {% if product.orders.count() == 0 %}
+        <form class="inline-form" method="post" action="{{ url_for('admin.product_delete', product_id=product.id) }}"
+              data-confirm="Delete '{{ product.title }}'? This can't be undone.">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn--danger btn--sm" type="submit">Delete</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7">No products yet — create the first one.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

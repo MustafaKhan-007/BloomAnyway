@@ -1,0 +1,30 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Subscribers{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Subscribers ({{ items|length }})</h1>
+  <a class="btn btn--secondary btn--sm" href="{{ url_for('admin.subscribers_export') }}">Export CSV</a>
+</div>
+
+<table class="admin-table">
+  <thead><tr><th>Email</th><th>Joined</th><th></th></tr></thead>
+  <tbody>
+    {% for sub in items %}
+    <tr>
+      <td>{{ sub.email }}</td>
+      <td>{{ sub.created_at.strftime('%Y-%m-%d') }}</td>
+      <td>
+        <form class="inline-form" method="post" action="{{ url_for('admin.subscriber_delete', sub_id=sub.id) }}"
+              data-confirm="Remove {{ sub.email }} from the list?">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn--danger btn--sm" type="submit">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="3">No subscribers yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

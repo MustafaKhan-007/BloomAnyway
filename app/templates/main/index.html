@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block content %}
+<!-- 1. Hero -->
+<section class="hero">
+  <div class="container hero-grid">
+    <div>
+      <p class="eyebrow" data-rise="1">A new chapter starts quietly</p>
+      <h1 data-rise="2">Wherever you're starting from &mdash; even here &mdash; this is where it turns.</h1>
+      <hr class="horizon-rule" data-rise="3">
+      <p class="subline" data-rise="4">Courses and guided notebooks for rebuilding, one honest day at a time.</p>
+      <div class="hero-actions" data-rise="5">
+        <a class="btn btn--primary" href="{{ url_for('main.courses') }}">Browse the courses</a>
+        <a class="btn btn--secondary" href="{{ url_for('main.about') }}">Read my story</a>
+      </div>
+    </div>
+    {% if site.portrait_url %}
+    <div class="hero-image-wrap" data-rise="6">
+      <img class="hero-image" src="{{ site.portrait_url }}" alt="Portrait of {{ site.site_title }}">
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+<!-- 2. Daily quote -->
+<section class="section" style="padding-top: 0;">
+  <div class="container">
+    {% include "partials/quote_card.html" %}
+  </div>
+</section>
+
+<!-- 3. Featured products -->
+{% if featured %}
+<section class="section section--band">
+  <div class="container">
+    <h2>Start where you are</h2>
+    <div class="grid grid--3">
+      {% for product in featured %}
+        {% include "partials/product_card.html" %}
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
+<!-- 4. Story teaser -->
+<section class="section">
+  <div class="container grid grid--2" style="align-items: center;">
+    {% if site.hero_image_url %}
+      <img src="{{ site.hero_image_url }}" alt="" loading="lazy" style="border-radius: 20px;" class="reveal">
+    {% endif %}
+    <div class="reveal">
+      <p class="eyebrow">Her story</p>
+      <h2>I didn't rebuild my life in one brave leap.</h2>
+      <p>I rebuilt it in small, unglamorous mornings &mdash; a single mother with a notebook, a kitchen table, and fifteen quiet minutes before the day started asking things of me. What I learned in those mornings became everything I make now.</p>
+      <a class="btn--quiet" href="{{ url_for('main.about') }}">Read the whole story &rarr;</a>
+    </div>
+  </div>
+</section>
+
+<!-- 5. Testimonials -->
+<section class="section section--rose">
+  <div class="container">
+    <h2>Words from people who started</h2>
+    <div class="grid grid--3">
+      {% for t in testimonials %}
+      <div class="testimonial-card reveal">
+        <div class="stars" aria-label="5 out of 5 stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div>
+        <blockquote>&ldquo;{{ t.quote }}&rdquo;</blockquote>
+        <cite>{{ t.first_name }}</cite>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<!-- 6. Email capture -->
+<section class="section" id="letter">
+  <div class="container text-center">
+    <h2>One small step, every Sunday</h2>
+    <p style="margin: 0 auto 28px;">A short letter with one idea worth keeping and one thing to try. No noise, ever.</p>
+    {% with subscribe_messages = get_flashed_messages(with_categories=true, category_filter=['subscribe-success', 'subscribe-error']) %}
+      {% for category, message in subscribe_messages %}
+        <div class="flash flash--{{ category }}" role="status" style="max-width: 480px; margin: 0 auto 16px;">{{ message }}</div>
+      {% endfor %}
+    {% endwith %}
+    <form class="subscribe-row" method="post" action="{{ url_for('main.subscribe') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="honeypot" aria-hidden="true">
+        <label for="website">Leave this empty</label>
+        <input type="text" id="website" name="website" tabindex="-1" autocomplete="off">
+      </div>
+      <label class="visually-hidden" for="subscribe-email">Email address</label>
+      <input type="email" id="subscribe-email" name="email" placeholder="you@example.com" required>
+      <button class="btn btn--primary" type="submit">Join the letter</button>
+    </form>
+  </div>
+</section>
+{% endblock %}

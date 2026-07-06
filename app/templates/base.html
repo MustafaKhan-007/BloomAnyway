@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ site.site_title }} — Courses & guided notebooks{% endblock %}</title>
+  <meta name="description" content="{% block meta_description %}Courses and guided notebooks for rebuilding, one honest day at a time.{% endblock %}">
+  {% block og %}{% endblock %}
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  {% if site.announcement_text %}
+  <div class="announcement" data-hash="{{ site.announcement_text|length }}" role="region" aria-label="Announcement">
+    {{ site.announcement_text }}
+    <button type="button" aria-label="Dismiss announcement">&times;</button>
+  </div>
+  {% endif %}
+
+  <header class="site-header">
+    <nav class="nav" aria-label="Main">
+      <a class="nav-brand" href="{{ url_for('main.index') }}">{{ site.site_title }}</a>
+      <div class="nav-links">
+        <a href="{{ url_for('main.courses') }}" {% if request.path.startswith('/courses') %}aria-current="page"{% endif %}>Courses &amp; Guides</a>
+        <a href="{{ url_for('main.about') }}" {% if request.path == '/about' %}aria-current="page"{% endif %}>My story</a>
+        <a href="{{ url_for('main.quotes') }}" {% if request.path == '/quotes' %}aria-current="page"{% endif %}>Daily words</a>
+        <a href="{{ url_for('main.faq') }}" {% if request.path == '/faq' %}aria-current="page"{% endif %}>FAQ</a>
+        {% if current_user.is_authenticated %}
+          <a href="{{ url_for('main.account') }}" {% if request.path == '/account' %}aria-current="page"{% endif %}>My space</a>
+        {% else %}
+          <a href="{{ url_for('auth.login') }}">Sign in</a>
+        {% endif %}
+      </div>
+      <button class="nav-toggle" aria-expanded="false" aria-controls="nav-drawer" aria-label="Menu">
+        <span></span><span></span><span></span>
+      </button>
+    </nav>
+    <div class="nav-drawer" id="nav-drawer">
+      <a href="{{ url_for('main.courses') }}">Courses &amp; Guides</a>
+      <a href="{{ url_for('main.about') }}">My story</a>
+      <a href="{{ url_for('main.quotes') }}">Daily words</a>
+      <a href="{{ url_for('main.faq') }}">FAQ</a>
+      {% if current_user.is_authenticated %}
+        <a href="{{ url_for('main.account') }}">My space</a>
+      {% else %}
+        <a href="{{ url_for('auth.login') }}">Sign in</a>
+      {% endif %}
+    </div>
+  </header>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% set general = messages|rejectattr(0, 'in', ['subscribe-success', 'subscribe-error'])|list %}
+    {% if general %}
+      <div class="flash-stack">
+        {% for category, message in general %}
+          <div class="flash flash--{{ category }}" role="status">{{ message }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  <main id="main">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div>
+          <div class="footer-brand">{{ site.site_title }}</div>
+          <p style="color: var(--rose-soft); max-width: 32ch;">Courses and guided notebooks for rebuilding, one honest day at a time.</p>
+        </div>
+        <div class="footer-links">
+          <a href="{{ url_for('main.courses') }}">Courses &amp; Guides</a>
+          <a href="{{ url_for('main.about') }}">My story</a>
+          <a href="{{ url_for('main.quotes') }}">Daily words</a>
+          <a href="{{ url_for('main.contact') }}">Contact</a>
+          {% if site.instagram_url %}<a href="{{ site.instagram_url }}" rel="noopener">Instagram</a>{% endif %}
+        </div>
+        <div class="footer-links">
+          <a href="{{ url_for('main.privacy') }}">Privacy</a>
+          <a href="{{ url_for('main.terms') }}">Terms</a>
+          <a href="{{ url_for('main.refunds') }}">Refunds</a>
+          <a href="{{ url_for('main.faq') }}">FAQ</a>
+        </div>
+      </div>
+      <div class="footer-meta">
+        <span>&copy; {{ current_year }} {{ site.site_title }}</span>
+        <span>Powered by her own two hands</span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="{{ url_for('static', filename='js/main.js') }}" defer></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

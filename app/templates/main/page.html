@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}{{ (page.title if page else fallback_title) }} — {{ site.site_title }}{% endblock %}
+
+{% block content %}
+<article class="section">
+  <div class="container" style="max-width: 760px;">
+    <h1>{{ page.title if page else fallback_title }}</h1>
+    <hr class="horizon-rule horizon-rule--heading">
+    {% if page and page.body_md %}
+      {{ page.body_md|markdown }}
+    {% else %}
+      <p>This page is being prepared. <em>TODO: legal review.</em></p>
+      <p>In the meantime, questions are always welcome on the <a href="{{ url_for('main.contact') }}">contact page</a>.</p>
+    {% endif %}
+  </div>
+</article>
+{% endblock %}

@@ -1,0 +1,33 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Import preview{% endblock %}
+
+{% block content %}
+<h1>Import preview</h1>
+
+{% if problems %}
+<div class="admin-panel">
+  <h2>Heads up</h2>
+  <ul>{% for p in problems %}<li>{{ p }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<div class="admin-panel">
+  <h2>{{ rows|length }} quotes ready to import</h2>
+  <table class="admin-table">
+    <thead><tr><th>Text</th><th>Author</th><th>Category</th></tr></thead>
+    <tbody>
+      {% for row in rows %}
+      <tr><td>{{ row.text }}</td><td>{{ row.author or '—' }}</td><td>{{ row.category }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<form method="post" action="{{ url_for('admin.quote_import') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="bulk" value="{{ raw }}">
+  <input type="hidden" name="confirm" value="yes">
+  <button class="btn btn--primary" type="submit" {{ 'disabled' if not rows }}>Import {{ rows|length }} quotes</button>
+  <a class="btn btn--secondary" href="{{ url_for('admin.quotes') }}">Cancel</a>
+</form>
+{% endblock %}

@@ -1,0 +1,166 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}{{ 'Edit' if product.id else 'New' }} product{% endblock %}
+
+{% block content %}
+<h1>{{ 'Edit: ' + product.title if product.id else 'New product' }}</h1>
+
+{% if product.id and product.status != 'published' and product.publish_blockers() %}
+<div class="flash flash--info">
+  Before this can be published it still needs: {{ product.publish_blockers()|join(', ') }}.
+</div>
+{% endif %}
+
+<form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <div class="admin-panel">
+    <h2>Basics</h2>
+    <div class="form-row">
+      <div class="field">
+        <label for="title">Title</label>
+        <input type="text" id="title" name="title" required maxlength="160" value="{{ product.title or '' }}">
+      </div>
+      <div class="field">
+        <label for="slug">Slug</label>
+        <input type="text" id="slug" name="slug" maxlength="150" value="{{ product.slug or '' }}">
+        <p class="field-help">The web address: /courses/&lt;slug&gt;. Auto-filled from the title.</p>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field">
+        <label for="type">Type</label>
+        <select id="type" name="type">
+          <option value="course" {{ 'selected' if product.type == 'course' }}>Course</option>
+          <option value="guide" {{ 'selected' if product.type == 'guide' }}>Notebook Guide</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="status">Status</label>
+        <select id="status" name="status">
+          <option value="draft" {{ 'selected' if product.status == 'draft' }}>Draft</option>
+          <option value="published" {{ 'selected' if product.status == 'published' }}>Published</option>
+          <option value="archived" {{ 'selected' if product.status == 'archived' }}>Archived</option>
+        </select>
+        <p class="field-help">Archived products disappear from the shop but keep their order history.</p>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field">
+        <label for="badge">Badge (optional)</label>
+        <input type="text" id="badge" name="badge" maxlength="30" value="{{ product.badge or '' }}" placeholder='e.g. "New", "Bestseller"'>
+      </div>
+      <div class="field">
+        <label for="sort_order">Sort order</label>
+        <input type="number" id="sort_order" name="sort_order" value="{{ product.sort_order or 0 }}">
+      </div>
+    </div>
+    <label style="display: flex; gap: 8px; align-items: center;">
+      <input type="checkbox" name="featured" value="1" style="width: auto;" {{ 'checked' if product.featured }}>
+      Feature on the home page (up to 3 shown)
+    </label>
+  </div>
+
+  <div class="admin-panel">
+    <h2>Story</h2>
+    <div class="field">
+      <label for="promise">One-line promise (max 120 chars)</label>
+      <input type="text" id="promise" name="promise" maxlength="120" value="{{ product.promise or '' }}"
+             placeholder="What changes for the person who buys this?">
+      <p class="field-help">Shown on cards and used as the search/social description.</p>
+    </div>
+    <div class="field">
+      <label for="description_md">Full description (Markdown)</label>
+      <textarea id="description_md" name="description_md" rows="10">{{ product.description_md or '' }}</textarea>
+    </div>
+    <div class="field">
+      <label for="audience">Who this is for</label>
+      <textarea id="audience" name="audience" rows="3">{{ product.audience or '' }}</textarea>
+    </div>
+    <div class="field">
+      <label for="contents_text">What's inside (one item per line)</label>
+      <textarea id="contents_text" name="contents_text" rows="6">{{ product.contents_text or '' }}</textarea>
+    </div>
+    <div class="field">
+      <label>Curriculum / modules</label>
+      <div id="module-list">
+        {% for module in curriculum %}
+        <div class="form-row module-row">
+          <div class="field"><input type="text" name="curriculum_title" placeholder="Module title" value="{{ module.title }}"></div>
+          <div class="field" style="display: flex; gap: 8px;">
+            <input type="text" name="curriculum_desc" placeholder="Short description" value="{{ module.description }}">
+            <button type="button" class="btn btn--secondary btn--sm remove-module" aria-label="Remove module">&times;</button>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      <button type="button" class="btn btn--secondary btn--sm" id="add-module">Add module</button>
+    </div>
+  </div>
+
+  <div class="admin-panel">
+    <h2>Media</h2>
+    <div class="field">
+      <label for="cover_url">Cover image URL (https)</label>
+      <input type="url" id="cover_url" name="cover_url" value="{{ product.cover_url or '' }}" placeholder="https://...">
+      <p class="field-help">Paste a URL from Instagram CDN, Imgur, Cloudinary, etc. 4:5 portrait works best. Files on this server don't survive deploys, so images live at URLs.</p>
+      <img id="cover-preview" class="cover-preview" alt="Cover preview" hidden>
+    </div>
+    <div class="field">
+      <label for="gallery_urls">Gallery URLs (one per line, optional)</label>
+      <textarea id="gallery_urls" name="gallery_urls" rows="3">{{ gallery }}</textarea>
+    </div>
+  </div>
+
+  <div class="admin-panel">
+    <h2>Pricing &amp; Lemon Squeezy</h2>
+    <div class="form-row">
+      <div class="field">
+        <label for="price_cents">Price (in cents)</label>
+        <input type="number" id="price_cents" name="price_cents" min="0"
+               value="{{ product.price_cents if product.price_cents is not none else '' }}" placeholder="2900 = $29">
+      </div>
+      <div class="field">
+        <label for="compare_at_cents">Compare-at price (cents, optional)</label>
+        <input type="number" id="compare_at_cents" name="compare_at_cents" min="0"
+               value="{{ product.compare_at_cents if product.compare_at_cents is not none else '' }}" placeholder="Shown struck through">
+      </div>
+    </div>
+    <div class="field">
+      <label for="currency">Currency</label>
+      <select id="currency" name="currency">
+        {% for cur in ['USD', 'EUR', 'GBP'] %}
+        <option value="{{ cur }}" {{ 'selected' if product.currency == cur }}>{{ cur }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="ls_checkout_url">Lemon Squeezy buy link</label>
+      <input type="url" id="ls_checkout_url" name="ls_checkout_url" value="{{ product.ls_checkout_url or '' }}"
+             placeholder="https://yourstore.lemonsqueezy.com/buy/...">
+      <p class="field-help">In Lemon Squeezy: open the product &rarr; <strong>Share</strong> &rarr; copy the <strong>Buy link / Checkout link</strong>. Required to publish.</p>
+    </div>
+    <div class="field">
+      <label for="ls_variant_id">Lemon Squeezy variant ID</label>
+      <input type="text" id="ls_variant_id" name="ls_variant_id" value="{{ product.ls_variant_id or '' }}" placeholder="e.g. 123456">
+      <p class="field-help">In Lemon Squeezy: open the product &rarr; the <strong>Variants</strong> tab &rarr; the ID shown for the variant (also in the variant's URL). This is how sales get matched to this product on your dashboard.</p>
+    </div>
+  </div>
+
+  <div class="admin-panel">
+    <h2>SEO (optional overrides)</h2>
+    <div class="form-row">
+      <div class="field">
+        <label for="meta_title">Meta title</label>
+        <input type="text" id="meta_title" name="meta_title" maxlength="160" value="{{ product.meta_title or '' }}">
+      </div>
+      <div class="field">
+        <label for="meta_description">Meta description</label>
+        <input type="text" id="meta_description" name="meta_description" maxlength="200" value="{{ product.meta_description or '' }}">
+      </div>
+    </div>
+  </div>
+
+  <button class="btn btn--primary" type="submit">Save product</button>
+  <a class="btn btn--secondary" href="{{ url_for('admin.products') }}">Cancel</a>
+</form>
+{% endblock %}

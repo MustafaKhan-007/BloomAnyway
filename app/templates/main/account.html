@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}My space — {{ site.site_title }}{% endblock %}
+
+{% block content %}
+<section class="section">
+  <div class="container">
+    <h1>{{ greeting }}{% if current_user.first_name() %}, {{ current_user.first_name() }}{% endif %}.</h1>
+
+    {% include "partials/quote_card.html" %}
+
+    {% if streak %}
+    <div class="grid grid--3" style="margin-top: 32px;">
+      <div class="card" style="padding: 24px; text-align: center;">
+        <p class="eyebrow" style="margin-bottom: 4px;">Current streak</p>
+        <p style="font-family: var(--font-display); font-size: 36px; font-weight: 600; color: var(--plum); margin: 0;">{{ streak.current }}</p>
+        <p style="color: var(--ink-soft); font-size: 14px; margin: 4px 0 0;">
+          {% if streak.current == 0 %}Streaks restart. So do people. Day 1 again &mdash; welcome back.{% else %}day{{ 's' if streak.current != 1 }} of showing up{% endif %}
+        </p>
+      </div>
+      <div class="card" style="padding: 24px; text-align: center;">
+        <p class="eyebrow" style="margin-bottom: 4px;">Longest streak</p>
+        <p style="font-family: var(--font-display); font-size: 36px; font-weight: 600; color: var(--plum); margin: 0;">{{ streak.longest }}</p>
+        <p style="color: var(--ink-soft); font-size: 14px; margin: 4px 0 0;">your best run so far</p>
+      </div>
+      <div class="card" style="padding: 24px; text-align: center;">
+        <p class="eyebrow" style="margin-bottom: 4px;">Total check-ins</p>
+        <p style="font-family: var(--font-display); font-size: 36px; font-weight: 600; color: var(--plum); margin: 0;">{{ streak.total }}</p>
+        <p style="color: var(--ink-soft); font-size: 14px; margin: 4px 0 0;">every one of them counts</p>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+<section class="section section--band">
+  <div class="container">
+    <h2>Your library</h2>
+    {% if orders %}
+      <table class="admin-table">
+        <thead><tr><th>Date</th><th>Product</th><th>Amount</th><th>Status</th></tr></thead>
+        <tbody>
+          {% for order in orders %}
+          <tr>
+            <td>{{ order.created_at.strftime('%b') }} {{ order.created_at.day }}, {{ order.created_at.year }}</td>
+            <td>{% if order.product %}<a href="{{ url_for('main.product_detail', slug=order.product.slug) }}">{{ order.product.title }}</a>{% else %}Order {{ order.ls_order_id }}{% endif %}</td>
+            <td>{{ order.total_display() }}</td>
+            <td><span class="status-pill status-pill--{{ order.status }}">{{ order.status }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="field-help" style="margin-top: 14px;">
+        Your download links were emailed to you at purchase. Need them again?
+        <a href="https://app.lemonsqueezy.com/my-orders" rel="noopener">Resend from your order page</a> &mdash; it takes ten seconds.
+      </p>
+    {% else %}
+      <p>Nothing here yet &mdash; and that's fine. <a href="{{ url_for('main.courses') }}">The shelf is over here</a> whenever you're ready.</p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <h2>Quotes you kept</h2>
+    {% if favorites %}
+      <div class="grid grid--3">
+        {% for quote in favorites %}
+        <div class="quote-mini">
+          <p class="text">&ldquo;{{ quote.text }}&rdquo;</p>
+          {% if quote.author %}<span style="color: var(--ink-soft); font-size: 14px;">&mdash; {{ quote.author }}</span>{% endif %}
+          <form method="post" action="{{ url_for('main.toggle_favorite', quote_id=quote.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="next" value="{{ url_for('main.account') }}">
+            <button class="heart-btn on" type="submit" aria-label="Remove from favorites">&#9829;</button>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p>When a line lands, tap the heart on the <a href="{{ url_for('main.quotes') }}">daily words page</a> and it'll live here.</p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="section section--band">
+  <div class="container" style="max-width: 560px;">
+    <h2>Profile</h2>
+    <form method="post" action="{{ url_for('main.update_profile') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="field">
+        <label for="display_name">What should we call you?</label>
+        <input type="text" id="display_name" name="display_name" maxlength="80"
+               value="{{ current_user.display_name or '' }}" placeholder="Your first name is plenty">
+      </div>
+      <button class="btn btn--primary" type="submit">Save</button>
+    </form>
+
+    <div style="margin-top: 48px;">
+      <h3>Leaving?</h3>
+      <p class="field-help">Closing your account removes your check-ins and favorites from view. Your purchases stay safe with Lemon Squeezy.</p>
+      <form method="post" action="{{ url_for('main.delete_account') }}"
+            data-confirm="Close your account? This can't be undone from here.">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label style="font-weight: 400; display: flex; gap: 8px; align-items: center; margin: 12px 0;">
+          <input type="checkbox" name="confirm" value="yes" style="width: auto;"> Yes, I'm sure
+        </label>
+        <button class="btn btn--danger btn--sm" type="submit">Close my account</button>
+      </form>
+      <form method="post" action="{{ url_for('auth.logout') }}" style="margin-top: 24px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn--secondary btn--sm" type="submit">Sign out</button>
+      </form>
+    </div>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,129 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Quotes{% endblock %}
+
+{% block content %}
+<h1>Quotes</h1>
+
+<div class="admin-grid-2">
+  <div class="admin-panel">
+    <h2>Add a quote</h2>
+    <form method="post" action="{{ url_for('admin.quote_save') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="field">
+        <label for="text">Text (max 240 chars)</label>
+        <textarea id="text" name="text" rows="3" maxlength="240" required></textarea>
+      </div>
+      <div class="form-row">
+        <div class="field">
+          <label for="author">Author (optional)</label>
+          <input type="text" id="author" name="author" maxlength="120">
+        </div>
+        <div class="field">
+          <label for="category">Category</label>
+          <select id="category" name="category" required>
+            {% for cat in categories %}<option value="{{ cat }}">{{ cat }}</option>{% endfor %}
+          </select>
+        </div>
+      </div>
+      <input type="hidden" name="active" value="1">
+      <button class="btn btn--primary btn--sm" type="submit">Add quote</button>
+    </form>
+  </div>
+
+  <div>
+    <div class="admin-panel">
+      <h2>Preview tomorrow</h2>
+      {% if tomorrow_quote %}
+        <p style="font-family: var(--font-display); font-style: italic;">&ldquo;{{ tomorrow_quote.text }}&rdquo;</p>
+        <p class="field-help">{{ tomorrow.strftime('%A, %b') }} {{ tomorrow.day }} &middot; {{ tomorrow_quote.category }}</p>
+      {% else %}
+        <p>No active quotes yet.</p>
+      {% endif %}
+    </div>
+
+    <div class="admin-panel">
+      <h2>Pin a quote to a date</h2>
+      <p class="field-help">A pinned quote overrides rotation for that day only — handy for launch days.</p>
+      <form method="post" action="{{ url_for('admin.quote_pin') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-row">
+          <div class="field">
+            <label for="pin-date">Date</label>
+            <input type="date" id="pin-date" name="date" required>
+          </div>
+          <div class="field">
+            <label for="pin-quote">Quote</label>
+            <select id="pin-quote" name="quote_id" required>
+              {% for q in quotes if q.active %}
+              <option value="{{ q.id }}">{{ q.text[:60] }}{{ '…' if q.text|length > 60 }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <button class="btn btn--primary btn--sm" type="submit">Pin it</button>
+      </form>
+      {% if pins %}
+      <table class="admin-table" style="margin-top: 16px;">
+        <thead><tr><th>Date</th><th>Quote</th><th></th></tr></thead>
+        <tbody>
+          {% for pin in pins %}
+          <tr>
+            <td>{{ pin.date.isoformat() }}</td>
+            <td>{{ pin.quote.text[:50] }}{{ '…' if pin.quote.text|length > 50 }}</td>
+            <td>
+              <form class="inline-form" method="post" action="{{ url_for('admin.quote_unpin', pin_id=pin.id) }}"
+                    data-confirm="Remove this pin?">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn--secondary btn--sm" type="submit">Unpin</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="admin-panel">
+  <h2>Bulk import</h2>
+  <p class="field-help">One quote per line: <code>text | author | category</code> (author may be blank; category = comfort, determination, or renewal). You'll get a preview with duplicates flagged before anything is saved.</p>
+  <form method="post" action="{{ url_for('admin.quote_import') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="field">
+      <textarea name="bulk" rows="5" placeholder="Start scared. Scared still counts as started. | | determination"></textarea>
+    </div>
+    <button class="btn btn--secondary btn--sm" type="submit">Preview import</button>
+  </form>
+</div>
+
+<h2 style="margin-top: 32px;">All quotes ({{ quotes|length }})</h2>
+<table class="admin-table">
+  <thead><tr><th>Text</th><th>Author</th><th>Category</th><th>Shown</th><th>&#9829;</th><th>Active</th><th></th></tr></thead>
+  <tbody>
+    {% for q in quotes %}
+    <tr>
+      <td style="max-width: 420px;">{{ q.text }}</td>
+      <td>{{ q.author or '—' }}</td>
+      <td>{{ q.category }}</td>
+      <td>{{ q.times_shown }}</td>
+      <td>{{ fav_counts.get(q.id, 0) }}</td>
+      <td>
+        <form class="inline-form" method="post" action="{{ url_for('admin.quote_toggle', quote_id=q.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn--{{ 'gold' if q.active else 'secondary' }} btn--sm" type="submit">{{ 'On' if q.active else 'Off' }}</button>
+        </form>
+      </td>
+      <td>
+        <form class="inline-form" method="post" action="{{ url_for('admin.quote_delete', quote_id=q.id) }}"
+              data-confirm="Delete this quote?">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn--danger btn--sm" type="submit">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

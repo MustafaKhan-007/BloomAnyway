@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Daily words — {{ site.site_title }}{% endblock %}
+
+{% block content %}
+<section class="section">
+  <div class="container">
+    <h1>Daily words</h1>
+    <p>The last 30 days of first light. Today's is gold.</p>
+
+    <div class="grid grid--3" style="margin-top: 40px;">
+      {% for day, quote in recent %}
+      <div class="quote-mini {{ 'today' if day == today }}">
+        <span class="date">{{ day.strftime('%A') }}, {{ day.strftime('%b') }} {{ day.day }}{{ ' · today' if day == today }}</span>
+        <p class="text">&ldquo;{{ quote.text }}&rdquo;</p>
+        {% if quote.author %}<span style="color: var(--ink-soft); font-size: 14px;">&mdash; {{ quote.author }}</span>{% endif %}
+        {% if current_user.is_authenticated %}
+        <form method="post" action="{{ url_for('main.toggle_favorite', quote_id=quote.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="next" value="{{ url_for('main.quotes') }}">
+          <button class="heart-btn {{ 'on' if quote.id in favorite_ids }}" type="submit"
+                  aria-label="{{ 'Remove from favorites' if quote.id in favorite_ids else 'Save to favorites' }}"
+                  aria-pressed="{{ 'true' if quote.id in favorite_ids else 'false' }}">
+            {{ '\u2665' if quote.id in favorite_ids else '\u2661' }}
+          </button>
+        </form>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+
+    {% if not current_user.is_authenticated %}
+    <p style="margin-top: 40px;">
+      <a class="btn--quiet" href="{{ url_for('auth.login') }}">Sign in to save the ones that land &rarr;</a>
+    </p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

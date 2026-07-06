@@ -1,0 +1,114 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% macro delta_badge(value) %}
+  {% if value is not none %}
+    <span class="delta {{ 'up' if value >= 0 else 'down' }}">{{ '+' if value >= 0 }}{{ value }}% vs prior 30d</span>
+  {% endif %}
+{% endmacro %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Dashboard</h1>
+  <form method="post" action="{{ url_for('admin.sync') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn btn--secondary btn--sm" type="submit">Sync with Lemon Squeezy</button>
+  </form>
+</div>
+
+<div class="admin-cards">
+  <div class="stat-card">
+    <div class="label">Revenue (30d)</div>
+    <div class="value">${{ '%.2f'|format(cards.revenue) }}</div>
+    {{ delta_badge(cards.revenue_delta) }}
+  </div>
+  <div class="stat-card">
+    <div class="label">Orders (30d)</div>
+    <div class="value">{{ cards.orders }}</div>
+    {{ delta_badge(cards.orders_delta) }}
+  </div>
+  <div class="stat-card">
+    <div class="label">New subscribers (30d)</div>
+    <div class="value">{{ cards.subscribers }}</div>
+    {{ delta_badge(cards.subscribers_delta) }}
+  </div>
+  <div class="stat-card">
+    <div class="label">Checked in today</div>
+    <div class="value">{{ cards.active_streaks }}</div>
+  </div>
+</div>
+
+<div class="chart-panel">
+  <h2>Revenue by day (90 days)</h2>
+  <canvas id="chart-revenue" height="80"></canvas>
+</div>
+
+<div class="admin-grid-2">
+  <div class="chart-panel">
+    <h2>Orders by product (90 days)</h2>
+    <canvas id="chart-products"></canvas>
+  </div>
+  <div class="chart-panel">
+    <h2>Signups &amp; subscribers by week</h2>
+    <canvas id="chart-signups"></canvas>
+  </div>
+</div>
+
+<div class="admin-grid-2">
+  <div class="admin-panel">
+    <h2>Recent orders</h2>
+    <table class="admin-table">
+      <thead><tr><th>Date</th><th>Product</th><th>Buyer</th><th>Amount</th><th>Status</th></tr></thead>
+      <tbody>
+        {% for order in recent_orders %}
+        <tr>
+          <td>{{ order.created_at.strftime('%Y-%m-%d') }}</td>
+          <td>{{ order.product.title if order.product else '—' }}</td>
+          <td>{{ order.masked_email() }}</td>
+          <td>{{ order.total_display() }}</td>
+          <td><span class="status-pill status-pill--{{ order.status }}">{{ order.status }}</span></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5">No orders yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div>
+    <div class="admin-panel">
+      <h2>Top products (all time)</h2>
+      <table class="admin-table">
+        <thead><tr><th>Product</th><th>Orders</th><th>Revenue</th></tr></thead>
+        <tbody>
+          {% for product, n, cents in top_products %}
+          <tr><td>{{ product.title }}</td><td>{{ n }}</td><td>${{ '%.2f'|format((cents or 0) / 100) }}</td></tr>
+          {% else %}
+          <tr><td colspan="3">No sales yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="admin-panel">
+      <h2>Most visited pages (7 days)</h2>
+      <table class="admin-table">
+        <thead><tr><th>Path</th><th>Views</th></tr></thead>
+        <tbody>
+          {% for path, views in most_visited %}
+          <tr><td>{{ path }}</td><td>{{ views }}</td></tr>
+          {% else %}
+          <tr><td colspan="2">No views recorded yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script id="dashboard-data" type="application/json">
+  {{ {'revenue': chart_revenue, 'products': chart_products, 'signups': chart_signups}|tojson }}
+</script>
+{% endblock %}
+
+{% block scripts_pre %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js" defer></script>
+{% endblock %}

@@ -1,0 +1,28 @@
+<section class="quote-card" id="today" aria-label="Today's first light">
+  <div class="sun-disc" aria-hidden="true"></div>
+  {% if today_quote %}
+    <blockquote class="quote-text">&ldquo;{{ today_quote.text }}&rdquo;</blockquote>
+    <p class="quote-attribution">
+      {% if today_quote.author %}&mdash; {{ today_quote.author }}{% else %}First light &middot; {{ today.strftime('%B') }} {{ today.day }}{% endif %}
+    </p>
+  {% else %}
+    <blockquote class="quote-text">Today's words are still on their way.</blockquote>
+  {% endif %}
+
+  {% if current_user.is_authenticated and streak %}
+    <div class="checkin">
+      {% if streak.checked_today %}
+        <p class="checkin-confirmed">Day {{ streak.current }} &mdash; you showed up.</p>
+      {% else %}
+        <form method="post" action="{{ url_for('main.checkin') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="next" value="{{ request.path }}#today">
+          <button class="btn btn--primary" type="submit">I showed up today</button>
+        </form>
+      {% endif %}
+      <div class="dot-row" aria-label="Your last 7 days">
+        {% for hit in streak.last7 %}<span class="{{ 'hit' if hit }}"></span>{% endfor %}
+      </div>
+    </div>
+  {% endif %}
+</section>
