@@ -148,10 +148,16 @@ def account():
                  .filter(QuoteFavorite.user_id == current_user.id)
                  .order_by(QuoteFavorite.created_at.desc()).all())
     return render_template("main/account.html", greeting=greeting, orders=orders,
-                           favorites=favorites, intents=INTENTS,
-                           user_goals=set(current_user.goals()),
+                           favorites=favorites,
                            recommended=recommend_products(current_user),
                            **_quote_context())
+
+
+@bp.route("/account/settings")
+@login_required
+def settings():
+    return render_template("main/settings.html", intents=INTENTS,
+                           user_goals=set(current_user.goals()))
 
 
 @bp.route("/account/profile", methods=["POST"])
@@ -179,11 +185,11 @@ def update_profile():
         except AvatarError as exc:
             db.session.commit()  # keep the other field edits
             flash(str(exc), "error")
-            return redirect(url_for("main.account") + "#settings")
+            return redirect(url_for("main.settings"))
 
     db.session.commit()
     flash("Saved. Nice to meet you properly.", "success")
-    return redirect(url_for("main.account") + "#settings")
+    return redirect(url_for("main.settings"))
 
 
 @bp.route("/avatar/<int:user_id>")
@@ -203,14 +209,14 @@ def change_password():
     new = (request.form.get("new_password") or "").strip()
     if not current_user.check_password(current):
         flash("Your current password didn't match \u2014 no changes made.", "error")
-        return redirect(url_for("main.account"))
+        return redirect(url_for("main.settings"))
     if len(new) < 8:
         flash("Your new password needs at least 8 characters.", "error")
-        return redirect(url_for("main.account"))
+        return redirect(url_for("main.settings"))
     current_user.set_password(new)
     db.session.commit()
     flash("Password updated.", "success")
-    return redirect(url_for("main.account"))
+    return redirect(url_for("main.settings"))
 
 
 @bp.route("/account/delete", methods=["POST"])

@@ -106,4 +106,21 @@
       if (!window.confirm(form.dataset.confirm)) e.preventDefault();
     });
   });
+
+  /* ---- live preview when picking a new avatar ---- */
+  document.querySelectorAll("[data-avatar-preview]").forEach(function (input) {
+    input.addEventListener("change", function () {
+      var file = input.files && input.files[0];
+      if (!file) return;
+      var pick = input.closest(".avatar-edit") &&
+                 input.closest(".avatar-edit").querySelector(".avatar");
+      if (!pick) return;
+      var url = URL.createObjectURL(file);
+      pick.style.backgroundImage = "url('" + url + "')";
+      pick.textContent = "";
+      // untick "remove" if the person just chose a new picture
+      var remove = document.querySelector("input[name='remove_avatar']");
+      if (remove) remove.checked = false;
+    });
+  });
 })();

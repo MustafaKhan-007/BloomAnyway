@@ -333,6 +333,11 @@ r = client.get(f"/avatar/{av_uid}")
 ok("Avatar is served from the database",
    r.status_code == 200 and r.headers["Content-Type"].startswith("image/"))
 
+r = client.get("/account/settings")
+sbody = r.get_data(as_text=True)
+ok("Settings page renders with intents + upload",
+   r.status_code == 200 and "What brings you here?" in sbody and 'name="avatar_file"' in sbody)
+
 # recommendations match a member's stated intent to hidden course tags
 with app.app_context():
     from app.models import Product
