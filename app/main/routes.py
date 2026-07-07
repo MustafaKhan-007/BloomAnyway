@@ -4,13 +4,15 @@ import logging
 import re
 from datetime import date, datetime
 
-from flask import (abort, flash, redirect, render_template, request, url_for)
+from flask import (Response, abort, flash, redirect, render_template, request,
+                   url_for)
 from flask_login import current_user, login_required
 
 from ..extensions import db, limiter
 from ..models import (ContactMessage, FaqItem, Order, Page, Product, Quote,
-                      QuoteFavorite, Subscriber, Testimonial, utcnow)
+                      QuoteFavorite, Subscriber, Testimonial, User, utcnow)
 from ..services import quotes as quotes_service
+from ..services.avatars import AvatarError, process_avatar
 from ..services.mailer import send_contact_notification
 from ..services.recommend import INTENTS, recommend_products, valid_intent_keys
 from . import bp
@@ -157,17 +159,41 @@ def account():
 def update_profile():
     name = (request.form.get("display_name") or "").strip()[:80]
     bio = (request.form.get("bio") or "").strip()[:400]
-    avatar = (request.form.get("avatar_url") or "").strip()[:500]
-    if avatar and not avatar.lower().startswith(("http://", "https://")):
-        avatar = ""
     current_user.display_name = name or None
     current_user.bio = bio or None
-    current_user.avatar_url = avatar or None
     current_user.default_anonymous = request.form.get("default_anonymous") == "1"
     current_user.set_goals(valid_intent_keys(request.form.getlist("goals")))
+
+    if request.form.get("remove_avatar") == "1":
+        current_user.avatar_data = None
+        current_user.avatar_mime = None
+        current_user.avatar_url = None
+
+    upload = request.files.get("avatar_file")
+    if upload and upload.filename:
+        try:
+            data, mime = process_avatar(upload)
+            current_user.avatar_data = data
+            current_user.avatar_mime = mime
+            current_user.avatar_url = None
+        except AvatarError as exc:
+            db.session.commit()  # keep the other field edits
+            flash(str(exc), "error")
+            return redirect(url_for("main.account") + "#settings")
+
     db.session.commit()
     flash("Saved. Nice to meet you properly.", "success")
     return redirect(url_for("main.account") + "#settings")
+
+
+@bp.route("/avatar/<int:user_id>")
+def avatar(user_id):
+    user = db.session.get(User, user_id)
+    if user is None or not user.avatar_data:
+        abort(404)
+    resp = Response(bytes(user.avatar_data), mimetype=user.avatar_mime or "image/jpeg")
+    resp.headers["Cache-Control"] = "public, max-age=86400"
+    return resp
 
 
 @bp.route("/account/password", methods=["POST"])

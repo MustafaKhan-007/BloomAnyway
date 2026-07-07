@@ -696,3 +696,34 @@ details.faq-item > form { padding: 0 20px 20px; }
 
 .like-form { display: inline-block; }
 .heart-btn span { font-weight: 600; }
+
+/* topic tags + filters */
+.tag-filter { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px; }
+.tag-chip {
+  display: inline-block; padding: 6px 14px; border-radius: 999px;
+  border: 1px solid var(--rose-soft); background: var(--ivory);
+  color: var(--ink-soft); text-decoration: none; font-size: 14px; font-weight: 600;
+  transition: border-color 150ms ease, color 150ms ease, background 150ms ease;
+}
+.tag-chip:hover { border-color: var(--plum); color: var(--plum); }
+.tag-chip.on { background: var(--plum); border-color: var(--plum); color: #fff; }
+.tag-chip--mini {
+  padding: 2px 9px; font-size: 12px; margin-right: 6px; vertical-align: middle;
+  background: var(--rose-wash, rgba(123, 108, 246, 0.1)); color: var(--plum);
+  border-color: transparent;
+}
+.forum-post .tag-chip--mini { display: inline-block; margin-bottom: 10px; }
+
+/* one-level reply threads */
+.comment-thread { display: grid; gap: 12px; }
+.reply-list { display: grid; gap: 12px; margin-left: 28px;
+  padding-left: 16px; border-left: 2px solid var(--rose-soft); }
+.comment--reply { background: var(--ivory); }
+.reply-toggle { display: inline-block; margin-left: 6px; }
+.reply-toggle > summary {
+  display: inline; list-style: none; cursor: pointer;
+  color: var(--plum); font-size: 13px; font-weight: 600;
+}
+.reply-toggle > summary::-webkit-details-marker { display: none; }
+.comment-form--reply { margin-top: 12px; }
+.comment-form--reply textarea { width: 100%; }

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/avatar.html" import avatar %}
 {% block title %}{{ post.title }} — Community — {{ site.site_title }}{% endblock %}
 
 {% macro like_button(action_url, count, liked) %}
@@ -13,17 +14,45 @@
   {% endif %}
 {% endmacro %}
 
+{% macro comment_block(c, liked_comments, is_reply=False) %}
+<div class="comment {{ 'comment--reply' if is_reply }}">
+  <div class="comment__head">
+    {{ avatar(c.author, 'sm', c.anonymous) }}
+    <strong>{{ c.display_author() }}</strong>
+    <span class="comment__date">{{ c.created_at.strftime('%b %d, %Y') }}</span>
+  </div>
+  <div class="forum-body">{{ c.body|nl2br }}</div>
+  <div class="forum-actions">
+    {{ like_button(url_for('forums.like_comment', comment_id=c.id), c.like_count(), c.id in liked_comments) }}
+    {% if not is_reply and current_user.is_authenticated and not current_user.forum_banned %}
+    <details class="reply-toggle">
+      <summary>Reply</summary>
+      <form method="post" action="{{ url_for('forums.create_comment', post_id=post.id) }}" class="comment-form comment-form--reply">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="parent_id" value="{{ c.id }}">
+        <textarea name="body" rows="2" required maxlength="4000" placeholder="Reply kindly…"></textarea>
+        <label style="font-weight: 400; display: flex; gap: 8px; align-items: center; margin: 8px 0;">
+          <input type="checkbox" name="anonymous" value="1" style="width: auto;" {{ 'checked' if anon_default }}>
+          Reply anonymously
+        </label>
+        <button class="btn btn--secondary btn--sm" type="submit">Reply</button>
+      </form>
+    </details>
+    {% endif %}
+  </div>
+</div>
+{% endmacro %}
+
 {% block content %}
 <section class="section">
   <div class="container" style="max-width: 760px;">
     <p class="eyebrow"><a href="{{ url_for('forums.category', slug=post.category.slug) }}">&larr; {{ post.category.name }}</a></p>
 
     <article class="forum-post">
+      {% if post.tag %}<span class="tag-chip tag-chip--mini">{{ post.tag.name }}</span>{% endif %}
       <h1>{{ post.title }}</h1>
       <p class="post-row__meta">
-        <span class="avatar avatar--sm"{% if not post.anonymous and post.author.avatar_url %} style="background-image:url('{{ post.author.avatar_url }}')"{% endif %}>
-          {% if post.anonymous %}?{% elif not post.author.avatar_url %}{{ post.author.initials() }}{% endif %}
-        </span>
+        {{ avatar(post.author, 'sm', post.anonymous) }}
         {{ post.display_author() }} &middot; {{ post.created_at.strftime('%b %d, %Y') }}
       </p>
       <div class="forum-body">{{ post.body|nl2br }}</div>
@@ -32,7 +61,7 @@
       </div>
     </article>
 
-    <h2 id="comments">Comments ({{ comments|length }})</h2>
+    <h2 id="comments">Comments ({{ comment_count }})</h2>
 
     {% if current_user.is_authenticated and not current_user.forum_banned %}
     <form method="post" action="{{ url_for('forums.create_comment', post_id=post.id) }}" class="comment-form">
@@ -54,19 +83,16 @@
     {% endif %}
 
     <div class="comment-list">
-      {% for comment in comments %}
-      <div class="comment">
-        <div class="comment__head">
-          <span class="avatar avatar--sm"{% if not comment.anonymous and comment.author.avatar_url %} style="background-image:url('{{ comment.author.avatar_url }}')"{% endif %}>
-            {% if comment.anonymous %}?{% elif not comment.author.avatar_url %}{{ comment.author.initials() }}{% endif %}
-          </span>
-          <strong>{{ comment.display_author() }}</strong>
-          <span class="comment__date">{{ comment.created_at.strftime('%b %d, %Y') }}</span>
+      {% for comment, replies in threads %}
+      <div class="comment-thread">
+        {{ comment_block(comment, liked_comments) }}
+        {% if replies %}
+        <div class="reply-list">
+          {% for reply in replies %}
+            {{ comment_block(reply, liked_comments, is_reply=True) }}
+          {% endfor %}
         </div>
-        <div class="forum-body">{{ comment.body|nl2br }}</div>
-        <div class="forum-actions">
-          {{ like_button(url_for('forums.like_comment', comment_id=comment.id), comment.like_count(), comment.id in liked_comments) }}
-        </div>
+        {% endif %}
       </div>
       {% else %}
       <p>No comments yet. Kindness starts somewhere.</p>

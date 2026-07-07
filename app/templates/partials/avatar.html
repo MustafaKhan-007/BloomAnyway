@@ -1,0 +1,11 @@
+{% macro avatar(user, size='sm', anonymous=False) %}
+{%- if anonymous -%}
+  <span class="avatar avatar--{{ size }}" aria-hidden="true">?</span>
+{%- elif user.has_avatar() -%}
+  <span class="avatar avatar--{{ size }}" style="background-image:url('{{ url_for('main.avatar', user_id=user.id) }}')"></span>
+{%- elif user.avatar_url -%}
+  <span class="avatar avatar--{{ size }}" style="background-image:url('{{ user.avatar_url }}')"></span>
+{%- else -%}
+  <span class="avatar avatar--{{ size }}">{{ user.initials() }}</span>
+{%- endif -%}
+{% endmacro %}

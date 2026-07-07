@@ -20,8 +20,8 @@ os.environ["LEMONSQUEEZY_WEBHOOK_SECRET"] = "test-secret"
 from app import create_app
 from app.config import DevConfig
 from app.extensions import db
-from app.models import (ForumCategory, ForumPost, Order, Quote, QuotePin,
-                        Subscriber, User, utcnow)
+from app.models import (ForumCategory, ForumComment, ForumPost, ForumTag,
+                        Order, Quote, QuotePin, Subscriber, User, utcnow)
 
 TMP_DB = Path(tempfile.mkdtemp()) / "smoke.db"
 
@@ -224,21 +224,39 @@ ok("Unknown product filter falls back to everything", r.status_code == 200)
 # --- 5. community forums + moderation + recommendations --------------------------
 today = date.today()
 with app.app_context():
-    db.session.add(ForumCategory(slug="venting", name="The Vent",
-                                 description="Let it out.", sort_order=0))
+    healing = ForumCategory(slug="healing", name="Healing",
+                            description="Room to process.", sort_order=1)
+    db.session.add(healing)
+    db.session.flush()
+    t_vent = ForumTag(category_id=healing.id, slug="venting", name="The Vent", sort_order=0)
+    t_grief = ForumTag(category_id=healing.id, slug="grief", name="Grief & Loss", sort_order=1)
+    db.session.add_all([t_vent, t_grief])
     db.session.commit()
+    vent_tag_id = t_vent.id
 
 r = client.get("/forums/")
-ok("Forums index renders", r.status_code == 200 and "The Vent" in r.get_data(as_text=True))
+ok("Forums index renders", r.status_code == 200 and "Healing" in r.get_data(as_text=True))
 
-# member (client = newperson, verified + logged in) can post
-r = client.post("/forums/c/venting/new",
-                data={"title": "Rough day", "body": "Just needed to say it out loud."},
+# category page shows topic filter chips
+r = client.get("/forums/c/healing")
+ok("Category shows tag filter chips", "The Vent" in r.get_data(as_text=True) and "Grief &amp; Loss" in r.get_data(as_text=True))
+
+# member (client = newperson, verified + logged in) can post with a tag
+r = client.post("/forums/c/healing/new",
+                data={"title": "Rough day", "body": "Just needed to say it out loud.",
+                      "tag_id": str(vent_tag_id)},
                 follow_redirects=True)
-ok("Member can create a forum post", "Rough day" in r.get_data(as_text=True))
+ok("Member can create a tagged forum post",
+   "Rough day" in r.get_data(as_text=True) and "The Vent" in r.get_data(as_text=True))
+
+# tag filter narrows the list
+r = client.get("/forums/c/healing?tag=grief")
+ok("Tag filter hides posts from other topics", "Rough day" not in r.get_data(as_text=True))
+r = client.get("/forums/c/healing?tag=venting")
+ok("Tag filter shows matching posts", "Rough day" in r.get_data(as_text=True))
 
 # profanity is blocked and earns a warning
-r = client.post("/forums/c/venting/new",
+r = client.post("/forums/c/healing/new",
                 data={"title": "This is shit", "body": "ugh"}, follow_redirects=True)
 with app.app_context():
     member = User.query.filter_by(email="newperson@example.com").first()
@@ -248,13 +266,13 @@ ok("Profane post blocked + warning issued", warn1 == 1 and posts_after == 1,
    f"warnings={warn1} posts={posts_after}")
 
 # anonymous posting hides the author name
-r = client.post("/forums/c/venting/new",
+r = client.post("/forums/c/healing/new",
                 data={"title": "Quiet ask", "body": "Posting this anonymously.", "anonymous": "1"},
                 follow_redirects=True)
 ok("Anonymous post shows as Anonymous",
    "Anonymous" in r.get_data(as_text=True) and "Quiet ask" in r.get_data(as_text=True))
 
-# likes toggle
+# likes + comments + one-level replies
 with app.app_context():
     first_post = ForumPost.query.order_by(ForumPost.id).first()
     pid = first_post.id
@@ -264,6 +282,24 @@ r = client.post(f"/forums/p/{pid}/comment", data={"body": "Sending you strength.
                 follow_redirects=True)
 ok("Comment posts to a thread", "Sending you strength." in r.get_data(as_text=True))
 
+with app.app_context():
+    top_comment = ForumComment.query.filter_by(post_id=pid, parent_id=None).first()
+    cid = top_comment.id
+r = client.post(f"/forums/p/{pid}/comment",
+                data={"body": "Thank you, truly.", "parent_id": str(cid)}, follow_redirects=True)
+ok("Reply attaches to its parent comment", "Thank you, truly." in r.get_data(as_text=True))
+
+# a reply to a reply is flattened to one level (never nests deeper)
+with app.app_context():
+    reply = ForumComment.query.filter_by(post_id=pid).filter(ForumComment.parent_id.isnot(None)).first()
+    reply_id = reply.id
+client.post(f"/forums/p/{pid}/comment",
+            data={"body": "Nested attempt.", "parent_id": str(reply_id)}, follow_redirects=True)
+with app.app_context():
+    nested = ForumComment.query.filter_by(body="Nested attempt.").first()
+ok("Reply-to-a-reply flattens to one level", nested.parent_id == cid,
+   f"parent_id={nested.parent_id} expected {cid}")
+
 # escalating profanity leads to a ban after the warning limit
 banclient = app.test_client()
 sent_codes.clear()
@@ -271,11 +307,31 @@ banclient.post("/register", data={"email": "rude@example.com", "password": USER_
 bcode = sent_codes[-1][1]
 banclient.post("/verify-email", data={"email": "rude@example.com", "code": bcode})
 for _ in range(3):
-    banclient.post("/forums/c/venting/new", data={"title": "fuck this", "body": "fuck"})
+    banclient.post("/forums/c/healing/new", data={"title": "fuck this", "body": "fuck"})
 with app.app_context():
     rude = User.query.filter_by(email="rude@example.com").first()
     banned = rude.forum_banned
 ok("Repeated profanity bans after 2 warnings", banned is True, f"banned={banned}")
+
+# avatar upload: a real (tiny) PNG is accepted, re-encoded, and served
+with app.app_context():
+    import io as _io
+    from PIL import Image as _Image
+    buf = _io.BytesIO()
+    _Image.new("RGB", (10, 10), (200, 100, 150)).save(buf, format="PNG")
+    png_bytes = buf.getvalue()
+r = client.post("/account/profile", data={
+    "display_name": "River",
+    "avatar_file": (_io.BytesIO(png_bytes), "me.png"),
+}, content_type="multipart/form-data", follow_redirects=True)
+with app.app_context():
+    m = User.query.filter_by(email="newperson@example.com").first()
+    has_av = m.has_avatar()
+    av_uid = m.id
+ok("Uploaded avatar stored on the account", has_av)
+r = client.get(f"/avatar/{av_uid}")
+ok("Avatar is served from the database",
+   r.status_code == 200 and r.headers["Content-Type"].startswith("image/"))
 
 # recommendations match a member's stated intent to hidden course tags
 with app.app_context():

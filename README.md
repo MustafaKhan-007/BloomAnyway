@@ -13,9 +13,11 @@ What's inside:
   registration, plus code-based password reset
 - Personalized onboarding ("what brings you here?") that quietly matches members
   to courses via hidden, admin-only product tags
-- Member profiles: display name, avatar (by URL), short bio, default-anonymous toggle
-- Community forums (Reddit-style categories, posts, comments, likes) with a
-  kindness guard — profanity is blocked, warns twice, then pauses posting
+- Member profiles: display name, uploaded avatar (stored in DB), short bio,
+  default-anonymous toggle
+- Two community forums (Building & Healing) with per-forum topic tags (readers
+  filter, authors label), posts, comments with one level of replies, and likes;
+  a kindness guard blocks profanity, warns twice, then pauses posting
 - Admin studio: dashboard with revenue charts, product/quote/testimonial/FAQ/page
   management, community moderation, subscriber & order CSV exports, site settings
 - Lemon Squeezy webhook receiver (signed, idempotent) + manual API reconciliation
@@ -173,9 +175,14 @@ PY
 - Products carry hidden tags (Admin → product form → "Recommendation tags").
   These never render on the site; they power the "picked for where you are"
   shelf on the member's account by matching intents to tags.
-- Forums live under `/forums`: seeded categories, posts, single-level comments,
-  and one-per-member likes. Members may post/comment anonymously (per post, or
-  by default via their settings).
+- Forums live under `/forums`: two seeded forums (Building, Healing), each with
+  topic tags. Readers filter a forum by tag; authors pick a tag when posting.
+  Threads allow one level of replies (a reply can't be replied to — it flattens
+  to the top-level comment). One-per-member likes on posts and comments. Members
+  may post/comment/reply anonymously (per item, or by default via their settings).
+- Avatars are uploaded (JPG/PNG/WEBP/GIF, ≤6 MB), re-encoded to a square JPEG
+  with Pillow, and stored in the database so they survive Render's ephemeral
+  disk. They're served from `/avatar/<user_id>`.
 - Kindness guard (`app/services/moderation.py`): profane content is blocked
   (never stored), the author is warned twice, and the next offense pauses their
   posting. Admin → Community shows recent posts (removable) and warned/paused

@@ -36,7 +36,9 @@ class User(UserMixin, db.Model):
     deleted_at = db.Column(db.DateTime)
 
     # profile / personalization
-    avatar_url = db.Column(db.String(500))
+    avatar_url = db.Column(db.String(500))   # legacy external URL (still shown if set)
+    avatar_data = db.Column(db.LargeBinary)  # uploaded avatar bytes (survives deploys)
+    avatar_mime = db.Column(db.String(40))
     bio = db.Column(db.String(400))
     goals_json = db.Column(db.Text)          # JSON list of intent keys
     default_anonymous = db.Column(db.Boolean, nullable=False, default=False)
@@ -80,6 +82,9 @@ class User(UserMixin, db.Model):
         if len(parts) >= 2:
             return (parts[0][0] + parts[1][0]).upper()
         return base[0].upper()
+
+    def has_avatar(self) -> bool:
+        return self.avatar_data is not None
 
     def goals(self) -> list:
         try:
@@ -338,6 +343,21 @@ class ForumCategory(db.Model):
 
     posts = db.relationship("ForumPost", backref="category", lazy="dynamic",
                             cascade="all, delete-orphan")
+    tags = db.relationship("ForumTag", backref="category", lazy="dynamic",
+                           cascade="all, delete-orphan",
+                           order_by="ForumTag.sort_order")
+
+
+class ForumTag(db.Model):
+    """A topic label within a forum (e.g. "Divorce & Custody" under Healing)."""
+    __tablename__ = "forum_tags"
+    __table_args__ = (db.UniqueConstraint("category_id", "slug", name="uq_tag_category_slug"),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    category_id = db.Column(db.Integer, db.ForeignKey("forum_categories.id"), nullable=False, index=True)
+    slug = db.Column(db.String(60), nullable=False)
+    name = db.Column(db.String(80), nullable=False)
+    sort_order = db.Column(db.Integer, nullable=False, default=0)
 
 
 class ForumPost(db.Model):
@@ -345,6 +365,7 @@ class ForumPost(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     category_id = db.Column(db.Integer, db.ForeignKey("forum_categories.id"), nullable=False, index=True)
+    tag_id = db.Column(db.Integer, db.ForeignKey("forum_tags.id"), index=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     title = db.Column(db.String(160), nullable=False)
     body = db.Column(db.Text, nullable=False)
@@ -353,6 +374,7 @@ class ForumPost(db.Model):
     created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
 
     author = db.relationship("User")
+    tag = db.relationship("ForumTag")
     comments = db.relationship("ForumComment", backref="post", lazy="dynamic",
                                cascade="all, delete-orphan")
     likes = db.relationship("ForumPostLike", backref="post", lazy="dynamic",
@@ -370,6 +392,7 @@ class ForumComment(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     post_id = db.Column(db.Integer, db.ForeignKey("forum_posts.id"), nullable=False, index=True)
+    parent_id = db.Column(db.Integer, db.ForeignKey("forum_comments.id"), index=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     body = db.Column(db.Text, nullable=False)
     anonymous = db.Column(db.Boolean, nullable=False, default=False)
@@ -377,6 +400,11 @@ class ForumComment(db.Model):
     created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
 
     author = db.relationship("User")
+    # one level of replies only (a reply cannot itself be replied to)
+    replies = db.relationship("ForumComment",
+                              backref=db.backref("parent", remote_side=[id]),
+                              lazy="select", order_by="ForumComment.created_at",
+                              cascade="all, delete-orphan")
     likes = db.relationship("ForumCommentLike", backref="comment", lazy="dynamic",
                             cascade="all, delete-orphan")
 

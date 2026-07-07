@@ -15,17 +15,24 @@ from pathlib import Path
 
 from app import create_app
 from app.extensions import db
-from app.models import FaqItem, ForumCategory, Page, Quote
+from app.models import FaqItem, ForumCategory, ForumTag, Page, Quote
 
 SEED_FILE = Path(__file__).parent / "data" / "quotes_seed.json"
 
-FORUM_CATEGORIES = [
-    ("venting", "The Vent", "A safe place to let it out. No fixing required — just be heard.", "#e0607e", 0),
-    ("divorce-custody", "Divorce & Custody", "For anyone untangling a marriage, co-parenting, or a custody road.", "#7b6cf6", 1),
-    ("content-creation", "Content & Creating", "Growing an audience, staying consistent, and the messy middle of building.", "#f0a202", 2),
-    ("starting-over", "Starting Over", "New city, new job, new self. The brave, ordinary work of beginning again.", "#2bb673", 3),
-    ("wins", "Small Wins", "The tiny victories that deserve a cheer. Post yours, celebrate theirs.", "#22a2c3", 4),
+# Two forums, each with topic tags used for reader filters and author labels.
+FORUMS = [
+    {"slug": "building", "name": "Building", "accent": "#f0a202", "sort": 0,
+     "description": "Growth, goals, and the brave work of creating a life and a craft.",
+     "tags": [("content", "Content & Creating"), ("starting-over", "Starting Over"),
+              ("work-money", "Work & Money"), ("wins", "Small Wins")]},
+    {"slug": "healing", "name": "Healing", "accent": "#7b6cf6", "sort": 1,
+     "description": "Room to process, grieve, vent, and find your footing again.",
+     "tags": [("venting", "The Vent"), ("divorce-custody", "Divorce & Custody"),
+              ("grief", "Grief & Loss"), ("confidence", "Confidence")]},
 ]
+# categories seeded by the previous version, now folded into tags above
+RETIRED_CATEGORY_SLUGS = ["venting", "divorce-custody", "content-creation",
+                          "starting-over", "wins"]
 
 STARTER_FAQS = [
     ("How do I get my files after buying?",
@@ -88,15 +95,36 @@ def seed():
                 db.session.add(Page(slug=slug, title=title, body_md=body))
                 print(f"Created page stub: {slug}")
 
-        # 4. forum categories (idempotent on slug)
-        cat_added = 0
-        for slug, name, desc, accent, order in FORUM_CATEGORIES:
-            if ForumCategory.query.filter_by(slug=slug).first() is None:
-                db.session.add(ForumCategory(slug=slug, name=name, description=desc,
-                                             accent=accent, sort_order=order))
+        # 4. forums + topic tags (idempotent). Retire the old single-topic
+        #    categories once they're empty — they live on as tags now.
+        removed = 0
+        for slug in RETIRED_CATEGORY_SLUGS:
+            old = ForumCategory.query.filter_by(slug=slug).first()
+            if old and old.posts.count() == 0:
+                db.session.delete(old)
+                removed += 1
+        if removed:
+            print(f"Retired {removed} old forum categories")
+
+        cat_added = tag_added = 0
+        for f in FORUMS:
+            cat = ForumCategory.query.filter_by(slug=f["slug"]).first()
+            if cat is None:
+                cat = ForumCategory(slug=f["slug"])
+                db.session.add(cat)
                 cat_added += 1
-        if cat_added:
-            print(f"Added {cat_added} forum categories")
+            cat.name = f["name"]
+            cat.description = f["description"]
+            cat.accent = f["accent"]
+            cat.sort_order = f["sort"]
+            db.session.flush()
+            for order, (tslug, tname) in enumerate(f["tags"]):
+                if ForumTag.query.filter_by(category_id=cat.id, slug=tslug).first() is None:
+                    db.session.add(ForumTag(category_id=cat.id, slug=tslug,
+                                            name=tname, sort_order=order))
+                    tag_added += 1
+        if cat_added or tag_added:
+            print(f"Forums: added {cat_added} categories, {tag_added} tags")
 
         db.session.commit()
         print("Seed complete.")

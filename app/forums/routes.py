@@ -12,7 +12,7 @@ from sqlalchemy import func
 
 from ..extensions import db, limiter
 from ..models import (ForumCategory, ForumComment, ForumCommentLike, ForumPost,
-                      ForumPostLike)
+                      ForumPostLike, ForumTag)
 from ..services.moderation import contains_profanity, register_violation
 from . import bp
 
@@ -52,9 +52,19 @@ def index():
 @bp.route("/c/<slug>")
 def category(slug):
     cat = ForumCategory.query.filter_by(slug=slug).first_or_404()
-    posts = (cat.posts.filter_by(hidden=False)
-             .order_by(ForumPost.created_at.desc()).limit(100).all())
+    tags = cat.tags.all()
+    active_tag = None
+    tag_slug = request.args.get("tag")
+    if tag_slug:
+        active_tag = next((t for t in tags if t.slug == tag_slug), None)
+
+    query = cat.posts.filter_by(hidden=False)
+    if active_tag:
+        query = query.filter_by(tag_id=active_tag.id)
+    posts = query.order_by(ForumPost.created_at.desc()).limit(100).all()
+
     return render_template("forums/category.html", category=cat, posts=posts,
+                           tags=tags, active_tag=active_tag,
                            anon_default=_anon_default())
 
 
@@ -73,11 +83,18 @@ def create_post(slug):
         flash("A post needs a title and a few words.", "error")
         return redirect(url_for("forums.category", slug=slug))
 
+    tag_id = None
+    raw_tag = request.form.get("tag_id")
+    if raw_tag and raw_tag.isdigit():
+        tag = db.session.get(ForumTag, int(raw_tag))
+        if tag and tag.category_id == cat.id:
+            tag_id = tag.id
+
     if not _guard_content(title, body):
         return redirect(url_for("forums.category", slug=slug))
 
-    post = ForumPost(category_id=cat.id, user_id=current_user.id, title=title,
-                     body=body, anonymous=_wants_anonymous())
+    post = ForumPost(category_id=cat.id, tag_id=tag_id, user_id=current_user.id,
+                     title=title, body=body, anonymous=_wants_anonymous())
     db.session.add(post)
     db.session.commit()
     flash("Posted. Thank you for adding your voice.", "success")
@@ -89,11 +106,19 @@ def post(post_id):
     post = db.session.get(ForumPost, post_id)
     if post is None or post.hidden:
         abort(404)
-    comments = (post.comments.filter_by(hidden=False)
-                .order_by(ForumComment.created_at).all())
-    liked_posts, liked_comments = _liked_ids([post_id],
-                                             [c.id for c in comments])
-    return render_template("forums/post.html", post=post, comments=comments,
+    # top-level comments, each with its (one-level) replies
+    top = (post.comments.filter_by(hidden=False, parent_id=None)
+           .order_by(ForumComment.created_at).all())
+    all_ids = []
+    threads = []
+    for c in top:
+        replies = [r for r in c.replies if not r.hidden]
+        threads.append((c, replies))
+        all_ids.append(c.id)
+        all_ids.extend(r.id for r in replies)
+    liked_posts, liked_comments = _liked_ids([post_id], all_ids)
+    return render_template("forums/post.html", post=post, threads=threads,
+                           comment_count=len(all_ids),
                            liked_posts=liked_posts, liked_comments=liked_comments,
                            anon_default=_anon_default())
 
@@ -113,11 +138,21 @@ def create_comment(post_id):
     if not body:
         flash("Write a little something first.", "error")
         return redirect(url_for("forums.post", post_id=post_id))
+
+    # optional reply target — flattened so threads never nest deeper than one level
+    parent_id = None
+    raw_parent = request.form.get("parent_id")
+    if raw_parent and raw_parent.isdigit():
+        parent = db.session.get(ForumComment, int(raw_parent))
+        if parent and parent.post_id == post.id and not parent.hidden:
+            parent_id = parent.parent_id or parent.id
+
     if not _guard_content(body):
         return redirect(url_for("forums.post", post_id=post_id))
 
-    db.session.add(ForumComment(post_id=post.id, user_id=current_user.id,
-                                body=body, anonymous=_wants_anonymous()))
+    db.session.add(ForumComment(post_id=post.id, parent_id=parent_id,
+                                user_id=current_user.id, body=body,
+                                anonymous=_wants_anonymous()))
     db.session.commit()
     return redirect(url_for("forums.post", post_id=post_id) + "#comments")
 
