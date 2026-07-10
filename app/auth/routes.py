@@ -102,7 +102,11 @@ def _log_in(user: User, remember: bool = True):
     user.last_login_at = utcnow()
     db.session.commit()
     login_user(user, remember=remember)
-    session["logged_in_at"] = datetime.utcnow().isoformat()
+    # permanent session so the admin idle-timeout window survives browser restarts
+    session.permanent = True
+    now = datetime.utcnow().isoformat()
+    session["logged_in_at"] = now
+    session["admin_seen_at"] = now
     log.info("auth: user %s logged in (ip=%s)", user.id, request.remote_addr)
 
 

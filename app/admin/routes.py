@@ -1,4 +1,9 @@
-"""Admin panel. Every route requires is_admin + a fresh login (24h)."""
+"""Admin panel. Every route requires is_admin + recent admin activity.
+
+Freshness is a *sliding* idle timeout: each admin action pushes the clock
+forward, so day-to-day use never nags. Re-authentication is only required after
+``ADMIN_IDLE_DAYS`` of no admin activity.
+"""
 import csv
 import io
 import json
@@ -34,15 +39,20 @@ def admin_required(f):
         # 404 (not 403) so the panel's existence isn't revealed
         if not current_user.is_authenticated or not current_user.is_admin:
             abort(404)
-        fresh_at = session.get("logged_in_at")
-        max_age = timedelta(hours=current_app.config["ADMIN_FRESH_LOGIN_HOURS"])
+        now = datetime.utcnow()
+        idle_max = timedelta(days=current_app.config["ADMIN_IDLE_DAYS"])
+        # last admin activity, falling back to the original sign-in time
+        seen_at = session.get("admin_seen_at") or session.get("logged_in_at")
         try:
-            is_fresh = fresh_at and (datetime.utcnow() - datetime.fromisoformat(fresh_at)) < max_age
+            active = seen_at and (now - datetime.fromisoformat(seen_at)) < idle_max
         except ValueError:
-            is_fresh = False
-        if not is_fresh:
-            flash("For safety, the studio asks you to sign in again once a day.", "info")
+            active = False
+        if not active:
+            flash("It's been a while \u2014 please sign in again to open the studio.", "info")
             return redirect(url_for("auth.login", next=request.path))
+        # slide the window forward on every admin action
+        session.permanent = True
+        session["admin_seen_at"] = now.isoformat()
         return f(*args, **kwargs)
     return wrapper
 

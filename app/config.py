@@ -42,7 +42,11 @@ class Config:
     REMEMBER_COOKIE_HTTPONLY = True
     REMEMBER_COOKIE_SAMESITE = "Lax"
     CODE_MAX_AGE_MINUTES = 15
-    ADMIN_FRESH_LOGIN_HOURS = 24
+    # Admin panel uses a sliding "idle" timeout instead of a hard daily re-login:
+    # each admin action refreshes the clock, and re-auth is only required after
+    # this many days of no admin activity. The session cookie must outlive it.
+    ADMIN_IDLE_DAYS = 14
+    PERMANENT_SESSION_LIFETIME = timedelta(days=30)
 
     # Email — two transports, first configured one wins:
     # 1. BREVO_API_KEY: HTTP API (works on hosts that block SMTP, e.g. Render free tier)

@@ -10,7 +10,7 @@ import os
 import re
 import sys
 import tempfile
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -161,6 +161,19 @@ r = admin.get("/admin/")
 ok("Admin dashboard loads for admin", r.status_code == 200)
 r = client.get("/admin/")
 ok("Admin returns 404 for non-admin user", r.status_code == 404)
+
+# admin idle timeout: stale activity forces re-auth; active use slides the window
+with admin.session_transaction() as sess:
+    stale = (datetime.utcnow() - timedelta(days=15)).isoformat()
+    sess["admin_seen_at"] = stale
+    sess["logged_in_at"] = stale
+r = admin.get("/admin/", follow_redirects=False)
+ok("Admin re-auth required after 14 idle days",
+   r.status_code == 302 and "/login" in r.headers["Location"])
+with admin.session_transaction() as sess:
+    sess["admin_seen_at"] = (datetime.utcnow() - timedelta(days=2)).isoformat()
+r = admin.get("/admin/", follow_redirects=False)
+ok("Active admin stays signed in (sliding window)", r.status_code == 200)
 
 # draft product missing required fields cannot be published
 form = {"title": "Begin Again", "slug": "", "type": "course", "status": "published",
@@ -433,10 +446,14 @@ with app.app_context():
     member = User.query.filter_by(email="newperson@example.com").first()
     member.created_at = utcnow() - timedelta(days=40)
     db.session.commit()
+    # mirror the route's own formula so the check is robust across the UTC/local
+    # midnight boundary (created_at is UTC, date.today() is local)
+    expected_days = max(1, min((date.today() - member.created_at.date()).days + 1, 366))
 r = client.get("/quotes")  # client is signed in as newperson
 member_count = r.get_data(as_text=True).count("quote-mini")
-ok("Member archive goes back to signup date", r.status_code == 200 and 30 <= member_count <= 41,
-   f"got {member_count}")
+ok("Member archive goes back to signup date",
+   r.status_code == 200 and member_count == expected_days,
+   f"got {member_count}, expected {expected_days}")
 
 r = admin.get("/admin/quotes")
 ok("Admin quotes page (pins, preview tomorrow)", r.status_code == 200 and "Preview tomorrow" in r.get_data(as_text=True))
