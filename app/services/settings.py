@@ -1,5 +1,6 @@
 """Key-value site settings with a tiny in-process cache."""
 import secrets
+from datetime import date
 
 from ..extensions import db
 from ..models import Setting
@@ -14,6 +15,7 @@ DEFAULTS = {
     "portrait_url": "",
     "contact_email": "",
     "announcement_text": "",
+    "announcement_expires": "",   # ISO date (YYYY-MM-DD); blank = never expires
 }
 
 _cache: dict[str, str] = {}
@@ -68,6 +70,21 @@ def set_setting(key: str, value: str) -> None:
         row.value = value
     db.session.commit()
     _cache[key] = value
+
+
+def active_announcement() -> str:
+    """The announcement text, or "" if unset or past its expiry date."""
+    text = get_setting("announcement_text")
+    if not text:
+        return ""
+    expires = get_setting("announcement_expires")
+    if expires:
+        try:
+            if date.fromisoformat(expires) < date.today():
+                return ""
+        except ValueError:
+            pass
+    return text
 
 
 def invalidate_cache() -> None:

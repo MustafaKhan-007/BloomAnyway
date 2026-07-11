@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}{{ product.title }} — Reading — {{ site.site_title }}{% endblock %}
+
+{% block content %}
+<section class="section">
+  <div class="container" style="max-width: 900px;">
+    <p class="eyebrow"><a href="{{ url_for('main.account') }}">&larr; My space</a></p>
+    <span class="type-pill type-pill--{{ product.type }}">{{ product.type_label() }}</span>
+    <h1 style="margin-top: 12px;">{{ product.title }}</h1>
+    {% if product.promise %}<p class="subline" style="color: var(--ink-soft);">{{ product.promise }}</p>{% endif %}
+
+    {% if product.description_md %}
+    <div style="max-width: 68ch; margin-top: 12px;">{{ product.description_md|markdown }}</div>
+    {% endif %}
+
+    {% if contents %}
+    <h2 style="margin-top: 40px;">What's inside</h2>
+    <ul class="check-list" style="max-width: 68ch;">
+      {% for item in contents %}<li>{{ item }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+
+    {% if readable %}
+    <h2 style="margin-top: 44px;">Read online</h2>
+    <p class="field-help">These are yours to read here anytime. They're view-only &mdash; there's no download.</p>
+    {% for entry in readable %}
+    {% set asset = entry.asset %}
+    <article class="reader-block">
+      <h3 class="reader-block__title">{{ asset.display_title() }}</h3>
+      {% if asset.kind == 'pdf' %}
+        <iframe class="reader-pdf"
+                src="{{ url_for('main.library_asset', slug=product.slug, asset_id=asset.id) }}#toolbar=0&navpanes=0&view=FitH"
+                title="{{ asset.display_title() }}" loading="lazy"></iframe>
+      {% elif asset.kind == 'docx' and entry.html %}
+        <div class="reader-doc">{{ entry.html|safe }}</div>
+      {% else %}
+        <div class="reader-doc reader-doc--empty">
+          <p>This file can't be shown in the on-page reader. Word documents saved as
+          <strong>.docx</strong> or a <strong>PDF</strong> display best.</p>
+        </div>
+      {% endif %}
+    </article>
+    {% endfor %}
+    {% else %}
+    <div class="flash flash--info" style="margin-top: 32px;">
+      The reading material for this one isn't posted yet &mdash; check back soon.
+    </div>
+    {% endif %}
+
+    {% if curriculum %}
+    <h2 style="margin-top: 44px;">The path</h2>
+    <ol class="curriculum" style="max-width: 68ch;">
+      {% for module in curriculum %}
+      <li>
+        <h3>{{ module.title }}</h3>
+        {% if module.description %}<p>{{ module.description }}</p>{% endif %}
+      </li>
+      {% endfor %}
+    </ol>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

@@ -35,9 +35,30 @@
 </section>
 {% endif %}
 
+{% if library %}
 <section class="section section--band">
   <div class="container">
-    <h2>Your library</h2>
+    <h2>Read your courses &amp; guides</h2>
+    <p style="color: var(--ink-soft); margin-top: -6px;">Open any of these to read online, anytime.</p>
+    <div class="grid grid--3" style="margin-top: 24px;">
+      {% for product in library %}
+      <div class="library-card">
+        {% if product.cover_url %}
+        <img class="library-card__cover" src="{{ product.cover_url }}" alt="Cover of {{ product.title }}" loading="lazy">
+        {% endif %}
+        <span class="type-pill type-pill--{{ product.type }}">{{ product.type_label() }}</span>
+        <h3>{{ product.title }}</h3>
+        <a class="btn btn--primary btn--sm" href="{{ url_for('main.library_item', slug=product.slug) }}">Read online</a>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
+<section class="section{% if not library %} section--band{% endif %}">
+  <div class="container">
+    <h2>Your purchases</h2>
     {% if orders %}
       <table class="admin-table">
         <thead><tr><th>Date</th><th>Product</th><th>Amount</th><th>Status</th></tr></thead>
@@ -53,8 +74,7 @@
         </tbody>
       </table>
       <p class="field-help" style="margin-top: 14px;">
-        Your download links were emailed to you at purchase. Need them again?
-        <a href="https://app.lemonsqueezy.com/my-orders" rel="noopener">Resend from your order page</a> &mdash; it takes ten seconds.
+        Anything with reading material shows up in <strong>Read your courses &amp; guides</strong> above &mdash; it stays here for you to open anytime.
       </p>
     {% else %}
       <p>Nothing here yet &mdash; and that's fine. <a href="{{ url_for('main.courses') }}">The shelf is over here</a> whenever you're ready.</p>

@@ -31,12 +31,28 @@
       <label for="contact_email">Contact email (shown publicly if you choose)</label>
       <input type="email" id="contact_email" name="contact_email" value="{{ values.contact_email }}">
     </div>
-    <div class="field">
-      <label for="announcement_text">Announcement bar (leave empty to hide)</label>
-      <input type="text" id="announcement_text" name="announcement_text" value="{{ values.announcement_text }}"
-             placeholder="e.g. The new course opens Monday ☀">
+    <div class="form-row">
+      <div class="field">
+        <label for="announcement_text">Announcement bar (leave empty to hide)</label>
+        <input type="text" id="announcement_text" name="announcement_text" value="{{ values.announcement_text }}"
+               placeholder="e.g. The new course opens Monday ☀">
+      </div>
+      <div class="field">
+        <label for="announcement_expires">Show until (optional)</label>
+        <input type="date" id="announcement_expires" name="announcement_expires" value="{{ values.announcement_expires }}">
+        <p class="field-help">The announcement hides itself after this date. Leave blank to keep it up until you remove it.</p>
+      </div>
     </div>
   </div>
   <button class="btn btn--primary" type="submit">Save settings</button>
 </form>
+
+{% if values.announcement_text %}
+<form method="post" style="margin-top: 14px;">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="clear_announcement" value="1">
+  <button class="btn btn--secondary btn--sm" type="submit">Remove announcement</button>
+  <span class="field-help" style="margin-left: 8px;">Clears the current announcement and its date.</span>
+</form>
+{% endif %}
 {% endblock %}

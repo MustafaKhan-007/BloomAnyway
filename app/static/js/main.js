@@ -71,22 +71,6 @@
     });
   }
 
-  /* ---- dismissible announcement (remembered for the session) ---- */
-  var bar = document.querySelector(".hero-announcement");
-  if (bar) {
-    var key = "fl-announcement-dismissed";
-    try {
-      if (sessionStorage.getItem(key) === bar.dataset.hash) bar.remove();
-    } catch (e) { /* storage unavailable — leave the bar visible */ }
-    var closeBtn = bar && bar.querySelector("button");
-    if (closeBtn) {
-      closeBtn.addEventListener("click", function () {
-        try { sessionStorage.setItem(key, bar.dataset.hash); } catch (e) {}
-        bar.remove();
-      });
-    }
-  }
-
   /* ---- password show/hide toggles ---- */
   document.querySelectorAll(".password-toggle").forEach(function (btn) {
     btn.addEventListener("click", function () {

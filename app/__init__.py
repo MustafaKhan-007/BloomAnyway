@@ -20,7 +20,7 @@ CSP = (
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
     "font-src 'self' https://fonts.gstatic.com; "
     "img-src 'self' https: data:; "
-    "frame-src https://*.lemonsqueezy.com https://app.lemonsqueezy.com; "
+    "frame-src 'self' https://*.lemonsqueezy.com https://app.lemonsqueezy.com; "
     "connect-src 'self' https://*.lemonsqueezy.com; "
     "base-uri 'self'; form-action 'self' https://*.lemonsqueezy.com; "
     "frame-ancestors 'none'"
@@ -88,7 +88,7 @@ def create_app(config_class=None):
     from markupsafe import Markup, escape
 
     from .services.markdown import render_markdown
-    from .services.settings import all_settings
+    from .services.settings import active_announcement, all_settings
 
     app.jinja_env.filters["markdown"] = render_markdown
 
@@ -101,7 +101,8 @@ def create_app(config_class=None):
 
     @app.context_processor
     def inject_globals():
-        return {"site": all_settings(), "current_year": date.today().year}
+        return {"site": all_settings(), "announcement": active_announcement(),
+                "current_year": date.today().year}
 
     # --- health check ---------------------------------------------------------
     @app.route("/healthz")

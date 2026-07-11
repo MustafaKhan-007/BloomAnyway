@@ -10,7 +10,7 @@
 </div>
 {% endif %}
 
-<form method="post">
+<form method="post" enctype="multipart/form-data">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
   <div class="admin-panel">
@@ -123,6 +123,32 @@
     <div class="field">
       <label for="gallery_urls">Gallery URLs (one per line, optional)</label>
       <textarea id="gallery_urls" name="gallery_urls" rows="3">{{ gallery }}</textarea>
+    </div>
+  </div>
+
+  <div class="admin-panel">
+    <h2>Course files <span style="font-weight: 400; font-size: 13px; color: var(--ink-soft);">(read online by buyers &mdash; no download)</span></h2>
+    {% if product.assets %}
+    <ul class="asset-list">
+      {% for a in product.assets %}
+      <li class="asset-list__row">
+        <span class="asset-list__name">{{ a.display_title() }}
+          <small>{{ a.kind|upper }} &middot; {{ a.size_mb() }} MB</small></span>
+        <label class="checkline">
+          <input type="checkbox" name="remove_asset" value="{{ a.id }}"> Remove
+        </label>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    <div class="field">
+      <label for="asset_files">Upload PDF or Word files</label>
+      <input type="file" id="asset_files" name="asset_files" multiple
+             accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+      <p class="field-help">
+        Stored on the site and shown to buyers in an on-page reader (no download link).
+        <strong>PDF and .docx preview best</strong>; up to 25&nbsp;MB each. Files persist across deploys.
+      </p>
     </div>
   </div>
 

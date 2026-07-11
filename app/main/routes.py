@@ -9,9 +9,13 @@ from flask import (Response, abort, flash, redirect, render_template, request,
 from flask_login import current_user, login_required
 
 from ..extensions import db, limiter
-from ..models import (ContactMessage, FaqItem, Order, Page, Product, Quote,
-                      QuoteFavorite, Subscriber, Testimonial, User, utcnow)
+from sqlalchemy import func
+
+from ..models import (ContactMessage, FaqItem, Order, Page, Product,
+                      ProductAsset, Quote, QuoteFavorite, Subscriber,
+                      Testimonial, User, utcnow)
 from ..services import quotes as quotes_service
+from ..services.assets import docx_to_html
 from ..services.avatars import AvatarError, process_avatar
 from ..services.mailer import send_contact_notification
 from ..services.recommend import INTENTS, recommend_products, valid_intent_keys
@@ -167,7 +171,7 @@ def account():
                  .filter(QuoteFavorite.user_id == current_user.id)
                  .order_by(QuoteFavorite.created_at.desc()).all())
     return render_template("main/account.html", greeting=greeting, orders=orders,
-                           favorites=favorites,
+                           favorites=favorites, library=_owned_products(current_user),
                            recommended=recommend_products(current_user))
 
 
@@ -228,6 +232,73 @@ def avatar(user_id):
         abort(404)
     resp = Response(bytes(user.avatar_data), mimetype=user.avatar_mime or "image/jpeg")
     resp.headers["Cache-Control"] = "public, max-age=86400"
+    return resp
+
+
+# --- library: read purchased courses & guides online -----------------------
+
+def _owns_product(user, product) -> bool:
+    """True if the user may read a product's files (the owner, or a buyer)."""
+    if not user.is_authenticated:
+        return False
+    if user.is_admin:
+        return True
+    return db.session.query(Order.id).filter(
+        Order.product_id == product.id,
+        Order.status == "paid",
+        func.lower(Order.buyer_email) == (user.email or "").lower(),
+    ).first() is not None
+
+
+def _owned_products(user):
+    """Distinct products the user has bought that have readable files."""
+    if not user.is_authenticated:
+        return []
+    products = (Product.query.join(Order, Order.product_id == Product.id)
+                .filter(Order.status == "paid",
+                        func.lower(Order.buyer_email) == (user.email or "").lower())
+                .order_by(Product.title).distinct().all())
+    return [p for p in products if p.has_assets()]
+
+
+@bp.route("/library/<slug>")
+@login_required
+def library_item(slug):
+    product = Product.query.filter_by(slug=slug).first_or_404()
+    if not _owns_product(current_user, product):
+        abort(404)   # hide existence from non-buyers
+    contents = [line.strip() for line in (product.contents_text or "").splitlines()
+                if line.strip()]
+    curriculum = []
+    if product.curriculum_json:
+        try:
+            curriculum = json.loads(product.curriculum_json)
+        except ValueError:
+            curriculum = []
+    readable = []
+    for asset in product.assets:
+        entry = {"asset": asset}
+        if asset.kind == "docx":
+            entry["html"] = docx_to_html(bytes(asset.data))
+        readable.append(entry)
+    return render_template("main/library_item.html", product=product,
+                           readable=readable, contents=contents, curriculum=curriculum)
+
+
+@bp.route("/library/<slug>/file/<int:asset_id>")
+@login_required
+def library_asset(slug, asset_id):
+    product = Product.query.filter_by(slug=slug).first_or_404()
+    if not _owns_product(current_user, product):
+        abort(404)
+    asset = db.session.get(ProductAsset, asset_id)
+    if asset is None or asset.product_id != product.id:
+        abort(404)
+    resp = Response(bytes(asset.data), mimetype=asset.mime)
+    # inline (viewer), never an attachment; don't let it linger in shared caches
+    resp.headers["Content-Disposition"] = f'inline; filename="{asset.filename}"'
+    resp.headers["Cache-Control"] = "private, no-store"
+    resp.headers["X-Content-Type-Options"] = "nosniff"
     return resp
 
 

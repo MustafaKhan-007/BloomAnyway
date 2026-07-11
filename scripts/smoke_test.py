@@ -390,6 +390,71 @@ ok("Course recommended from matching intent tags",
 r = admin.get("/admin/community")
 ok("Admin community moderation page", r.status_code == 200 and "rude@example.com" in r.get_data(as_text=True))
 
+# --- 5c. purchased-course reader + PDF/Word uploads ---------------------------
+import io as _io_assets
+with app.app_context():
+    lib_prod_id = Product.query.filter_by(slug="begin-again").first().id
+minimal_pdf = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
+r = admin.post(f"/admin/products/{lib_prod_id}/edit",
+               data={**form, "asset_files": (_io_assets.BytesIO(minimal_pdf), "lesson.pdf")},
+               content_type="multipart/form-data", follow_redirects=True)
+ok("Admin uploads a course PDF", "Product saved" in r.get_data(as_text=True))
+with app.app_context():
+    lib_prod = Product.query.filter_by(slug="begin-again").first()
+    lib_asset_id = lib_prod.assets[0].id
+    lib_asset_kind = lib_prod.assets[0].kind
+ok("Course file stored on the product", lib_asset_kind == "pdf")
+
+# a non-buyer cannot reach the reader (hidden as 404)
+r = client.get("/library/begin-again", follow_redirects=False)
+ok("Non-buyer can't open the reader", r.status_code == 404)
+
+# give the signed-in member a paid order, then they can read online
+with app.app_context():
+    db.session.add(Order(ls_order_id="LIB-1", ls_variant_id="123456",
+                         product_id=lib_prod_id, buyer_email="newperson@example.com",
+                         total_cents=4900, currency="USD", status="paid"))
+    db.session.commit()
+r = client.get("/library/begin-again")
+ok("Buyer opens the on-site reader",
+   r.status_code == 200 and "Read online" in r.get_data(as_text=True))
+r = client.get(f"/library/begin-again/file/{lib_asset_id}")
+ok("Course file served inline, not as a download",
+   r.status_code == 200 and r.mimetype == "application/pdf"
+   and r.headers.get("Content-Disposition", "").startswith("inline"))
+r = client.get("/account")
+ok("Account surfaces the read-online library", "Read your courses" in r.get_data(as_text=True))
+r = admin.get("/library/begin-again")
+ok("Owner can preview the reader without buying", r.status_code == 200)
+r = admin.post(f"/admin/products/{lib_prod_id}/edit",
+               data={**form, "asset_files": (_io_assets.BytesIO(b"not a real file"), "notes.txt")},
+               content_type="multipart/form-data", follow_redirects=True)
+ok("Non PDF/Word upload is rejected", "only PDF or Word" in r.get_data(as_text=True))
+
+# --- 5d. announcement: expiry window + remove ---------------------------------
+base_settings = {"site_title": "First Light", "instagram_url": "", "hero_image_url": "",
+                 "portrait_url": "", "contact_email": ""}
+future = (date.today() + timedelta(days=3)).isoformat()
+admin.post("/admin/settings", data={**base_settings,
+           "announcement_text": "Doors open Monday", "announcement_expires": future},
+           follow_redirects=True)
+r = client.get("/")
+ok("Announcement shows before its expiry", "Doors open Monday" in r.get_data(as_text=True))
+past = (date.today() - timedelta(days=1)).isoformat()
+admin.post("/admin/settings", data={**base_settings,
+           "announcement_text": "Doors open Monday", "announcement_expires": past},
+           follow_redirects=True)
+r = client.get("/")
+ok("Expired announcement is hidden", "Doors open Monday" not in r.get_data(as_text=True))
+admin.post("/admin/settings", data={"clear_announcement": "1"}, follow_redirects=True)
+with app.app_context():
+    from app.services.settings import get_setting, invalidate_cache
+    invalidate_cache()
+    cleared_text = get_setting("announcement_text")
+ok("Remove announcement clears it", cleared_text == "")
+r = client.get("/")
+ok("No announcement markup after removal", "hero-announcement" not in r.get_data(as_text=True))
+
 # --- 6. quote pinning + bulk import dedupe ----------------------------------------
 with app.app_context():
     pin_day = date.today() + timedelta(days=3)

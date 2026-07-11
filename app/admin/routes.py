@@ -21,10 +21,11 @@ from sqlalchemy.orm import joinedload
 
 from ..extensions import db
 from ..models import (FaqItem, ForumComment, ForumPost, Order, Page, Product,
-                      Quote, QuoteFavorite, QuotePin, Subscriber, Testimonial,
-                      User, QUOTE_CATEGORIES)
+                      ProductAsset, Quote, QuoteFavorite, QuotePin, Subscriber,
+                      Testimonial, User, QUOTE_CATEGORIES)
 from ..services import quotes as quotes_service
 from ..services import stats
+from ..services.assets import AssetError, process_asset
 from ..services.lemonsqueezy import sync_recent_orders
 from ..services.settings import DEFAULTS as SETTING_DEFAULTS
 from ..services.settings import all_settings, set_setting
@@ -232,9 +233,37 @@ def product_form(product_id=None):
         else:
             if product.id is None:
                 db.session.add(product)
-            db.session.commit()
-            flash("Product saved.", "success")
-            return redirect(url_for("admin.products"))
+            db.session.flush()   # assign an id so assets can attach
+
+            for aid in request.form.getlist("remove_asset"):
+                if aid.isdigit():
+                    asset = db.session.get(ProductAsset, int(aid))
+                    if asset and asset.product_id == product.id:
+                        db.session.delete(asset)
+
+            asset_errors = []
+            position = len(product.assets)
+            for fs in request.files.getlist("asset_files"):
+                if not fs or not fs.filename:
+                    continue
+                try:
+                    data, mime, kind, fname = process_asset(fs)
+                except AssetError as exc:
+                    asset_errors.append(f"{fs.filename}: {exc}")
+                    continue
+                db.session.add(ProductAsset(
+                    product_id=product.id, filename=fname, mime=mime, kind=kind,
+                    size=len(data), data=data, sort_order=position))
+                position += 1
+
+            if asset_errors:
+                db.session.rollback()
+                for e in asset_errors:
+                    flash(e, "error")
+            else:
+                db.session.commit()
+                flash("Product saved.", "success")
+                return redirect(url_for("admin.products"))
 
     curriculum = []
     if product.curriculum_json:
@@ -629,6 +658,11 @@ def orders_export():
 @admin_required
 def settings():
     if request.method == "POST":
+        if request.form.get("clear_announcement"):
+            set_setting("announcement_text", "")
+            set_setting("announcement_expires", "")
+            flash("Announcement removed.", "success")
+            return redirect(url_for("admin.settings"))
         for key in SETTING_DEFAULTS:
             set_setting(key, (request.form.get(key) or "").strip())
         flash("Settings saved.", "success")

@@ -171,6 +171,12 @@ class Product(db.Model):
 
     orders = db.relationship("Order", backref="product", lazy="dynamic")
     testimonials = db.relationship("Testimonial", backref="product", lazy="dynamic")
+    assets = db.relationship("ProductAsset", backref="product", lazy="select",
+                             order_by="ProductAsset.sort_order, ProductAsset.id",
+                             cascade="all, delete-orphan")
+
+    def has_assets(self) -> bool:
+        return len(self.assets) > 0
 
     def tags(self) -> list:
         try:
@@ -211,6 +217,35 @@ class Product(db.Model):
         if not (self.ls_checkout_url or "").strip():
             missing.append("the Lemon Squeezy buy link")
         return missing
+
+
+class ProductAsset(db.Model):
+    """A downloadable-but-not-downloaded course/guide file (PDF or Word).
+
+    Stored in the database (like avatars) so files survive Render's ephemeral
+    disk. Served inline to buyers via an ownership-gated route; there is no
+    public download link.
+    """
+    __tablename__ = "product_assets"
+
+    KINDS = ("pdf", "doc", "docx")
+
+    id = db.Column(db.Integer, primary_key=True)
+    product_id = db.Column(db.Integer, db.ForeignKey("products.id"), nullable=False, index=True)
+    title = db.Column(db.String(160))
+    filename = db.Column(db.String(255), nullable=False)
+    mime = db.Column(db.String(120), nullable=False)
+    kind = db.Column(db.String(10), nullable=False)   # pdf / doc / docx
+    size = db.Column(db.Integer, nullable=False, default=0)
+    data = db.Column(db.LargeBinary, nullable=False)
+    sort_order = db.Column(db.Integer, nullable=False, default=0)
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+
+    def display_title(self):
+        return self.title or self.filename
+
+    def size_mb(self):
+        return round((self.size or 0) / 1024 / 1024, 1)
 
 
 class Quote(db.Model):

@@ -8,6 +8,8 @@ this site never touches card data and stores no files).
 What's inside:
 
 - Full catalog with filterable shop, rich product pages, and overlay checkout
+- On-site reader for purchased courses & guides: owners upload PDF/Word files,
+  buyers read them online (PDFs embedded, .docx rendered inline) with no download
 - Daily motivational quote with deterministic rotation and pinning
 - Email + password accounts with 6-digit email confirmation codes on
   registration, plus code-based password reset
@@ -192,6 +194,28 @@ PY
   (never stored), the author is warned twice, and the next offense pauses their
   posting. Admin → Community shows recent posts (removable) and warned/paused
   members (with a one-click "fresh start" to clear warnings).
+
+## 4c. Course files & the on-site reader
+
+- On a product (Admin → product form → "Course files") the owner uploads PDF or
+  Word files. They're validated (`app/services/assets.py`), capped at 25 MB each,
+  and stored in the database (`product_assets`) so they survive Render deploys.
+- Buyers read them at `/library/<slug>`. Access is gated by `_owns_product`: the
+  studio owner (for preview) or anyone with a **paid** order whose email matches
+  their account. Non-buyers get a 404 (the reader's existence is hidden).
+- Files are served from `/library/<slug>/file/<id>` with `Content-Disposition:
+  inline` and `Cache-Control: private, no-store` — there is no download link.
+  PDFs embed in an iframe (toolbar hidden); `.docx` is converted to sanitized
+  HTML with `mammoth` + `bleach`. (Legacy `.doc` can't be previewed — prefer
+  PDF/`.docx`.) Owned products with files appear under "Read your courses &
+  guides" on the account page.
+
+## 4d. Announcement bar
+
+- Set the text and an optional **"Show until"** date in Admin → Settings. The
+  bar renders on the home hero only while active (`active_announcement()` checks
+  the expiry). Visitors can't dismiss it; a **"Remove announcement"** button in
+  Settings clears the text and date in one click.
 
 ## 5. Security notes
 
