@@ -13,6 +13,8 @@ What's inside:
 - Daily motivational quote with deterministic rotation and pinning
 - Daily "I showed up today" streaks and evolving SVG achievement badges
   (shown on profiles and next to names in the community)
+- "My Journey" premium PDF keepsake: a member's streaks, check-ins, and
+  favorite quotes, beautifully laid out to keep and share
 - Email + password accounts with 6-digit email confirmation codes on
   registration, plus code-based password reset
 - Personalized onboarding ("what brings you here?") that quietly matches members
@@ -245,6 +247,21 @@ PY
   category). Overrides live in `Setting["_badge_thresholds"]`; a *Reset to
   defaults* button restores the originals. Titles/emblems/tier counts are fixed
   in code; only thresholds are editable, and phrases regenerate to match.
+
+## 4f. "My Journey" keepsake (premium export)
+
+- Premium members (the owner, or anyone with a **paid** order — see
+  `is_premium()`) can download a designed **PDF keepsake** of their journey at
+  `/account/journey.pdf`: streak stats, the days they showed up, and every quote
+  they've favorited, closed with a warm line — made to keep, print, or share.
+- Built with **fpdf2** (`app/services/journey.py`) — pure Python, no system
+  libraries, so it deploys anywhere. Core PDF fonts are Latin-1 only, so all
+  user text is transliterated first (`_t`). The layout uses the brand palette
+  and a painted horizon gradient.
+- Real check-in history comes from the `check_ins` table (one row per day,
+  written by `User.check_in()`); streak columns on `users` stay as the fast
+  summary. `python scripts/journey_preview.py` renders a sample PDF (and PNG)
+  to `instance/`.
 
 ## 5. Security notes
 

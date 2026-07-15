@@ -18,6 +18,7 @@ from ..services import quotes as quotes_service
 from ..services.assets import docx_to_html
 from ..services.avatars import AvatarError, process_avatar
 from ..services.badges import CATEGORIES, category_progress, earned_badges
+from ..services.journey import build_journey_pdf
 from ..services.mailer import send_contact_notification
 from ..services.recommend import INTENTS, recommend_products, valid_intent_keys
 from . import bp
@@ -185,7 +186,23 @@ def account():
                  .order_by(QuoteFavorite.created_at.desc()).all())
     return render_template("main/account.html", greeting=greeting, orders=orders,
                            favorites=favorites, library=_owned_products(current_user),
-                           recommended=recommend_products(current_user))
+                           recommended=recommend_products(current_user),
+                           premium=is_premium(current_user))
+
+
+@bp.route("/account/journey.pdf")
+@login_required
+def journey_pdf():
+    if not is_premium(current_user):
+        flash("The My Journey keepsake is a little something for members who've "
+              "joined a course or guide. It's waiting for you when you are.", "info")
+        return redirect(url_for("main.account"))
+    pdf_bytes = build_journey_pdf(current_user)
+    stamp = date.today().isoformat()
+    resp = Response(pdf_bytes, mimetype="application/pdf")
+    resp.headers["Content-Disposition"] = f'attachment; filename="my-journey-{stamp}.pdf"'
+    resp.headers["Cache-Control"] = "private, no-store"
+    return resp
 
 
 @bp.route("/account/settings")
@@ -286,6 +303,18 @@ def _owned_products(user):
                         func.lower(Order.buyer_email) == (user.email or "").lower())
                 .order_by(Product.title).distinct().all())
     return [p for p in products if p.has_assets()]
+
+
+def is_premium(user) -> bool:
+    """A premium member: the owner, or anyone with at least one paid order."""
+    if not getattr(user, "is_authenticated", False):
+        return False
+    if user.is_admin:
+        return True
+    return db.session.query(Order.id).filter(
+        Order.status == "paid",
+        func.lower(Order.buyer_email) == (user.email or "").lower(),
+    ).first() is not None
 
 
 @bp.route("/library/<slug>")

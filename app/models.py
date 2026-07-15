@@ -135,6 +135,8 @@ class User(UserMixin, db.Model):
         self.last_checkin_date = today
         self.total_checkins = (self.total_checkins or 0) + 1
         self.longest_streak = max(self.longest_streak or 0, self.current_streak)
+        # per-day log so a "My Journey" export can show real history
+        db.session.add(CheckIn(user_id=self.id, day=today))
         return True
 
     def checked_in_today(self) -> bool:
@@ -324,6 +326,17 @@ class QuoteFavorite(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     quote_id = db.Column(db.Integer, db.ForeignKey("quotes.id"), nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+
+
+class CheckIn(db.Model):
+    """One row per day a member 'shows up' — the raw history behind streaks."""
+    __tablename__ = "check_ins"
+    __table_args__ = (db.UniqueConstraint("user_id", "day", name="uq_checkin_user_day"),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    day = db.Column(db.Date, nullable=False)
     created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
 
 

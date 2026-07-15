@@ -57,6 +57,25 @@
     {% else %}
     <p class="field-help" style="margin-top:18px;">Earn badges by showing up, posting, and being helpful in <a href="{{ url_for('forums.index') }}">the community</a>. They'll appear here and by your name.</p>
     {% endif %}
+
+    <div class="journey-card{% if not premium %} journey-card--locked{% endif %}">
+      <div class="journey-card__body">
+        <p class="eyebrow">My Journey</p>
+        <h3>Your story, as a keepsake</h3>
+        {% if premium %}
+        <p>A beautifully laid-out PDF of your streaks, the days you showed up, and the
+          lines you held onto. Yours to keep, print, or share &mdash; a little proof of
+          how far you've come.</p>
+        <a class="btn btn--primary" href="{{ url_for('main.journey_pdf') }}">Download my journey (PDF)</a>
+        {% else %}
+        <p>Members who've joined a course or guide can generate a keepsake PDF of their
+          whole journey &mdash; streaks, check-ins, and favorite lines. It'll be here
+          waiting when you're ready.</p>
+        <a class="btn btn--secondary" href="{{ url_for('main.courses') }}">See what's on the shelf</a>
+        {% endif %}
+      </div>
+      <div class="journey-card__mark" aria-hidden="true">&#10022;</div>
+    </div>
   </div>
 </section>
 

@@ -465,6 +465,40 @@ with app.app_context():
 ok("Reset restores default milestones", reset_vals == B.default_thresholds("storyteller"),
    f"got {reset_vals}")
 
+# --- 5b5. My Journey keepsake (premium-gated PDF) ----------------------------
+# not premium yet -> gently redirected, no PDF
+r = client.get("/account/journey.pdf", follow_redirects=False)
+ok("Non-premium member can't export a journey",
+   r.status_code == 302 and "/account" in r.headers.get("Location", ""))
+
+# favorite a quote so the keepsake has something tender in it
+with app.app_context():
+    fav_qid = Quote.query.first().id
+client.post(f"/quotes/{fav_qid}/favorite", follow_redirects=True)
+
+# becoming premium (a paid order) unlocks the export
+with app.app_context():
+    db.session.add(Order(ls_order_id="JRN-1", ls_variant_id="123456",
+                         buyer_email="newperson@example.com", total_cents=4900,
+                         currency="USD", status="paid"))
+    db.session.commit()
+r = client.get("/account/journey.pdf")
+pdf_data = r.get_data()
+ok("Premium member downloads a My Journey PDF",
+   r.status_code == 200 and r.mimetype == "application/pdf"
+   and pdf_data[:5] == b"%PDF-" and len(pdf_data) > 1200
+   and r.headers.get("Content-Disposition", "").startswith("attachment"))
+
+r = client.get("/account")
+ok("Account offers the keepsake to premium members",
+   "Download my journey" in r.get_data(as_text=True))
+
+with app.app_context():
+    from app.models import CheckIn
+    mid = User.query.filter_by(email="newperson@example.com").first().id
+    n_logged = CheckIn.query.filter_by(user_id=mid).count()
+ok("Check-ins are logged for the journey history", n_logged >= 1, f"got {n_logged}")
+
 # recommendations match a member's stated intent to hidden course tags
 with app.app_context():
     from app.models import Product

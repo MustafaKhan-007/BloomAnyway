@@ -943,3 +943,33 @@ details.faq-item > form { padding: 0 20px 20px; }
 .badge-admin-cell strong { font-size: 14px; }
 .badge-admin-cell label { font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
 .badge-admin-cell input[type="number"] { width: 92px; text-align: center; }
+
+/* My Journey keepsake card */
+.journey-card {
+  position: relative;
+  overflow: hidden;
+  margin-top: 26px;
+  padding: 28px 30px;
+  border-radius: var(--radius-card);
+  color: var(--dawn-ivory);
+  background: linear-gradient(120deg, var(--plum-deep) 0%, var(--plum) 42%, var(--berry) 100%);
+  box-shadow: var(--shadow-card);
+}
+.journey-card::before {
+  content: "";
+  position: absolute; left: 0; right: 0; top: 0; height: 5px;
+  background: var(--horizon);
+}
+.journey-card .eyebrow { color: var(--gold); }
+.journey-card h3 { margin: 4px 0 10px; color: #fff; font-size: 24px; }
+.journey-card p { color: rgba(250, 245, 238, 0.86); max-width: 60ch; margin: 0 0 18px; }
+.journey-card__body { position: relative; z-index: 1; }
+.journey-card__mark {
+  position: absolute; right: -10px; bottom: -24px;
+  font-size: 150px; line-height: 1; color: rgba(239, 167, 51, 0.18);
+  pointer-events: none;
+}
+.journey-card--locked {
+  background: linear-gradient(120deg, #514a45 0%, var(--ink) 100%);
+}
+.journey-card--locked .eyebrow { color: var(--rose-soft); }
