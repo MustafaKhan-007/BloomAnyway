@@ -82,7 +82,7 @@
     {% elif current_user.is_authenticated %}
     <div class="member-gate">
       <p><strong>Want to reply?</strong> Joining the community with a Healing or Creator membership lets you comment and like.</p>
-      <a class="btn btn--primary btn--sm" href="{{ url_for('main.courses') }}">See memberships</a>
+      <a class="btn btn--primary btn--sm" href="{{ url_for('main.membership') }}">See memberships</a>
     </div>
     {% else %}
     <p><a href="{{ url_for('auth.login', next=request.path) }}">Sign in</a> to comment.</p>
@@ -107,7 +107,7 @@
     {% if limited %}
     <div class="member-gate member-gate--soft">
       <p>You're seeing the first few comments. Members read every reply.</p>
-      <a class="btn btn--secondary btn--sm" href="{{ url_for('main.courses') }}">Unlock the community</a>
+      <a class="btn btn--secondary btn--sm" href="{{ url_for('main.membership') }}">Unlock the community</a>
     </div>
     {% endif %}
   </div>

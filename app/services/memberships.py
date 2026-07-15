@@ -1,30 +1,38 @@
 """Grant / revoke membership tiers from purchases.
 
-Memberships are sold as ordinary products flagged with ``grants_membership``.
-A member's tier is kept on ``users.membership`` (so the owner can also grant it
-by hand). Purchases *upgrade* that column; a refund recomputes the tier from the
-buyer's remaining paid membership orders (which may downgrade a purchased tier).
-The owner (``is_admin``) is always Creator and is never touched here.
+Memberships are sold on their own as ``MembershipPlan`` rows (not products).
+Each plan carries a Lemon Squeezy variant id; an order for that variant grants
+the plan's tier. A member's tier is kept on ``users.membership`` (so the owner
+can also grant it by hand). Purchases *upgrade* that column; a refund recomputes
+the tier from the buyer's remaining paid membership orders (which may downgrade
+a purchased tier). The owner (``is_admin``) is always Creator and is untouched.
 """
 import logging
 
 from sqlalchemy import func
 
 from ..extensions import db
-from ..models import Order, Product, User, higher_membership
+from ..models import MembershipPlan, Order, User, higher_membership
 
 log = logging.getLogger(__name__)
 
 
+def _plan_for_variant(variant_id):
+    if not variant_id:
+        return None
+    return MembershipPlan.query.filter_by(ls_variant_id=str(variant_id)).first()
+
+
 def purchased_tier(email: str) -> str:
-    """Highest membership tier this email currently owns via a paid order."""
+    """Highest membership tier this email currently owns via a paid order that
+    matches a membership plan's Lemon Squeezy variant."""
     if not email:
         return "none"
-    rows = (db.session.query(Product.grants_membership)
-            .join(Order, Order.product_id == Product.id)
+    rows = (db.session.query(MembershipPlan.tier)
+            .join(Order, Order.ls_variant_id == MembershipPlan.ls_variant_id)
             .filter(Order.status == "paid",
                     func.lower(Order.buyer_email) == email.strip().lower(),
-                    Product.grants_membership.in_(("healing", "creator")))
+                    MembershipPlan.tier.in_(("healing", "creator")))
             .all())
     best = "none"
     for (tier,) in rows:
@@ -65,11 +73,11 @@ def reconcile_email(email: str, downgrade: bool = False) -> bool:
 
 
 def apply_from_order(order: Order) -> None:
-    """After an order changes, grant/revoke membership if it's a membership
-    product. Non-membership products never affect a member's tier."""
-    if not order or not order.product_id:
+    """After an order changes, grant/revoke membership if its variant matches a
+    membership plan. Ordinary product orders never affect a member's tier."""
+    if not order or not order.ls_variant_id:
         return
-    product = db.session.get(Product, order.product_id)
-    if not product or product.grants_membership not in ("healing", "creator"):
+    plan = _plan_for_variant(order.ls_variant_id)
+    if not plan or plan.tier not in ("healing", "creator"):
         return
     reconcile_email(order.buyer_email, downgrade=(order.status != "paid"))

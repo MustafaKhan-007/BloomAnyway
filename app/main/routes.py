@@ -11,9 +11,9 @@ from flask_login import current_user, login_required
 from ..extensions import db, limiter
 from sqlalchemy import func
 
-from ..models import (PRODUCT_SUBJECTS, ContactMessage, FaqItem, Order, Page,
-                      Product, ProductAsset, Quote, QuoteFavorite, Subscriber,
-                      Testimonial, User, Video, utcnow)
+from ..models import (PRODUCT_SUBJECTS, ContactMessage, FaqItem, MembershipPlan,
+                      Order, Page, Product, ProductAsset, Quote, QuoteFavorite,
+                      Subscriber, Testimonial, User, Video, utcnow)
 from ..services import quotes as quotes_service
 from ..services import settings as settings_service
 from ..services.assets import docx_to_html
@@ -156,6 +156,29 @@ def courses():
     products = query.order_by(Product.sort_order, Product.created_at.desc()).all()
     return render_template("main/courses.html", products=products, active_type=ptype,
                            subjects=subjects, active_subject=active_subject)
+
+
+#: the comparison matrix shown on /membership. Each row: (label, free, healing, creator)
+#: values are True (check), False (blank) or a short string (note).
+MEMBERSHIP_MATRIX = [
+    ("Buy courses & guides", True, True, True),
+    ("Daily quotes & motivation", True, True, True),
+    ("Earn & display badges", True, True, True),
+    ("Read the community", "Top 3 threads", True, True),
+    ("Post, reply & like", False, True, True),
+    ("The owner's video room", False, False, True),
+    ("Social links on your profile", False, False, True),
+    ("Home-page spotlight eligibility", False, False, True),
+    ("\u201cMy Journey\u201d keepsake export", False, False, True),
+]
+
+
+@bp.route("/membership")
+def membership():
+    plans = {p.tier: p for p in MembershipPlan.query.filter_by(active=True).all()}
+    current = current_user.membership if current_user.is_authenticated else None
+    return render_template("main/membership.html", plans=plans,
+                           matrix=MEMBERSHIP_MATRIX, current=current)
 
 
 @bp.route("/courses/<slug>")

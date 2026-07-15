@@ -1,0 +1,72 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Membership plans{% endblock %}
+
+{% block content %}
+<h1>Membership plans</h1>
+<p class="field-help" style="max-width: 640px;">
+  These sell on their own at <a href="{{ url_for('main.membership') }}" target="_blank">/membership</a>
+  &mdash; they're not products in the catalogue. Set a price and paste the Lemon Squeezy
+  checkout link for each tier, then flip it <strong>Live</strong>. When someone buys,
+  their account is upgraded automatically (a refund removes it). The owner is always Creator.
+</p>
+
+<form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {% for plan in plans %}
+  <div class="admin-panel" style="margin-bottom: 22px;">
+    <h2 style="margin-top: 0;">{{ plan.label() }} tier</h2>
+    <div class="form-row">
+      <div class="field">
+        <label for="{{ plan.tier }}_name">Display name</label>
+        <input type="text" id="{{ plan.tier }}_name" name="{{ plan.tier }}_name"
+               maxlength="80" value="{{ plan.name }}">
+      </div>
+      <div class="field">
+        <label for="{{ plan.tier }}_tagline">Tagline</label>
+        <input type="text" id="{{ plan.tier }}_tagline" name="{{ plan.tier }}_tagline"
+               maxlength="160" value="{{ plan.tagline or '' }}">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field">
+        <label for="{{ plan.tier }}_price">Price</label>
+        <input type="text" id="{{ plan.tier }}_price" name="{{ plan.tier }}_price"
+               placeholder="e.g. 12" value="{{ '%.2f'|format(plan.price_cents / 100) if plan.price_cents is not none else '' }}">
+      </div>
+      <div class="field">
+        <label for="{{ plan.tier }}_currency">Currency</label>
+        <input type="text" id="{{ plan.tier }}_currency" name="{{ plan.tier }}_currency"
+               maxlength="3" value="{{ plan.currency }}">
+      </div>
+      <div class="field">
+        <label for="{{ plan.tier }}_period">Billing</label>
+        <select id="{{ plan.tier }}_period" name="{{ plan.tier }}_period">
+          <option value="month" {{ 'selected' if plan.period == 'month' }}>per month</option>
+          <option value="year" {{ 'selected' if plan.period == 'year' }}>per year</option>
+          <option value="once" {{ 'selected' if plan.period == 'once' }}>one-time</option>
+        </select>
+      </div>
+    </div>
+    <div class="field">
+      <label for="{{ plan.tier }}_checkout">Lemon Squeezy checkout URL</label>
+      <input type="url" id="{{ plan.tier }}_checkout" name="{{ plan.tier }}_checkout"
+             placeholder="https://yourstore.lemonsqueezy.com/checkout/..." value="{{ plan.ls_checkout_url or '' }}">
+      <p class="field-help">The "Buy" button links here. Leave blank until it's ready.</p>
+    </div>
+    <div class="field">
+      <label for="{{ plan.tier }}_variant">Lemon Squeezy variant ID</label>
+      <input type="text" id="{{ plan.tier }}_variant" name="{{ plan.tier }}_variant"
+             placeholder="e.g. 123456" value="{{ plan.ls_variant_id or '' }}">
+      <p class="field-help">Purchases of this variant grant the {{ plan.label() }} tier. Find it in your Lemon Squeezy product's variant.</p>
+    </div>
+    <div class="field">
+      <label style="font-weight: 400; display: flex; gap: 8px; align-items: center;">
+        <input type="checkbox" name="{{ plan.tier }}_active" value="1" style="width: auto;" {{ 'checked' if plan.active }}>
+        Live &mdash; show this plan on the membership page
+      </label>
+    </div>
+  </div>
+  {% endfor %}
+  <button class="btn btn--primary" type="submit">Save membership plans</button>
+</form>
+{% endblock %}

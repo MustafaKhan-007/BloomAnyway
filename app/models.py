@@ -228,8 +228,6 @@ class Product(db.Model):
     slug = db.Column(db.String(160), unique=True, nullable=False)
     type = db.Column(db.String(20), nullable=False, default="course")
     subject = db.Column(db.String(60))   # filterable catalogue subject
-    #: if set ("healing"/"creator"), buying this product grants that membership
-    grants_membership = db.Column(db.String(20))
     status = db.Column(db.String(20), nullable=False, default="draft")
     featured = db.Column(db.Boolean, nullable=False, default=False)
     badge = db.Column(db.String(30))
@@ -295,12 +293,6 @@ class Product(db.Model):
     def type_label(self):
         return "Course" if self.type == "course" else "Notebook Guide"
 
-    def membership_grant_label(self):
-        """Human label for the tier this product unlocks, or None."""
-        if self.grants_membership in ("healing", "creator"):
-            return MEMBERSHIP_LABELS[self.grants_membership] + " membership"
-        return None
-
     def publish_blockers(self):
         """List of human-readable requirements missing before publishing."""
         missing = []
@@ -342,6 +334,41 @@ class ProductAsset(db.Model):
 
     def size_mb(self):
         return round((self.size or 0) / 1024 / 1024, 1)
+
+
+class MembershipPlan(db.Model):
+    """A sellable membership (Healing / Creator). Sold on its own — not a
+    product/course. Buying one (matched by Lemon Squeezy variant id on the
+    order) upgrades the buyer's `users.membership` tier."""
+    __tablename__ = "membership_plans"
+
+    id = db.Column(db.Integer, primary_key=True)
+    tier = db.Column(db.String(20), unique=True, nullable=False)  # healing / creator
+    name = db.Column(db.String(80), nullable=False)
+    tagline = db.Column(db.String(160))
+    price_cents = db.Column(db.Integer)
+    currency = db.Column(db.String(3), nullable=False, default="USD")
+    period = db.Column(db.String(20), nullable=False, default="month")  # month / year / once
+    ls_variant_id = db.Column(db.String(40), index=True)
+    ls_checkout_url = db.Column(db.String(500))
+    active = db.Column(db.Boolean, nullable=False, default=False)
+    sort_order = db.Column(db.Integer, nullable=False, default=0)
+
+    def label(self):
+        return MEMBERSHIP_LABELS.get(self.tier, self.tier.title())
+
+    def price_display(self):
+        if self.price_cents is None:
+            return ""
+        symbol = {"USD": "$", "EUR": "\u20ac", "GBP": "\u00a3"}.get(self.currency, self.currency + " ")
+        amount = self.price_cents / 100
+        return f"{symbol}{amount:,.0f}" if self.price_cents % 100 == 0 else f"{symbol}{amount:,.2f}"
+
+    def period_label(self):
+        return {"month": "/ month", "year": "/ year", "once": "one-time"}.get(self.period, "")
+
+    def is_buyable(self):
+        return bool(self.active and self.ls_checkout_url)
 
 
 class Quote(db.Model):

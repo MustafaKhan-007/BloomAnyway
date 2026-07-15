@@ -20,7 +20,8 @@ from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 
 from ..extensions import db
-from ..models import (FaqItem, ForumComment, ForumPost, MEMBERSHIPS, Order, Page,
+from ..models import (FaqItem, ForumComment, ForumPost, MEMBERSHIPS,
+                      MembershipPlan, Order, Page,
                       Product, PRODUCT_SUBJECTS, ProductAsset, Quote,
                       QuoteFavorite, QuotePin, Subscriber, Testimonial, User,
                       Video, QUOTE_CATEGORIES)
@@ -167,8 +168,6 @@ def _product_from_form(product: Product, form) -> list[str]:
         product.type = form.get("type")
     subject = (form.get("subject") or "").strip()
     product.subject = subject if subject in PRODUCT_SUBJECTS else None
-    grant = (form.get("grants_membership") or "").strip()
-    product.grants_membership = grant if grant in ("healing", "creator") else None
     product.featured = bool(form.get("featured"))
     product.badge = (form.get("badge") or "").strip()[:30] or None
     try:
@@ -813,6 +812,57 @@ def set_membership(user_id):
         db.session.commit()
         flash(f"{member.public_name()} \u2192 {member.membership_label()}.", "success")
     return redirect(request.form.get("next") or url_for("admin.members"))
+
+
+# ============================ MEMBERSHIP PLANS ===============================
+
+_PLAN_DEFAULTS = {
+    "healing": {"name": "Healing membership",
+                "tagline": "Belong to the whole community.", "sort_order": 1},
+    "creator": {"name": "Creator membership",
+                "tagline": "Everything, plus the tools to be seen.", "sort_order": 2},
+}
+
+
+def _get_plans():
+    """Return the two membership plans, creating any that are missing."""
+    plans = {p.tier: p for p in MembershipPlan.query.all()}
+    changed = False
+    for tier, d in _PLAN_DEFAULTS.items():
+        if tier not in plans:
+            plan = MembershipPlan(tier=tier, name=d["name"], tagline=d["tagline"],
+                                  sort_order=d["sort_order"])
+            db.session.add(plan)
+            plans[tier] = plan
+            changed = True
+    if changed:
+        db.session.commit()
+    return [plans["healing"], plans["creator"]]
+
+
+@bp.route("/memberships", methods=["GET", "POST"])
+@admin_required
+def membership_plans():
+    plans = _get_plans()
+    if request.method == "POST":
+        for plan in plans:
+            p = plan.tier
+            plan.name = (request.form.get(f"{p}_name") or plan.name).strip()
+            plan.tagline = (request.form.get(f"{p}_tagline") or "").strip() or None
+            plan.currency = (request.form.get(f"{p}_currency") or "USD").strip().upper()[:3]
+            plan.period = request.form.get(f"{p}_period") or "month"
+            plan.ls_variant_id = (request.form.get(f"{p}_variant") or "").strip() or None
+            plan.ls_checkout_url = (request.form.get(f"{p}_checkout") or "").strip() or None
+            plan.active = bool(request.form.get(f"{p}_active"))
+            raw = (request.form.get(f"{p}_price") or "").strip().replace(",", "")
+            try:
+                plan.price_cents = round(float(raw) * 100) if raw else None
+            except ValueError:
+                plan.price_cents = plan.price_cents
+        db.session.commit()
+        flash("Membership plans saved.", "success")
+        return redirect(url_for("admin.membership_plans"))
+    return render_template("admin/membership_plans.html", plans=plans)
 
 
 # ================================ BADGES =====================================

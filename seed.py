@@ -15,7 +15,8 @@ from pathlib import Path
 
 from app import create_app
 from app.extensions import db
-from app.models import FaqItem, ForumCategory, ForumTag, Page, Product, Quote
+from app.models import (FaqItem, ForumCategory, ForumTag, MembershipPlan, Page,
+                        Product, Quote)
 
 SEED_FILE = Path(__file__).parent / "data" / "quotes_seed.json"
 
@@ -51,24 +52,13 @@ STARTER_FAQS = [
      "local helpline first. This will be here after.", 3),
 ]
 
-# Membership products, created as drafts. Add a Lemon Squeezy buy link + cover
-# and publish them to start selling. Buying one auto-upgrades the buyer's tier.
-MEMBERSHIP_PRODUCTS = [
-    {"slug": "healing-membership", "title": "Healing Membership", "grants": "healing",
-     "promise": "Full community access \u2014 post, reply and read every thread.",
-     "price_cents": 900,
-     "description": "A place to process, vent and be met with kindness. Healing "
-                    "members can post, reply and like across both community forums, "
-                    "with no peeking limits.",
-     "sort": 90},
-    {"slug": "creator-membership", "title": "Creator Membership", "grants": "creator",
-     "promise": "Everything in Healing, plus the video room, profile links, the "
-                "spotlight and the My Journey keepsake.",
-     "price_cents": 1900,
-     "description": "For the ones building in public. Creator members get the full "
-                    "community, the owner's video room, social links on their profile, "
-                    "a shot at the home-page spotlight, and the My Journey PDF export.",
-     "sort": 91},
+# Membership plans, created inactive. Set a price + Lemon Squeezy checkout link
+# in Studio -> Plans, then flip them Live. Buying one auto-upgrades the buyer.
+MEMBERSHIP_PLANS = [
+    {"tier": "healing", "name": "Healing membership",
+     "tagline": "Belong to the whole community.", "period": "month", "sort_order": 1},
+    {"tier": "creator", "name": "Creator membership",
+     "tagline": "Everything, plus the tools to be seen.", "period": "month", "sort_order": 2},
 ]
 
 LEGAL_STUBS = {
@@ -146,18 +136,16 @@ def seed():
         if cat_added or tag_added:
             print(f"Forums: added {cat_added} categories, {tag_added} tags")
 
-        # 5. membership products (drafts; owner adds a buy link + publishes)
+        # 5. membership plans (inactive; owner sets a price + LS link, then goes Live)
         mem_added = 0
-        for m in MEMBERSHIP_PRODUCTS:
-            if Product.query.filter_by(slug=m["slug"]).first() is None:
-                db.session.add(Product(
-                    slug=m["slug"], title=m["title"], type="course",
-                    grants_membership=m["grants"], status="draft",
-                    promise=m["promise"], description_md=m["description"],
-                    price_cents=m["price_cents"], sort_order=m["sort"]))
+        for m in MEMBERSHIP_PLANS:
+            if MembershipPlan.query.filter_by(tier=m["tier"]).first() is None:
+                db.session.add(MembershipPlan(
+                    tier=m["tier"], name=m["name"], tagline=m["tagline"],
+                    period=m["period"], sort_order=m["sort_order"], active=False))
                 mem_added += 1
         if mem_added:
-            print(f"Added {mem_added} membership product drafts")
+            print(f"Added {mem_added} membership plans")
 
         db.session.commit()
         print("Seed complete.")

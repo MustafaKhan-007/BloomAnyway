@@ -676,15 +676,22 @@ with app.app_context():
     new_tier = User.query.filter_by(email="free@example.com").first().membership
 ok("Owner can grant a membership", new_tier == "healing", f"got {new_tier}")
 
-# --- 5f. purchasable memberships --------------------------------------------
-mem_form = {**form, "title": "Creator Membership", "slug": "creator-membership-x",
-            "grants_membership": "creator", "ls_variant_id": "555001",
-            "ls_checkout_url": "https://store.lemonsqueezy.com/buy/creator"}
-r = admin.post("/admin/products/new", data=mem_form, follow_redirects=True)
-ok("Owner can sell a membership product", "Product saved" in r.get_data(as_text=True))
-r = client.get("/courses/creator-membership-x")
-ok("Membership product shows its perks + become-a-member CTA",
-   "membership-perks" in r.get_data(as_text=True) and "Become a member" in r.get_data(as_text=True))
+# --- 5f. purchasable memberships (sold on their own, not as products) -------
+plan_form = {
+    "healing_name": "Healing membership", "healing_period": "month",
+    "creator_name": "Creator membership", "creator_tagline": "Everything, plus tools.",
+    "creator_price": "19", "creator_currency": "USD", "creator_period": "month",
+    "creator_variant": "555001",
+    "creator_checkout": "https://store.lemonsqueezy.com/buy/creator",
+    "creator_active": "1",
+}
+r = admin.post("/admin/memberships", data=plan_form, follow_redirects=True)
+ok("Owner can configure a membership plan", "Membership plans saved" in r.get_data(as_text=True))
+r = app.test_client().get("/membership")  # anonymous visitor sees the buy buttons
+mbody = r.get_data(as_text=True)
+ok("Membership page shows comparison + Creator buy button",
+   "Compare every perk" in mbody and "store.lemonsqueezy.com/buy/creator" in mbody
+   and "Become a Creator" in mbody)
 
 
 def _order_webhook(order_id, email, variant, event="order_created", status="paid"):

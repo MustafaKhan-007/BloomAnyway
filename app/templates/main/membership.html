@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Membership &mdash; No Saddies Just Baddies{% endblock %}
+
+{% macro cell(val) %}
+  {% if val is sameas true %}
+    <span class="cmp-yes" aria-label="Included">&#10003;</span>
+  {% elif val is sameas false %}
+    <span class="cmp-no" aria-label="Not included">&mdash;</span>
+  {% else %}
+    <span class="cmp-note">{{ val }}</span>
+  {% endif %}
+{% endmacro %}
+
+{% block content %}
+<section class="section membership-hero">
+  <p class="eyebrow">Choose your seat at the table</p>
+  <h1>Find your people. Grow out loud.</h1>
+  <p class="subline">Start free forever, or step in for the full community and creator tools.
+    Cancel anytime &mdash; no drama.</p>
+</section>
+
+<section class="section">
+  <div class="plan-grid">
+    <!-- Free -->
+    <div class="plan-card {{ 'is-current' if current == 'none' }}">
+      {% if current == 'none' %}<span class="plan-badge">Your plan</span>{% endif %}
+      <h2>Free</h2>
+      <p class="plan-price">$0<span>/ forever</span></p>
+      <p class="plan-tagline">Look around, buy what you love.</p>
+      <ul class="plan-perks">
+        <li>Buy any course or guide</li>
+        <li>Daily quotes &amp; badges</li>
+        <li>Peek at the top community threads</li>
+      </ul>
+      {% if current == 'none' or not current %}
+      <span class="btn btn--secondary btn--block is-disabled">You're here</span>
+      {% endif %}
+    </div>
+
+    <!-- Healing -->
+    {% set healing = plans.get('healing') %}
+    <div class="plan-card {{ 'is-current' if current == 'healing' }}">
+      {% if current == 'healing' %}<span class="plan-badge">Your plan</span>{% endif %}
+      <h2>{{ healing.name if healing else 'Healing membership' }}</h2>
+      <p class="plan-price">
+        {% if healing and healing.price_cents is not none %}{{ healing.price_display() }}<span>{{ healing.period_label() }}</span>
+        {% else %}<span class="soon">Coming soon</span>{% endif %}
+      </p>
+      <p class="plan-tagline">{{ healing.tagline if healing and healing.tagline else 'Belong to the whole community.' }}</p>
+      <ul class="plan-perks">
+        <li>Everything in Free</li>
+        <li>Post, reply &amp; like anywhere</li>
+        <li>Every thread &amp; comment, no limits</li>
+      </ul>
+      {% if current == 'healing' %}
+      <span class="btn btn--secondary btn--block is-disabled">Your current plan</span>
+      {% elif healing and healing.is_buyable() %}
+      <a class="btn btn--primary btn--block lemonsqueezy-button" href="{{ healing.ls_checkout_url }}">Join Healing</a>
+      {% else %}
+      <span class="btn btn--secondary btn--block is-disabled">Coming soon</span>
+      {% endif %}
+    </div>
+
+    <!-- Creator -->
+    {% set creator = plans.get('creator') %}
+    <div class="plan-card plan-card--feature {{ 'is-current' if current == 'creator' }}">
+      <span class="plan-badge plan-badge--star">{{ 'Your plan' if current == 'creator' else 'Most loved' }}</span>
+      <h2>{{ creator.name if creator else 'Creator membership' }}</h2>
+      <p class="plan-price">
+        {% if creator and creator.price_cents is not none %}{{ creator.price_display() }}<span>{{ creator.period_label() }}</span>
+        {% else %}<span class="soon">Coming soon</span>{% endif %}
+      </p>
+      <p class="plan-tagline">{{ creator.tagline if creator and creator.tagline else 'Everything, plus the tools to be seen.' }}</p>
+      <ul class="plan-perks">
+        <li>Everything in Healing</li>
+        <li>The owner's private video room</li>
+        <li>Social links on your profile</li>
+        <li>A shot at the home-page spotlight</li>
+        <li>The &ldquo;My Journey&rdquo; keepsake export</li>
+      </ul>
+      {% if current == 'creator' %}
+      <span class="btn btn--secondary btn--block is-disabled">Your current plan</span>
+      {% elif creator and creator.is_buyable() %}
+      <a class="btn btn--primary btn--block lemonsqueezy-button" href="{{ creator.ls_checkout_url }}">Become a Creator</a>
+      {% else %}
+      <span class="btn btn--secondary btn--block is-disabled">Coming soon</span>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <h2 class="section-title">Compare every perk</h2>
+  <div class="cmp-wrap">
+    <table class="cmp-table">
+      <thead>
+        <tr>
+          <th scope="col">What you get</th>
+          <th scope="col">Free</th>
+          <th scope="col">Healing</th>
+          <th scope="col" class="cmp-table__feature">Creator</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for label, f, h, c in matrix %}
+        <tr>
+          <th scope="row">{{ label }}</th>
+          <td>{{ cell(f) }}</td>
+          <td>{{ cell(h) }}</td>
+          <td class="cmp-table__feature">{{ cell(c) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="field-help" style="text-align: center; margin-top: 18px;">
+    Prices &amp; checkout are handled securely by Lemon Squeezy. The site owner always holds Creator access.
+  </p>
+</section>
+{% endblock %}

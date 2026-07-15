@@ -56,7 +56,7 @@
     {% elif current_user.is_authenticated %}
     <div class="member-gate">
       <p><strong>You're peeking at the community.</strong> A Healing or Creator membership lets you post, reply and read every thread.</p>
-      <a class="btn btn--primary btn--sm" href="{{ url_for('main.courses') }}">See memberships</a>
+      <a class="btn btn--primary btn--sm" href="{{ url_for('main.membership') }}">See memberships</a>
     </div>
     {% else %}
     <p><a href="{{ url_for('auth.login', next=request.path) }}">Sign in</a> to join the conversation.</p>
@@ -81,7 +81,7 @@
     {% if limited %}
     <div class="member-gate member-gate--soft">
       <p>Showing a few recent threads. Members see the whole conversation.</p>
-      <a class="btn btn--secondary btn--sm" href="{{ url_for('main.courses') }}">Unlock the community</a>
+      <a class="btn btn--secondary btn--sm" href="{{ url_for('main.membership') }}">Unlock the community</a>
     </div>
     {% endif %}
   </div>
