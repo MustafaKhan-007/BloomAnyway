@@ -33,6 +33,11 @@ class Config:
         "pool_recycle": 280,
     }
 
+    # Reject absurdly large request bodies before they tie up a worker. Sits
+    # above the biggest legit upload (a video + thumbnail, or several 25 MB
+    # course files); per-file limits are still enforced in the services.
+    MAX_CONTENT_LENGTH = 150 * 1024 * 1024
+
     # Sessions / auth
     SESSION_COOKIE_NAME = "firstlight_session"
     SESSION_COOKIE_HTTPONLY = True

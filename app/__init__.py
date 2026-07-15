@@ -165,4 +165,8 @@ def create_app(config_class=None):
     def too_many(_e):
         return render_template("errors/429.html"), 429
 
+    @app.errorhandler(413)
+    def too_large(_e):
+        return render_template("errors/413.html"), 413
+
     return app

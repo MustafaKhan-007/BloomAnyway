@@ -6,7 +6,7 @@ services:
     # DB migrations/seed must run at RUNTIME (start), not at build: Render's
     # internal database hostname only resolves once the service is running.
     buildCommand: pip install -r requirements.txt
-    startCommand: flask db upgrade && python seed.py && gunicorn "app:create_app()" --workers 2 --threads 4 --timeout 60
+    startCommand: flask db upgrade && python seed.py && gunicorn "app:create_app()" --workers 2 --threads 4 --timeout 300
     healthCheckPath: /healthz
     envVars:
       - key: PYTHON_VERSION

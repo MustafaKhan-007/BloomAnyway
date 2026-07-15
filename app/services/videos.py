@@ -8,7 +8,7 @@ import os
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
-MAX_VIDEO_BYTES = 128 * 1024 * 1024   # 128 MB
+MAX_VIDEO_BYTES = 64 * 1024 * 1024   # 64 MB (fits the hosted DB + worker memory)
 MAX_THUMB_BYTES = 6 * 1024 * 1024
 THUMB_W, THUMB_H = 1280, 720
 THUMB_MIME = "image/jpeg"
@@ -44,7 +44,7 @@ def process_video(file_storage):
     if not raw:
         raise VideoError("That file was empty.")
     if len(raw) > MAX_VIDEO_BYTES:
-        raise VideoError("That video is over 128 MB \u2014 please trim or compress it.")
+        raise VideoError("That video is over 64 MB \u2014 please trim or compress it.")
     if not _sniff(ext, raw):
         raise VideoError("That didn't look like a valid video file.")
     return raw, EXT_MIME[ext], name[:255]

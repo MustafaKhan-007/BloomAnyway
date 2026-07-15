@@ -145,7 +145,7 @@ PY
 3. Fill in the `sync: false` env vars (secrets) in the Render dashboard.
 4. Deploy. The **build** just installs dependencies
    (`pip install -r requirements.txt`). The **start** command runs
-   `flask db upgrade && python seed.py && gunicorn "app:create_app()" --workers 2 --threads 4 --timeout 60`
+   `flask db upgrade && python seed.py && gunicorn "app:create_app()" --workers 2 --threads 4 --timeout 300`
    — migrations + content seeding (quotes, FAQ/legal stubs) run at *runtime*,
    because Render's internal `DATABASE_URL` hostname only resolves once the
    service is live (it is unreachable during the build phase). The seed is

@@ -750,25 +750,33 @@ def video_form(video_id=None):
             for e in errors:
                 flash(e, "error")
         else:
-            if video is None:
-                video = Video(mime="video/mp4", data=b"")
-                db.session.add(video)
-            video.title = title
-            video.description = description
-            video.published = published
-            video.sort_order = sort_order
-            if new_video:
-                data, mime, fname = new_video
-                video.data, video.mime, video.filename = data, mime, fname
-                video.size = len(data)
-            if new_thumb:
-                video.thumb_data, video.thumb_mime = new_thumb
-            if request.form.get("remove_thumb"):
-                video.thumb_data = None
-                video.thumb_mime = None
-            db.session.commit()
-            flash("Video saved.", "success")
-            return redirect(url_for("admin.videos"))
+            try:
+                if video is None:
+                    video = Video(mime="video/mp4", data=b"")
+                    db.session.add(video)
+                video.title = title
+                video.description = description
+                video.published = published
+                video.sort_order = sort_order
+                if new_video:
+                    data, mime, fname = new_video
+                    video.data, video.mime, video.filename = data, mime, fname
+                    video.size = len(data)
+                if new_thumb:
+                    video.thumb_data, video.thumb_mime = new_thumb
+                if request.form.get("remove_thumb"):
+                    video.thumb_data = None
+                    video.thumb_mime = None
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+                log.exception("video upload failed")
+                flash("We couldn't save that video just now \u2014 it may be too large "
+                      "for the server to store. Try a shorter or more compressed clip "
+                      "(under 64 MB).", "error")
+            else:
+                flash("Video saved.", "success")
+                return redirect(url_for("admin.videos"))
 
     return render_template("admin/video_form.html", video=video)
 
