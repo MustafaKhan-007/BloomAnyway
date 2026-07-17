@@ -98,11 +98,16 @@ def _spotlight_context():
         raw_ig = (site.get("creator_instagram") or "").strip()
         handle = instagram_handle(raw_ig)
         profile = instagram_profile_url(handle) if handle else ""
+        image = (site.get("creator_image_url") or "").strip()
+        # If the owner didn't paste a photo URL, resolve one from the handle
+        # via unavatar (public avatar proxy). Falls back in the template if it 404s.
+        if not image and handle:
+            image = f"https://unavatar.io/instagram/{handle}"
         creator = {
             "name": site["creator_name"].strip(),
             "instagram": profile or raw_ig,
             "handle": handle,
-            "image": (site.get("creator_image_url") or "").strip(),
+            "image": image,
             "blurb": (site.get("creator_blurb") or "").strip(),
         }
     reel = None

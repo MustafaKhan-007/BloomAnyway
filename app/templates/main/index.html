@@ -74,21 +74,20 @@
         <span class="spotlight-tag">Creator of the month</span>
         <div class="spotlight-creator">
           {% if creator_of_month.image %}
-          <img class="spotlight-creator__photo" src="{{ creator_of_month.image }}" alt="{{ creator_of_month.name }}" loading="lazy">
+          <img class="spotlight-creator__photo" src="{{ creator_of_month.image }}"
+               alt="{{ creator_of_month.name }}" loading="lazy"
+               onerror="this.hidden=true; this.nextElementSibling.hidden=false;">
+          <span class="spotlight-creator__photo spotlight-creator__photo--ph" hidden aria-hidden="true">&#127803;</span>
           {% else %}
           <span class="spotlight-creator__photo spotlight-creator__photo--ph">&#127803;</span>
           {% endif %}
-          <div class="spotlight-creator__id">
-            <h3>{{ creator_of_month.name }}</h3>
-            {% if creator_of_month.handle %}
-            <p class="spotlight-creator__handle">@{{ creator_of_month.handle }}</p>
-            {% endif %}
-          </div>
+          <h3>{{ creator_of_month.name }}</h3>
+          {% if creator_of_month.handle %}
+          <p class="spotlight-creator__handle">@{{ creator_of_month.handle }}</p>
+          {% endif %}
         </div>
         {% if creator_of_month.blurb %}
         <p class="spotlight-creator__bio">{{ creator_of_month.blurb }}</p>
-        {% else %}
-        <p class="spotlight-creator__bio spotlight-creator__bio--empty">A creator we're celebrating this month.</p>
         {% endif %}
         {% if creator_of_month.instagram %}
         <a class="btn btn--primary btn--sm spotlight-creator__cta"

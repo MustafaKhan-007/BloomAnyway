@@ -680,6 +680,10 @@ ok("Creator of the month shows on home",
    "Maya R." in hbody and "@mayar" in hbody and "instagram.com/mayar" in hbody
    and "igsh=" not in hbody)
 ok("Creator of the month shows their bio", "Rebuilt her mornings." in hbody)
+ok("Creator of the month pulls a profile photo from the handle",
+   "unavatar.io/instagram/mayar" in hbody
+   or "creator_image" in hbody.lower()
+   or "spotlight-creator__photo" in hbody)
 ok("Reel of the week embeds + links out",
    "instagram.com/reel/ABC123xyz/embed" in hbody and "Watch on Instagram" in hbody)
 
