@@ -673,6 +673,40 @@ MARKETPLACE_KINDS = ("product", "service")
 MARKETPLACE_KIND_LABELS = {"product": "Digital product", "service": "Service"}
 #: how many active listings each tier may run at once (creator = unlimited)
 MARKETPLACE_LIMITS = {"none": 0, "healing": 1, "creator": None}
+#: how many tags a single listing may carry
+MARKETPLACE_TAG_MAX = 24
+#: curated tag catalogue (authors pick from these; filters use the same list)
+MARKETPLACE_TAGS = (
+    # healing & growth
+    "Healing", "Trauma-informed", "Grief", "Divorce", "Custody", "Co-parenting",
+    "Single moms", "Starting over", "Confidence", "Boundaries", "Anxiety",
+    "Self-care", "Mindfulness", "Meditation", "Journaling", "Affirmations",
+    "Faith", "Spirituality", "Energy healing", "Reiki", "Astrology", "Tarot",
+    "LGBTQ+", "BIPOC", "Accountability", "Mentorship", "Coaching", "1:1",
+    "Group", "Workshop", "Community",
+    # body & home
+    "Fitness", "Yoga", "Pilates", "Personal training", "Nutrition", "Meal plans",
+    "Recipes", "Cooking", "Skincare", "Beauty", "Makeup", "Fashion", "Hair",
+    "Home", "Interior design", "Organizing", "Cleaning", "Pet care", "Childcare",
+    # creating & content
+    "Content creation", "Instagram", "TikTok", "YouTube", "UGC", "Influencer",
+    "Branding", "Canva", "Copywriting", "Ghostwriting", "Writing", "Editing",
+    "Photography", "Presets", "Videography", "CapCut", "Premiere", "Podcast",
+    "Speaking", "Public speaking",
+    # business & money
+    "Business", "Freelance", "Side hustle", "Money", "Budgeting", "Career",
+    "Resume", "Interview prep", "Marketing", "SEO", "Email marketing",
+    "Affiliate", "Etsy", "Shopify", "Amazon", "Dropshipping", "VA",
+    "Bookkeeping", "Legal", "Real estate", "Event planning",
+    # digital products & formats
+    "Course", "Ebook", "Workbook", "Planner", "Printable", "Template",
+    "Notion", "Spreadsheet", "Tracker", "Stickers", "Wall art", "Bundle",
+    "Freebie", "Subscription", "Membership", "Digital download", "Handmade",
+    "Jewelry", "Clothing", "Candles",
+    # delivery / format
+    "Online", "Remote", "In-person", "Hybrid", "Downloadable", "Live session",
+    "Async", "Beginner-friendly", "Advanced",
+)
 
 
 class MarketplaceListing(db.Model):

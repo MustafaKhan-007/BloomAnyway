@@ -3,12 +3,15 @@
 
 {% block content %}
 <section class="section">
-  <div class="container" style="max-width: 680px;">
+  <div class="container" style="max-width: 720px;">
     <p class="eyebrow"><a href="{{ url_for('main.my_listings') }}">&larr; Your listings</a></p>
     <h1>{{ 'Edit your listing' if listing else 'Advertise in the marketplace' }}</h1>
     <p class="field-help">We only advertise here and send buyers to your own website &mdash; nothing is sold on Bloom Anyway.</p>
 
-    <form method="post" enctype="multipart/form-data">
+    {% set start_kind = listing.kind if listing else 'product' %}
+    <form method="post" enctype="multipart/form-data" id="listing-form"
+          class="listing-form {{ 'is-service' if start_kind == 'service' else 'is-product' }}"
+          data-tag-max="{{ tag_max }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
       <fieldset class="kind-picker">
@@ -16,8 +19,7 @@
         {% for key, label in kinds.items() %}
         <label class="kind-option">
           <input type="radio" name="kind" value="{{ key }}"
-                 {{ 'checked' if (listing and listing.kind == key) or (not listing and key == 'product') }}
-                 onchange="document.getElementById('loc-field').style.display = (this.value==='service') ? '' : 'none'">
+                 {{ 'checked' if start_kind == key }}>
           <span>{{ label }}</span>
         </label>
         {% endfor %}
@@ -40,10 +42,12 @@
           <input type="text" id="price" name="price" maxlength="80" placeholder="e.g. $49 or From $20/hr"
                  value="{{ listing.price or '' if listing else '' }}">
         </div>
-        <div class="field" id="loc-field" style="{{ '' if (listing and listing.kind == 'service') else 'display:none' }}">
-          <label for="location">Location <span class="field-help">(services)</span></label>
+        <div class="field loc-field" id="loc-field">
+          <label for="location">Location</label>
           <input type="text" id="location" name="location" maxlength="120"
+                 placeholder="City, region, or Remote"
                  value="{{ listing.location or '' if listing else '' }}">
+          <p class="field-help">Shown for services only &mdash; where you work or meet clients.</p>
         </div>
       </div>
 
@@ -53,12 +57,26 @@
                placeholder="https://your-site.com/thing" value="{{ listing.website_url if listing else '' }}">
       </div>
 
-      <div class="field">
-        <label for="tags">Tags</label>
-        <input type="text" id="tags" name="tags" placeholder="comma, separated, tags"
-               value="{{ listing.tags()|join(', ') if listing else '' }}">
-        <p class="field-help">Up to 12. These power the filters.</p>
-      </div>
+      <fieldset class="tag-picker">
+        <legend>Tags <span class="field-help">(pick up to {{ tag_max }})</span></legend>
+        <p class="field-help">Tap everything that fits &mdash; readers filter by these.</p>
+        <div class="tag-picker__grid" data-tag-grid>
+          {% for t in tag_catalog %}
+          <label class="tag-pick">
+            <input type="checkbox" name="tags" value="{{ t }}"
+                   {{ 'checked' if t in chosen_tags }}>
+            <span>{{ t }}</span>
+          </label>
+          {% endfor %}
+        </div>
+        <div class="field" style="margin-top: 14px;">
+          <label for="tags_custom">Anything missing? Add your own</label>
+          <input type="text" id="tags_custom" name="tags_custom"
+                 placeholder="comma, separated, extras"
+                 value="{{ tags_custom or '' }}">
+        </div>
+        <p class="field-help" data-tag-count>0 / {{ tag_max }} selected</p>
+      </fieldset>
 
       <div class="field">
         <label for="images">Photos</label>
@@ -80,4 +98,40 @@
     </form>
   </div>
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var form = document.getElementById('listing-form');
+  if (!form) return;
+
+  function syncKind() {
+    var picked = form.querySelector('input[name="kind"]:checked');
+    var isService = picked && picked.value === 'service';
+    form.classList.toggle('is-service', isService);
+    form.classList.toggle('is-product', !isService);
+    var loc = form.querySelector('#location');
+    if (loc) loc.required = isService;
+  }
+  form.querySelectorAll('input[name="kind"]').forEach(function (r) {
+    r.addEventListener('change', syncKind);
+  });
+  syncKind();
+
+  var max = parseInt(form.getAttribute('data-tag-max') || '24', 10);
+  var boxes = form.querySelectorAll('input[name="tags"]');
+  var countEl = form.querySelector('[data-tag-count]');
+  function syncTags() {
+    var n = 0;
+    boxes.forEach(function (b) { if (b.checked) n++; });
+    if (countEl) countEl.textContent = n + ' / ' + max + ' selected';
+    boxes.forEach(function (b) {
+      if (!b.checked) b.disabled = n >= max;
+    });
+  }
+  boxes.forEach(function (b) { b.addEventListener('change', syncTags); });
+  syncTags();
+})();
+</script>
 {% endblock %}

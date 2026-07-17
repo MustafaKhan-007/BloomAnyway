@@ -14,10 +14,10 @@ from ..extensions import db, limiter
 from sqlalchemy import func
 
 from ..models import (MARKETPLACE_KINDS, MARKETPLACE_KIND_LABELS,
-                      PRODUCT_SUBJECTS, ContactMessage, FaqItem, ListingImage,
-                      MarketplaceListing, MembershipPlan, Order, Page, Product,
-                      ProductAsset, Quote, QuoteFavorite, Subscriber,
-                      Testimonial, User, Video, utcnow)
+                      MARKETPLACE_TAG_MAX, MARKETPLACE_TAGS, PRODUCT_SUBJECTS,
+                      ContactMessage, FaqItem, ListingImage, MarketplaceListing,
+                      MembershipPlan, Order, Page, Product, ProductAsset, Quote,
+                      QuoteFavorite, Subscriber, Testimonial, User, Video, utcnow)
 from ..services import quotes as quotes_service
 from ..services import settings as settings_service
 from ..services.assets import docx_to_html
@@ -232,8 +232,9 @@ def marketplace():
     if tag:
         listings = [ln for ln in listings if tag in ln.tags()]
 
-    # tag cloud from everything in the current category (so filters are stable)
-    all_tags = sorted({t for ln in base.all() for t in ln.tags()})
+    # curated catalogue first, then any custom tags already in use
+    used = {t for ln in base.all() for t in ln.tags()}
+    all_tags = list(MARKETPLACE_TAGS) + sorted(used - set(MARKETPLACE_TAGS))
     return render_template("marketplace/index.html", listings=listings,
                            kind=kind, kinds=MARKETPLACE_KIND_LABELS, q=q, tag=tag,
                            location=location, sort=sort, sorts=MARKETPLACE_SORTS,
@@ -286,14 +287,32 @@ def my_listings():
                            can_add=can_add_listing(current_user))
 
 
-def _collect_listing_tags(raw):
+_TAG_LOOKUP = {t.lower(): t for t in MARKETPLACE_TAGS}
+
+
+def _collect_listing_tags(form):
+    """Pick tags from the checklist + optional custom comma list (capped)."""
     seen, out = set(), []
-    for part in (raw or "").replace("\n", ",").split(","):
-        t = part.strip()[:30]
-        if t and t.lower() not in seen:
-            seen.add(t.lower())
-            out.append(t)
-        if len(out) >= 12:
+    for raw in form.getlist("tags"):
+        key = (raw or "").strip().lower()
+        if not key or key in seen:
+            continue
+        # prefer the curated spelling when it matches
+        label = _TAG_LOOKUP.get(key) or (raw or "").strip()[:40]
+        if not label:
+            continue
+        seen.add(key)
+        out.append(label)
+        if len(out) >= MARKETPLACE_TAG_MAX:
+            return out
+    for part in (form.get("tags_custom") or "").replace("\n", ",").split(","):
+        t = part.strip()[:40]
+        key = t.lower()
+        if not t or key in seen:
+            continue
+        seen.add(key)
+        out.append(_TAG_LOOKUP.get(key, t))
+        if len(out) >= MARKETPLACE_TAG_MAX:
             break
     return out
 
@@ -321,7 +340,7 @@ def listing_form(listing_id=None):
         website = (request.form.get("website_url") or "").strip()[:500]
         price = (request.form.get("price") or "").strip()[:80] or None
         location = (request.form.get("location") or "").strip()[:120] or None
-        tags = _collect_listing_tags(request.form.get("tags"))
+        tags = _collect_listing_tags(request.form)
 
         errors = []
         if not title:
@@ -333,6 +352,8 @@ def listing_form(listing_id=None):
                 errors.append("Add the link where people can find it.")
         if kind == "product":
             location = None
+        elif kind == "service" and not location:
+            errors.append("Add a location for your service (city, region, or Remote).")
 
         # tier limit only matters when creating (or reactivating) a live listing
         if listing is None and not can_add_listing(current_user):
@@ -375,8 +396,15 @@ def listing_form(listing_id=None):
             flash("Listing saved. It's live in the marketplace.", "success")
             return redirect(url_for("main.my_listings"))
 
+    chosen = set(listing.tags()) if listing else set()
+    # keep any custom tags the listing already has, even if not in the catalogue
+    custom_existing = [t for t in chosen if t not in MARKETPLACE_TAGS]
     return render_template("marketplace/form.html", listing=listing,
-                           kinds=MARKETPLACE_KIND_LABELS)
+                           kinds=MARKETPLACE_KIND_LABELS,
+                           tag_catalog=MARKETPLACE_TAGS,
+                           tag_max=MARKETPLACE_TAG_MAX,
+                           chosen_tags=chosen,
+                           tags_custom=", ".join(custom_existing))
 
 
 @bp.route("/marketplace/<int:listing_id>/delete", methods=["POST"])

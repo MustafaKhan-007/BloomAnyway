@@ -814,14 +814,26 @@ nofrills.post("/login", data={"email": "nofrills@example.com", "password": USER_
 r = nofrills.get("/marketplace/mine", follow_redirects=False)
 ok("Free member can't run marketplace listings", r.status_code == 302)
 
+r = banclient.get("/marketplace/new")
+form_html = r.get_data(as_text=True)
+ok("Listing form shows the big tag catalogue",
+   "tag-picker__grid" in form_html and "Content creation" in form_html
+   and "Divorce" in form_html)
+ok("Listing form includes a location field for services",
+   'id="loc-field"' in form_html and 'name="location"' in form_html)
+
 r = banclient.post("/marketplace/new", data={
     "kind": "product", "title": "My ebook", "description": "A little guide",
-    "website_url": "example.com/ebook", "tags": "healing, ebook"}, follow_redirects=True)
+    "website_url": "example.com/ebook", "tags": ["Healing", "Ebook"],
+    "tags_custom": "my-custom-tag"}, follow_redirects=True)
 ok("Healing member creates a listing", "Listing saved" in r.get_data(as_text=True))
 with app.app_context():
     hu = User.query.filter_by(email="rude@example.com").first()
     hcount = MarketplaceListing.query.filter_by(user_id=hu.id, active=True).count()
+    saved_tags = MarketplaceListing.query.filter_by(user_id=hu.id).first().tags()
 ok("Listing is live", hcount == 1)
+ok("Listing keeps curated + custom tags",
+   "Healing" in saved_tags and "Ebook" in saved_tags and "my-custom-tag" in saved_tags)
 
 r = banclient.post("/marketplace/new", data={
     "kind": "product", "title": "Second ebook", "website_url": "example.com/2"},
@@ -837,16 +849,25 @@ r = app.test_client().get("/marketplace?view=list")
 ok("Marketplace list view renders",
    r.status_code == 200 and "market-list" in r.get_data(as_text=True))
 
+# services require a location
+r = client.post("/marketplace/new", data={
+    "kind": "service", "title": "Coaching (no loc)",
+    "website_url": "https://coach.example"}, follow_redirects=True)
+ok("Service without location is rejected",
+   "Add a location" in r.get_data(as_text=True))
 client.post("/marketplace/new", data={
     "kind": "service", "title": "Coaching", "location": "Remote",
-    "website_url": "https://coach.example", "tags": "coaching"}, follow_redirects=True)
+    "website_url": "https://coach.example", "tags": ["Coaching"]}, follow_redirects=True)
 client.post("/marketplace/new", data={
-    "kind": "service", "title": "Coaching 2",
-    "website_url": "https://coach2.example"}, follow_redirects=True)
+    "kind": "service", "title": "Coaching 2", "location": "Austin, TX",
+    "website_url": "https://coach2.example", "tags": ["Mentorship"]}, follow_redirects=True)
 with app.app_context():
     cu = User.query.filter_by(email="newperson@example.com").first()
     ccount = MarketplaceListing.query.filter_by(user_id=cu.id, active=True).count()
+    svc = MarketplaceListing.query.filter_by(title="Coaching").first()
 ok("Creator member has unlimited listings", ccount >= 2, f"got {ccount}")
+ok("Service listing stores its location",
+   svc is not None and svc.location == "Remote")
 
 r = admin.get("/admin/marketplace")
 ok("Studio marketplace moderation lists items",
