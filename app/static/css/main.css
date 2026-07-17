@@ -546,9 +546,14 @@ details.faq-item .answer { padding: 0 22px 20px; }
 .admin-shell { display: grid; min-height: 100vh; grid-template-columns: 1fr; }
 .admin-sidebar { background: var(--plum); color: var(--dawn-ivory); padding: 24px 16px; }
 .admin-sidebar .brand {
-  font-family: var(--font-display); font-size: 22px; display: block;
+  font-family: var(--font-display); font-size: 22px; display: flex;
+  align-items: baseline; flex-wrap: wrap; gap: 6px;
   color: var(--dawn-ivory); text-decoration: none; margin-bottom: 24px; padding: 0 12px;
 }
+.admin-sidebar .wordmark { color: var(--dawn-ivory); font-size: 22px; }
+.admin-sidebar .wordmark__any { color: var(--rose-soft); }
+.admin-sidebar .brand-studio { font-size: 14px; font-weight: 600; opacity: 0.75;
+  font-family: var(--font-body); letter-spacing: 0.04em; text-transform: lowercase; }
 .admin-nav { display: flex; flex-direction: column; gap: 2px; }
 .admin-nav a {
   color: var(--dawn-ivory); text-decoration: none; padding: 9px 12px;

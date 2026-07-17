@@ -147,6 +147,12 @@ def seed():
         if mem_added:
             print(f"Added {mem_added} membership plans")
 
+        # 6. brand rename (First Light → Bloom Anyway) if the stored title
+        #    is still a legacy name. Custom titles the owner set are left alone.
+        from app.services.settings import ensure_brand_title
+        if ensure_brand_title():
+            print("Site title updated to Bloom Anyway")
+
         db.session.commit()
         print("Seed complete.")
 

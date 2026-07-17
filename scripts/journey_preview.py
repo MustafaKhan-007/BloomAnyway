@@ -37,11 +37,11 @@ with app.app_context():
     db.session.flush()
 
     quotes = [
-        ("You do not have to be ready. You only have to begin.", "First Light"),
+        ("You do not have to be ready. You only have to begin.", "Bloom Anyway"),
         ("The morning does not ask what you did last night. It just arrives, gold and forgiving.", None),
         ("Small returns become a whole life. Keep coming back.", "Maya"),
         ("Grief is love with nowhere to go, so give it somewhere: a page, a walk, a breath.", None),
-        ("You are not behind. You are exactly here, and here is where it starts.", "First Light"),
+        ("You are not behind. You are exactly here, and here is where it starts.", "Bloom Anyway"),
     ]
     for text, author in quotes:
         q = Quote(text=text, author=author, category="comfort")

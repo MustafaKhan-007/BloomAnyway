@@ -1,4 +1,4 @@
-/* First Light — public site JS (vanilla, no dependencies) */
+/* Bloom Anyway — public site JS (vanilla, no dependencies) */
 (function () {
   "use strict";
 

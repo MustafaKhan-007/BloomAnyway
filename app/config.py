@@ -65,7 +65,7 @@ class Config:
     SMTP_PORT = int(os.environ.get("SMTP_PORT", "587") or 587)
     SMTP_USER = os.environ.get("SMTP_USER", "")
     SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
-    MAIL_FROM = os.environ.get("MAIL_FROM", "First Light <hello@localhost>")
+    MAIL_FROM = os.environ.get("MAIL_FROM", "Bloom Anyway <hello@localhost>")
 
     # Lemon Squeezy (both optional: the storefront works before payments are
     # wired. Webhooks are rejected until the secret is set; the "Sync" button

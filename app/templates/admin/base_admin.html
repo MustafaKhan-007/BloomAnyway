@@ -14,7 +14,7 @@
   {% include "partials/badge_defs.html" %}
   <div class="admin-shell">
     <aside class="admin-sidebar">
-      <a class="brand" href="{{ url_for('admin.dashboard') }}">{{ site.site_title }} studio</a>
+      <a class="brand" href="{{ url_for('admin.dashboard') }}">{% include "partials/logo.html" %} <span class="brand-studio">studio</span></a>
       <nav class="admin-nav" aria-label="Admin">
         {% set here = request.path %}
         <a href="{{ url_for('admin.dashboard') }}" class="{{ 'active' if here == '/admin/' }}">Dashboard</a>

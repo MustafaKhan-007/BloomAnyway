@@ -1,4 +1,4 @@
-"""First Light — app factory."""
+"""Bloom Anyway — app factory."""
 import logging
 from datetime import date
 
@@ -50,6 +50,18 @@ def _ensure_secret_key(app):
             )
 
 
+def _ensure_brand(app):
+    """Rewrite a leftover 'First Light' site title to Bloom Anyway."""
+    from .services.settings import ensure_brand_title
+    with app.app_context():
+        try:
+            if ensure_brand_title():
+                logging.getLogger(__name__).info(
+                    "Renamed site title from a legacy brand to Bloom Anyway.")
+        except Exception:
+            db.session.rollback()
+
+
 def create_app(config_class=None):
     app = Flask(__name__)
     app.config.from_object(config_class or get_config())
@@ -69,6 +81,7 @@ def create_app(config_class=None):
     db.init_app(app)
     migrate.init_app(app, db)
     _ensure_secret_key(app)
+    _ensure_brand(app)
     csrf.init_app(app)
     limiter.init_app(app)
 

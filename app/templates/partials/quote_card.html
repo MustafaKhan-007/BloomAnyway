@@ -1,9 +1,9 @@
-<section class="quote-card" id="today" aria-label="Today's first light">
+<section class="quote-card" id="today" aria-label="Today's words">
   <div class="sun-disc" aria-hidden="true"></div>
   {% if today_quote %}
     <blockquote class="quote-text">&ldquo;{{ today_quote.text }}&rdquo;</blockquote>
     <p class="quote-attribution">
-      {% if today_quote.author %}&mdash; {{ today_quote.author }}{% else %}First light &middot; {{ today.strftime('%B') }} {{ today.day }}{% endif %}
+      {% if today_quote.author %}&mdash; {{ today_quote.author }}{% else %}{{ site.site_title }} &middot; {{ today.strftime('%B') }} {{ today.day }}{% endif %}
     </p>
   {% else %}
     <blockquote class="quote-text">Today's words are still on their way.</blockquote>

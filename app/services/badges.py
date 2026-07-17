@@ -46,7 +46,7 @@ CATEGORIES = {
         "metric_label": "longest streak (days)",
         "phrase": _days,
         "tiers": [
-            (3,   "First Light"),
+            (3,   "First Bloom"),
             (7,   "Steady"),
             (30,  "Devoted"),
             (100, "Unbreakable"),

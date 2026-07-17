@@ -572,7 +572,7 @@ r = admin.post(f"/admin/products/{lib_prod_id}/edit",
 ok("Non PDF/Word upload is rejected", "only PDF or Word" in r.get_data(as_text=True))
 
 # --- 5d. announcement: expiry window + remove ---------------------------------
-base_settings = {"site_title": "First Light", "instagram_url": "", "hero_image_url": "",
+base_settings = {"site_title": "Bloom Anyway", "instagram_url": "", "hero_image_url": "",
                  "portrait_url": "", "contact_email": ""}
 future = (date.today() + timedelta(days=3)).isoformat()
 admin.post("/admin/settings", data={**base_settings,
@@ -662,7 +662,7 @@ app.config["MAX_VIDEO_MB"] = 1024
 
 # home spotlight: creator of the month + reel of the week
 reel_url = "https://www.instagram.com/reel/ABC123xyz/"
-spotlight_settings = {"site_title": "First Light", "instagram_url": "",
+spotlight_settings = {"site_title": "Bloom Anyway", "instagram_url": "",
                       "hero_image_url": "", "portrait_url": "", "contact_email": "",
                       "creator_name": "Maya R.",
                       "creator_instagram": "https://instagram.com/mayar",
@@ -965,6 +965,16 @@ r = admin.get("/admin/orders")
 ok("Admin orders page", r.status_code == 200)
 r = admin.get("/admin/subscribers/export.csv")
 ok("Subscriber CSV export", r.status_code == 200 and "fan@example.com" in r.get_data(as_text=True))
+
+# brand rename: leftover "First Light" becomes Bloom Anyway on boot
+from app.services.settings import ensure_brand_title, get_setting, invalidate_cache, set_setting
+with app.app_context():
+    set_setting("site_title", "First Light")
+    invalidate_cache()
+    rewritten = ensure_brand_title()
+    new_title = get_setting("site_title")
+ok("Legacy site title is rewritten to Bloom Anyway",
+   rewritten and new_title == "Bloom Anyway", f"got {new_title!r}")
 
 # --- 8. DB-backed SECRET_KEY (no env var needed) ---------------------------
 KEY_DB = Path(tempfile.mkdtemp()) / "key.db"

@@ -23,7 +23,7 @@ _BRAND_WRAPPER = """\
   <body style="margin:0;padding:0;background:#FAF5EE;font-family:'Nunito Sans',Verdana,sans-serif;color:#2B2622;">
     <div style="max-width:560px;margin:0 auto;padding:24px;">
       <div style="background:#7A2E62;color:#FAF5EE;border-radius:16px 16px 0 0;padding:20px 28px;
-                  font-size:18px;font-weight:700;letter-spacing:0.02em;">First Light</div>
+                  font-size:18px;font-weight:700;letter-spacing:0.02em;">Bloom Anyway</div>
       <div style="background:#ffffff;border-radius:0 0 16px 16px;padding:28px;line-height:1.7;font-size:16px;">
         {body}
       </div>
@@ -46,7 +46,7 @@ def _parse_from(mail_from: str) -> dict:
     match = re.match(r"^\s*(.*?)\s*<([^>]+)>\s*$", mail_from)
     if match:
         name, email = match.groups()
-        return {"name": name or "First Light", "email": email}
+        return {"name": name or "Bloom Anyway", "email": email}
     return {"email": mail_from.strip()}
 
 

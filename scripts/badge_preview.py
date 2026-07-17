@@ -59,7 +59,7 @@ figcaption{{margin-top:6px;font-size:13px;}}
 small{{color:#6B6159;}}
 </style>
 {defs}
-<h1>First Light — badge collection</h1>
+<h1>Bloom Anyway — badge collection</h1>
 {''.join(rows)}
 """
 

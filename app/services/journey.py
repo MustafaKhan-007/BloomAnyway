@@ -12,7 +12,7 @@ from ..extensions import db
 from ..models import CheckIn, Quote, QuoteFavorite
 from .settings import get_setting
 
-# brand palette (First Light)
+# brand palette (Bloom Anyway)
 PLUM = (122, 46, 98)
 BERRY = (160, 58, 124)
 ROSE = (224, 138, 109)
@@ -50,7 +50,7 @@ def _grad(pdf, x, y, w, h, c1, c2, steps=80):
 
 
 class _Journey(FPDF):
-    site_title = "First Light"
+    site_title = "Bloom Anyway"
     handle = ""
 
     def header(self):
@@ -69,7 +69,7 @@ def _month_year(d) -> str:
 
 
 def build_journey_pdf(user) -> bytes:
-    title = get_setting("site_title") or "First Light"
+    title = get_setting("site_title") or "Bloom Anyway"
     ig = get_setting("instagram_url") or ""
     handle = ""
     if "instagram.com/" in ig:

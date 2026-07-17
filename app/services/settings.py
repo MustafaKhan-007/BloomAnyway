@@ -25,6 +25,9 @@ DEFAULTS = {
     "reel_description": "",
 }
 
+#: old brand names that should be rewritten to the current default on boot/seed
+_LEGACY_TITLES = frozenset({"first light", "no saddies just baddies"})
+
 _cache: dict[str, str] = {}
 _loaded = False
 
@@ -105,6 +108,18 @@ def active_announcements() -> list[str]:
             .order_by(Announcement.sort_order, Announcement.created_at.desc()).all())
     out.extend(a.body for a in rows if a.is_live())
     return out
+
+
+def ensure_brand_title() -> bool:
+    """If the stored site title is still an old brand name, rename it to
+    ``Bloom Anyway``. Returns True when a rewrite happened. Safe to call on
+    every boot — custom titles the owner typed themselves are left alone."""
+    current = (get_setting("site_title") or "").strip()
+    if current.lower() in _LEGACY_TITLES or not current:
+        set_setting("site_title", DEFAULTS["site_title"])
+        invalidate_cache()
+        return True
+    return False
 
 
 def invalidate_cache() -> None:

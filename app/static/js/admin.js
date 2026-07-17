@@ -1,4 +1,4 @@
-/* First Light — admin panel JS */
+/* Bloom Anyway — admin panel JS */
 (function () {
   "use strict";
 
