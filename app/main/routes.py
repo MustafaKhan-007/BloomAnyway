@@ -234,10 +234,15 @@ def marketplace():
     # curated catalogue first, then any custom tags already in use
     used = {t for ln in base.all() for t in ln.tags()}
     all_tags = list(MARKETPLACE_TAGS) + sorted(used - set(MARKETPLACE_TAGS))
+    # distinct locations from active service listings (for chip filters)
+    loc_q = MarketplaceListing.query.filter_by(active=True, kind="service")
+    locations = sorted({
+        (ln.location or "").strip() for ln in loc_q.all() if (ln.location or "").strip()
+    }, key=str.lower)
     return render_template("marketplace/index.html", listings=listings,
                            kind=kind, kinds=MARKETPLACE_KIND_LABELS, q=q, tag=tag,
                            location=location, sort=sort, sorts=MARKETPLACE_SORTS,
-                           view=view, all_tags=all_tags)
+                           view=view, all_tags=all_tags, locations=locations)
 
 
 @bp.route("/marketplace/l/<int:listing_id>")

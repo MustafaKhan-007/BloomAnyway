@@ -1263,7 +1263,6 @@ details.faq-item > form { padding: 0 20px 20px; }
   flex-wrap: wrap; }
 .market-price { font-weight: 800; color: var(--plum); }
 .market-price--lg { font-size: 26px; }
-.market-loc { color: var(--ink-soft); font-size: 14px; }
 .market-list { display: flex; flex-direction: column; gap: 14px; }
 .market-row { display: flex; gap: 16px; background: #fff; border-radius: var(--radius-card);
   box-shadow: var(--shadow-card); padding: 14px; text-decoration: none; color: inherit; }
@@ -1303,9 +1302,25 @@ details.faq-item > form { padding: 0 20px 20px; }
 .kind-option input:checked + span { border-color: var(--plum); background: rgba(122,46,98,0.06);
   color: var(--plum); }
 .kind-option input:focus-visible + span { outline: 2px solid var(--gold); outline-offset: 2px; }
-/* location is services-only — toggled by .is-service / .is-product on the form */
-.listing-form.is-product .loc-field { display: none !important; }
-.listing-form.is-service .loc-field { display: block; }
+/* dedicated location box for services (toggled via [hidden] + JS) */
+.location-box {
+  margin: 8px 0 22px; padding: 18px 20px; border-radius: 14px;
+  background: var(--gold-soft); border: 2px solid var(--gold);
+}
+.location-box[hidden] { display: none !important; }
+.location-box label { display: block; font-weight: 800; font-size: 17px;
+  color: var(--plum-deep); margin-bottom: 4px; }
+.location-box .field-help { margin: 0 0 10px; }
+.location-box input { width: 100%; padding: 12px 14px; font-size: 16px;
+  border: 1px solid rgba(122,46,98,0.25); border-radius: var(--radius-input);
+  font-family: inherit; background: #fff; }
+.market-loc {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-weight: 700; font-size: 13px; color: var(--plum-deep);
+  background: var(--gold-soft); padding: 4px 10px; border-radius: 999px;
+}
+.market-loc--lg { font-size: 15px; padding: 6px 12px; }
+.loc-cloud { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
 .tag-picker { border: none; padding: 0; margin: 0 0 22px; }
 .tag-picker legend { font-weight: 700; margin-bottom: 6px; }
 .tag-picker__grid { display: flex; flex-wrap: wrap; gap: 8px; max-height: 280px;

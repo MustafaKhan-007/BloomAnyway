@@ -28,9 +28,14 @@
         <span class="type-pill">{{ listing.kind_label() }}</span>
         <h1>{{ listing.title }}</h1>
         <div class="listing-detail__meta">
+          {% if listing.location %}
+          <span class="market-loc market-loc--lg">{{ listing.location }}</span>
+          {% endif %}
           {% if listing.price %}<span class="market-price market-price--lg">{{ listing.price }}</span>{% endif %}
-          {% if listing.location %}<span class="market-loc">&#128205; {{ listing.location }}</span>{% endif %}
         </div>
+        {% if listing.kind == 'service' and listing.location %}
+        <p class="field-help" style="margin-top: 6px;">Location &middot; where this service is offered</p>
+        {% endif %}
         {% if listing.tags() %}
         <div class="tag-cloud">
           {% for t in listing.tags() %}

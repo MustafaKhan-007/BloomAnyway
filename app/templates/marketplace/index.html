@@ -32,10 +32,12 @@
     <!-- filters row -->
     <form class="market-filters" method="get" action="{{ url_for('main.marketplace') }}">
       {% if kind %}<input type="hidden" name="kind" value="{{ kind }}">{% endif %}
+      {% if tag %}<input type="hidden" name="tag" value="{{ tag }}">{% endif %}
       <input type="hidden" name="view" value="{{ view }}">
       <input type="search" name="q" value="{{ q }}" placeholder="Search listings">
       {% if kind != 'product' %}
-      <input type="text" name="location" value="{{ location }}" placeholder="Location (services)">
+      <input type="text" name="location" value="{{ location }}"
+             placeholder="Filter by location" aria-label="Filter by location">
       {% endif %}
       <select name="sort" onchange="this.form.submit()">
         {% for key, label in sorts.items() %}
@@ -48,6 +50,16 @@
         <a href="{{ qs({'view': 'list'}) }}" class="{{ 'active' if view == 'list' }}" title="List" aria-label="List view">&#9776;</a>
       </span>
     </form>
+
+    {% if kind != 'product' and locations %}
+    <div class="loc-cloud" role="group" aria-label="Filter by location">
+      <a href="{{ qs({'location': none}) }}" class="tag-chip {{ 'active' if not location }}">All locations</a>
+      {% for loc in locations %}
+      <a href="{{ qs({'location': loc, 'kind': kind or 'service'}) }}"
+         class="tag-chip {{ 'active' if location == loc }}">{{ loc }}</a>
+      {% endfor %}
+    </div>
+    {% endif %}
 
     {% if all_tags %}
     <div class="tag-cloud">
@@ -73,8 +85,8 @@
           <h3><a href="{{ url_for('main.listing_detail', listing_id=ln.id) }}">{{ ln.title }}</a></h3>
           <p>{{ ln.description|truncate(140) }}</p>
           <div class="market-row__meta">
-            {% if ln.price %}<span class="market-price">{{ ln.price }}</span>{% endif %}
             {% if ln.location %}<span class="market-loc">{{ ln.location }}</span>{% endif %}
+            {% if ln.price %}<span class="market-price">{{ ln.price }}</span>{% endif %}
             {{ author_name(ln.author, false) }}
           </div>
         </div>
@@ -94,8 +106,8 @@
           <h3><a href="{{ url_for('main.listing_detail', listing_id=ln.id) }}">{{ ln.title }}</a></h3>
           <p>{{ ln.description|truncate(96) }}</p>
           <div class="market-card__meta">
-            {% if ln.price %}<span class="market-price">{{ ln.price }}</span>{% endif %}
             {% if ln.location %}<span class="market-loc">{{ ln.location }}</span>{% endif %}
+            {% if ln.price %}<span class="market-price">{{ ln.price }}</span>{% endif %}
           </div>
         </div>
       </article>

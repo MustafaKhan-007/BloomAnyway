@@ -107,4 +107,49 @@
       if (remove) remove.checked = false;
     });
   });
+
+  /* ---- marketplace listing form: show location box for services ---- */
+  var listingForm = document.getElementById("listing-form");
+  if (listingForm) {
+    var locBox = listingForm.querySelector("[data-location-box]");
+    var locInput = listingForm.querySelector("#location");
+    var syncKind = function () {
+      var picked = listingForm.querySelector('input[name="kind"]:checked');
+      var isService = !!(picked && picked.value === "service");
+      listingForm.classList.toggle("is-service", isService);
+      listingForm.classList.toggle("is-product", !isService);
+      if (locBox) {
+        if (isService) locBox.removeAttribute("hidden");
+        else locBox.setAttribute("hidden", "");
+      }
+      if (locInput) {
+        locInput.required = isService;
+        if (!isService) locInput.value = locInput.value; // keep typed text if they toggle back
+      }
+    };
+    listingForm.querySelectorAll('input[name="kind"]').forEach(function (r) {
+      r.addEventListener("change", syncKind);
+      // also catch clicks on the visible label chip
+      var label = r.closest("label");
+      if (label) label.addEventListener("click", function () {
+        // let the radio update, then sync on next tick
+        setTimeout(syncKind, 0);
+      });
+    });
+    syncKind();
+
+    var max = parseInt(listingForm.getAttribute("data-tag-max") || "24", 10);
+    var boxes = listingForm.querySelectorAll('input[name="tags"]');
+    var countEl = listingForm.querySelector("[data-tag-count]");
+    var syncTags = function () {
+      var n = 0;
+      boxes.forEach(function (b) { if (b.checked) n++; });
+      if (countEl) countEl.textContent = n + " / " + max + " selected";
+      boxes.forEach(function (b) {
+        if (!b.checked) b.disabled = n >= max;
+      });
+    };
+    boxes.forEach(function (b) { b.addEventListener("change", syncTags); });
+    syncTags();
+  }
 })();

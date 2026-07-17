@@ -18,12 +18,23 @@
         <legend>What is it?</legend>
         {% for key, label in kinds.items() %}
         <label class="kind-option">
-          <input type="radio" name="kind" value="{{ key }}"
+          <input type="radio" name="kind" value="{{ key }}" data-kind-radio
                  {{ 'checked' if start_kind == key }}>
           <span>{{ label }}</span>
         </label>
         {% endfor %}
       </fieldset>
+
+      {# Dedicated service-only location block — full width, hard to miss #}
+      <div class="location-box" id="location-box" data-location-box
+           {% if start_kind != 'service' %}hidden{% endif %}>
+        <label for="location">Location</label>
+        <p class="field-help">Required for services. City, region, country, or <em>Remote</em>.</p>
+        <input type="text" id="location" name="location" maxlength="120"
+               placeholder="e.g. Austin, TX &middot; London &middot; Remote"
+               value="{{ listing.location or '' if listing else '' }}"
+               {% if start_kind == 'service' %}required{% endif %}>
+      </div>
 
       <div class="field">
         <label for="title">Title</label>
@@ -36,19 +47,10 @@
         <textarea id="description" name="description" rows="5">{{ listing.description if listing else '' }}</textarea>
       </div>
 
-      <div class="form-row">
-        <div class="field">
-          <label for="price">Pricing</label>
-          <input type="text" id="price" name="price" maxlength="80" placeholder="e.g. $49 or From $20/hr"
-                 value="{{ listing.price or '' if listing else '' }}">
-        </div>
-        <div class="field loc-field" id="loc-field">
-          <label for="location">Location</label>
-          <input type="text" id="location" name="location" maxlength="120"
-                 placeholder="City, region, or Remote"
-                 value="{{ listing.location or '' if listing else '' }}">
-          <p class="field-help">Shown for services only &mdash; where you work or meet clients.</p>
-        </div>
+      <div class="field">
+        <label for="price">Pricing</label>
+        <input type="text" id="price" name="price" maxlength="80" placeholder="e.g. $49 or From $20/hr"
+               value="{{ listing.price or '' if listing else '' }}">
       </div>
 
       <div class="field">
@@ -98,40 +100,4 @@
     </form>
   </div>
 </section>
-{% endblock %}
-
-{% block scripts %}
-<script>
-(function () {
-  var form = document.getElementById('listing-form');
-  if (!form) return;
-
-  function syncKind() {
-    var picked = form.querySelector('input[name="kind"]:checked');
-    var isService = picked && picked.value === 'service';
-    form.classList.toggle('is-service', isService);
-    form.classList.toggle('is-product', !isService);
-    var loc = form.querySelector('#location');
-    if (loc) loc.required = isService;
-  }
-  form.querySelectorAll('input[name="kind"]').forEach(function (r) {
-    r.addEventListener('change', syncKind);
-  });
-  syncKind();
-
-  var max = parseInt(form.getAttribute('data-tag-max') || '24', 10);
-  var boxes = form.querySelectorAll('input[name="tags"]');
-  var countEl = form.querySelector('[data-tag-count]');
-  function syncTags() {
-    var n = 0;
-    boxes.forEach(function (b) { if (b.checked) n++; });
-    if (countEl) countEl.textContent = n + ' / ' + max + ' selected';
-    boxes.forEach(function (b) {
-      if (!b.checked) b.disabled = n >= max;
-    });
-  }
-  boxes.forEach(function (b) { b.addEventListener('change', syncTags); });
-  syncTags();
-})();
-</script>
 {% endblock %}

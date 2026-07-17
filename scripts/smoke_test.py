@@ -828,7 +828,8 @@ ok("Listing form shows the big tag catalogue",
    "tag-picker__grid" in form_html and "Content creation" in form_html
    and "Divorce" in form_html)
 ok("Listing form includes a location field for services",
-   'id="loc-field"' in form_html and 'name="location"' in form_html)
+   'id="location-box"' in form_html and 'name="location"' in form_html
+   and "data-location-box" in form_html)
 
 r = banclient.post("/marketplace/new", data={
     "kind": "product", "title": "My ebook", "description": "A little guide",
