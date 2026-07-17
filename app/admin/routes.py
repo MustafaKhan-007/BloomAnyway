@@ -32,7 +32,8 @@ from ..services.assets import AssetError, process_asset
 from ..services.lemonsqueezy import sync_recent_orders
 from ..services.settings import DEFAULTS as SETTING_DEFAULTS
 from ..services.settings import all_settings, set_setting
-from ..services.social import platform_for
+from ..services.social import (fetch_instagram_preview, instagram_handle,
+                               instagram_profile_url, platform_for)
 from ..services.videos import (VideoError, delete_stored, process_thumb,
                                process_video)
 from . import bp
@@ -85,9 +86,11 @@ def _spotlight_candidates():
         handle = None
         for link in u.links():
             if platform_for(link["url"]) == "Instagram":
-                handle = link["url"]
+                handle = instagram_handle(link["url"]) or link["url"]
                 break
-        out.append({"name": u.public_name(), "email": u.email, "instagram": handle})
+        out.append({"name": u.public_name(), "email": u.email,
+                    "instagram": f"@{handle}" if handle and not str(handle).startswith("http") else handle,
+                    "profile_url": instagram_profile_url(handle) if handle else None})
     return out
 
 
@@ -721,13 +724,31 @@ def settings():
                 db.session.commit()
             flash("Announcement removed.", "success")
             return redirect(url_for("admin.settings"))
-        for key in SETTING_DEFAULTS:
-            set_setting(key, (request.form.get(key) or "").strip())
+        values = {key: (request.form.get(key) or "").strip()
+                  for key in SETTING_DEFAULTS}
+        # store a clean Instagram handle (never a share-link with ?igsh=…)
+        handle = instagram_handle(values.get("creator_instagram") or "")
+        values["creator_instagram"] = handle
+        # if photo/bio were left blank, try a public Instagram preview
+        if handle and (not values.get("creator_image_url")
+                       or not values.get("creator_blurb")):
+            preview = fetch_instagram_preview(handle)
+            if preview.get("image") and not values.get("creator_image_url"):
+                values["creator_image_url"] = preview["image"]
+            if preview.get("blurb") and not values.get("creator_blurb"):
+                values["creator_blurb"] = preview["blurb"]
+        for key, val in values.items():
+            set_setting(key, val)
         flash("Settings saved.", "success")
         return redirect(url_for("admin.settings"))
+    values = all_settings()
+    # show a friendly @handle in the form even if an old full URL is stored
+    if values.get("creator_instagram"):
+        h = instagram_handle(values["creator_instagram"])
+        values["creator_instagram"] = f"@{h}" if h else values["creator_instagram"]
     announcements = (Announcement.query
                      .order_by(Announcement.sort_order, Announcement.created_at.desc()).all())
-    return render_template("admin/settings.html", values=all_settings(),
+    return render_template("admin/settings.html", values=values,
                            spotlight=_spotlight_candidates(),
                            announcements=announcements, today=date.today())
 

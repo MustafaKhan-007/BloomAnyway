@@ -29,7 +29,8 @@ from ..services.recommend import INTENTS, recommend_products, valid_intent_keys
 from ..services.listings import (ListingError, can_add_listing, listing_limit,
                                  process_listing_image)
 from ..services.social import (ALLOWED_LABELS, clean_social_links,
-                               instagram_embed_url)
+                               instagram_embed_url, instagram_handle,
+                               instagram_profile_url)
 from . import bp
 
 log = logging.getLogger(__name__)
@@ -94,14 +95,12 @@ def _spotlight_context():
     site = settings_service.all_settings()
     creator = None
     if (site.get("creator_name") or "").strip():
-        ig = (site.get("creator_instagram") or "").strip()
-        handle = ""
-        if ig:
-            handle = re.sub(r"^https?://(www\.)?instagram\.com/", "", ig).strip("/").split("/")[0]
-            handle = handle.lstrip("@")
+        raw_ig = (site.get("creator_instagram") or "").strip()
+        handle = instagram_handle(raw_ig)
+        profile = instagram_profile_url(handle) if handle else ""
         creator = {
             "name": site["creator_name"].strip(),
-            "instagram": ig,
+            "instagram": profile or raw_ig,
             "handle": handle,
             "image": (site.get("creator_image_url") or "").strip(),
             "blurb": (site.get("creator_blurb") or "").strip(),

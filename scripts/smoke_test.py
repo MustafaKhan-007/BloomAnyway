@@ -662,16 +662,24 @@ app.config["MAX_VIDEO_MB"] = 1024
 
 # home spotlight: creator of the month + reel of the week
 reel_url = "https://www.instagram.com/reel/ABC123xyz/"
+from app.services.social import instagram_handle as _ig_handle
+messy = "https://www.instagram.com/hustlinmommaz?igsh=cWphMWdycGowY3Fo&utm_source=qr"
+ok("Instagram handle strips share-link junk",
+   _ig_handle(messy) == "hustlinmommaz", f"got {_ig_handle(messy)!r}")
+
 spotlight_settings = {"site_title": "Bloom Anyway", "instagram_url": "",
                       "hero_image_url": "", "portrait_url": "", "contact_email": "",
                       "creator_name": "Maya R.",
-                      "creator_instagram": "https://instagram.com/mayar",
+                      "creator_instagram": messy.replace("hustlinmommaz", "mayar"),
                       "creator_blurb": "Rebuilt her mornings.",
                       "reel_url": reel_url, "reel_description": "Loved this one."}
 admin.post("/admin/settings", data=spotlight_settings, follow_redirects=True)
 r = client.get("/")
 hbody = r.get_data(as_text=True)
-ok("Creator of the month shows on home", "Maya R." in hbody and "instagram.com/mayar" in hbody)
+ok("Creator of the month shows on home",
+   "Maya R." in hbody and "@mayar" in hbody and "instagram.com/mayar" in hbody
+   and "igsh=" not in hbody)
+ok("Creator of the month shows their bio", "Rebuilt her mornings." in hbody)
 ok("Reel of the week embeds + links out",
    "instagram.com/reel/ABC123xyz/embed" in hbody and "Watch on Instagram" in hbody)
 

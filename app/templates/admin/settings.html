@@ -52,21 +52,27 @@
       <legend>Creator of the month</legend>
       <div class="form-row">
         <div class="field">
-          <label for="creator_name">Name</label>
-          <input type="text" id="creator_name" name="creator_name" value="{{ values.creator_name }}">
+          <label for="creator_name">Display name</label>
+          <input type="text" id="creator_name" name="creator_name" value="{{ values.creator_name }}"
+                 placeholder="How they show up on the card">
         </div>
         <div class="field">
-          <label for="creator_instagram">Instagram URL</label>
-          <input type="url" id="creator_instagram" name="creator_instagram" value="{{ values.creator_instagram }}" placeholder="https://instagram.com/...">
+          <label for="creator_instagram">Instagram handle</label>
+          <input type="text" id="creator_instagram" name="creator_instagram"
+                 value="{{ values.creator_instagram }}" placeholder="@theirhandle">
+          <p class="field-help">Just the handle &mdash; we strip share-link junk automatically. Paste a full URL if you like.</p>
         </div>
       </div>
       <div class="field">
-        <label for="creator_image_url">Photo URL (optional)</label>
+        <label for="creator_image_url">Profile photo URL (optional)</label>
         <input type="url" id="creator_image_url" name="creator_image_url" value="{{ values.creator_image_url }}" placeholder="https://...">
+        <p class="field-help">Leave blank and we'll try to pull their Instagram photo when you save. Paste a direct image URL if that fails.</p>
       </div>
       <div class="field">
-        <label for="creator_blurb">A line about them (optional)</label>
-        <input type="text" id="creator_blurb" name="creator_blurb" value="{{ values.creator_blurb }}">
+        <label for="creator_blurb">Their bio</label>
+        <textarea id="creator_blurb" name="creator_blurb" rows="4"
+                  placeholder="Paste their Instagram bio (or write a short intro). This fills the card.">{{ values.creator_blurb }}</textarea>
+        <p class="field-help">Instagram rarely shares bios publicly &mdash; pasting it here is the reliable way to fill the card.</p>
       </div>
     </fieldset>
     <fieldset class="spotlight-fieldset">
@@ -90,7 +96,10 @@
         {% for c in spotlight %}
         <li>
           <strong>{{ c.name }}</strong>
-          {% if c.instagram %}&mdash; <a href="{{ c.instagram }}" target="_blank" rel="noopener">{{ c.instagram }}</a>{% else %}<span class="field-help">(no Instagram link yet)</span>{% endif %}
+          {% if c.instagram %}&mdash;
+            {% if c.profile_url %}<a href="{{ c.profile_url }}" target="_blank" rel="noopener">{{ c.instagram }}</a>
+            {% else %}{{ c.instagram }}{% endif %}
+          {% else %}<span class="field-help">(no Instagram link yet)</span>{% endif %}
         </li>
         {% endfor %}
       </ul>

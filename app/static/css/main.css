@@ -1034,7 +1034,7 @@ details.faq-item > form { padding: 0 20px 20px; }
 /* spotlight on the home page */
 .spotlight-grid {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 24px; margin-top: 24px;
+  gap: 24px; margin-top: 24px; align-items: stretch;
 }
 .spotlight-card {
   background: #fff; border-radius: var(--radius-card);
@@ -1189,16 +1189,21 @@ details.faq-item > form { padding: 0 20px 20px; }
 .spotlight-tag { display: inline-block; font-family: var(--font-display);
   font-weight: 700; font-size: 14px; letter-spacing: 0.08em; text-transform: uppercase;
   color: #fff; background: var(--horizon); padding: 6px 14px; border-radius: 999px;
-  margin-bottom: 14px; box-shadow: var(--shadow-card); }
-.spotlight-card--creator { display: flex; flex-direction: column; }
+  margin-bottom: 14px; box-shadow: var(--shadow-card); align-self: flex-start; }
+.spotlight-card--creator { display: flex; flex-direction: column; text-align: left;
+  min-height: 420px; }
 .spotlight-creator { display: flex; align-items: center; gap: 16px; }
-.spotlight-creator__photo { width: 84px; height: 84px; border-radius: 50%;
+.spotlight-creator__photo { width: 96px; height: 96px; border-radius: 50%;
   object-fit: cover; flex: none; border: 3px solid var(--gold-soft); }
 .spotlight-creator__photo--ph { display: flex; align-items: center;
-  justify-content: center; font-size: 38px; background: var(--gold-soft); }
+  justify-content: center; font-size: 42px; background: var(--gold-soft); }
 .spotlight-creator__id h3 { margin: 0; font-size: 26px; }
-.spotlight-creator__handle { margin: 2px 0 0; color: var(--plum); font-weight: 700; }
-.spotlight-creator__bio { margin: 14px 0 18px; color: var(--ink-soft); }
+.spotlight-creator__handle { margin: 4px 0 0; color: var(--plum); font-weight: 700;
+  font-size: 16px; word-break: break-all; }
+.spotlight-creator__bio { margin: 18px 0 0; color: var(--ink-soft); line-height: 1.65;
+  flex: 1; white-space: pre-wrap; font-size: 16px; }
+.spotlight-creator__bio--empty { font-style: italic; opacity: 0.75; }
+.spotlight-creator__cta { margin-top: 20px; align-self: flex-start; }
 
 /* ============================ content library lock ======================= */
 .video-card--locked .video-card__thumb { filter: grayscale(0.35) brightness(0.85); }
