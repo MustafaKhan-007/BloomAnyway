@@ -13,9 +13,9 @@
           <h1>{{ greeting }}{% if current_user.first_name() %}, {{ current_user.first_name() }}{% endif %}.</h1>
           {% if current_user.is_admin %}
           <span class="membership-pill membership-pill--creator">Owner</span>
-          {% elif current_user.membership == 'creator' %}
+          {% elif current_user.is_creator() %}
           <span class="membership-pill membership-pill--creator">Creator member</span>
-          {% elif current_user.membership == 'healing' %}
+          {% elif current_user.is_member() %}
           <span class="membership-pill membership-pill--healing">Healing member</span>
           {% endif %}
         </div>
@@ -77,7 +77,7 @@
           how far you've come.</p>
         <a class="btn btn--primary" href="{{ url_for('main.journey_pdf') }}">Download my journey (PDF)</a>
         {% else %}
-        <p>Creator members can generate a keepsake PDF of their whole journey
+        <p>Members can generate a keepsake PDF of their whole journey
           &mdash; streaks, check-ins, and favorite lines. It'll be here waiting
           when you're ready.</p>
         <a class="btn btn--secondary" href="{{ url_for('main.membership') }}">See memberships</a>

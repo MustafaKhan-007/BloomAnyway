@@ -125,18 +125,25 @@ class User(UserMixin, db.Model):
         return self.avatar_data is not None
 
     # --- membership tiers ---------------------------------------------------
+    def effective_membership(self) -> str:
+        """The tier used for gating. Owner always ranks as Creator — even if
+        the stored column is still ``none`` from before memberships existed."""
+        if self.is_admin:
+            return "creator"
+        return self.membership or "none"
+
     def is_creator(self) -> bool:
         """Creator tier (or owner): all perks."""
-        return bool(self.is_admin or self.membership == "creator")
+        return self.effective_membership() == "creator"
 
     def is_member(self) -> bool:
         """Healing or Creator (or owner): full community access."""
-        return bool(self.is_admin or self.membership in ("healing", "creator"))
+        return self.effective_membership() in ("healing", "creator")
 
     def membership_label(self) -> str:
         if self.is_admin:
             return "Owner"
-        return MEMBERSHIP_LABELS.get(self.membership or "none", "Free")
+        return MEMBERSHIP_LABELS.get(self.effective_membership(), "Free")
 
     def goals(self) -> list:
         try:

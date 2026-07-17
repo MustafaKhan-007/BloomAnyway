@@ -47,7 +47,14 @@ def reconcile_user(user: User, downgrade: bool = False) -> bool:
     True (used on refunds). Returns True if the tier changed. Never touches the
     owner. The caller commits.
     """
-    if user is None or user.is_admin:
+    if user is None:
+        return False
+    # owner always keeps Creator — never reconcile them down (or leave them
+    # stuck on the old default of "none")
+    if user.is_admin:
+        if user.membership != "creator":
+            user.membership = "creator"
+            return True
         return False
     tier = purchased_tier(user.email)
     current = user.membership or "none"

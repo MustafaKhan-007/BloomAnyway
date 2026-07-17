@@ -60,6 +60,10 @@ def admin_required(f):
         # slide the window forward on every admin action
         session.permanent = True
         session["admin_seen_at"] = now.isoformat()
+        # keep the owner's stored tier at Creator so member-gated pages match
+        if current_user.membership != "creator":
+            current_user.membership = "creator"
+            db.session.commit()
         return f(*args, **kwargs)
     return wrapper
 
@@ -70,10 +74,11 @@ def slugify(text: str) -> str:
 
 
 def _spotlight_candidates():
-    """Creator members with an Instagram link — the owner's pick-list for the
-    Creator of the Month / Reel of the Week features."""
-    creators = (User.query.filter(User.membership == "creator",
-                                   User.deleted_at.is_(None))
+    """Creator members (and the owner) with an Instagram link — pick-list for
+    Creator of the Month / Reel of the Week."""
+    creators = (User.query.filter(
+                    User.deleted_at.is_(None),
+                    db.or_(User.membership == "creator", User.is_admin.is_(True)))
                 .order_by(User.display_name).all())
     out = []
     for u in creators:
@@ -886,9 +891,14 @@ def members():
 @admin_required
 def set_membership(user_id):
     member = db.session.get(User, user_id) or abort(404)
+    if member.is_admin:
+        flash("The owner account always keeps Creator access.", "info")
+        return redirect(request.form.get("next") or url_for("admin.members"))
     tier = request.form.get("membership")
     if tier in MEMBERSHIPS:
         member.membership = tier
+        from ..services.listings import enforce_listing_limits
+        enforce_listing_limits(member)
         db.session.commit()
         flash(f"{member.public_name()} \u2192 {member.membership_label()}.", "success")
     return redirect(request.form.get("next") or url_for("admin.members"))

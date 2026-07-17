@@ -747,7 +747,35 @@ with app.app_context():
     t = User.query.filter_by(email="prebuyer@example.com").first().membership
 ok("Pre-purchase is honoured at first login", t == "creator", f"got {t}")
 
-# --- 5g. healing perks, content library lock, marketplace, gifting ----------
+# --- 5g. owner always has full Creator perks (even with membership=none) ----
+with app.app_context():
+    owner = User.query.filter_by(is_admin=True).first()
+    owner.membership = "none"   # simulate a pre-memberships owner row
+    db.session.commit()
+    ok("Owner effective_membership is Creator even if column is none",
+       owner.effective_membership() == "creator" and owner.is_creator()
+       and owner.is_member())
+r = admin.get("/watch")
+ok("Owner can open the Content Library", r.status_code == 200)
+r = admin.get("/account/journey.pdf")
+ok("Owner can export My Journey",
+   r.status_code == 200 and r.mimetype == "application/pdf")
+r = admin.get("/marketplace/mine")
+ok("Owner can open marketplace listings", r.status_code == 200)
+r = admin.post("/account/profile", data={
+    "display_name": "Owner", "link_url_0": "https://owner.example/site",
+    "link_label_0": "Site"}, follow_redirects=True)
+with app.app_context():
+    olinks = User.query.filter_by(is_admin=True).first().links()
+ok("Owner can save profile links",
+   any("owner.example" in ln["url"] for ln in olinks))
+# visiting Studio upgrades the stored column too
+admin.get("/admin/")
+with app.app_context():
+    otier = User.query.filter_by(is_admin=True).first().membership
+ok("Studio visit persists Creator membership for the owner", otier == "creator")
+
+# --- 5h. healing perks, content library lock, marketplace, gifting ----------
 # banclient is signed in as rude@example.com (a Healing member)
 
 # Healing members may add ANY link and export My Journey (was Creator-only)

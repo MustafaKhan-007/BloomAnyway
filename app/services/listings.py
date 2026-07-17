@@ -42,10 +42,13 @@ def process_listing_image(file_storage) -> tuple[bytes, str]:
 
 
 def listing_limit(user) -> int | None:
-    """Max active listings for a user's tier (None = unlimited)."""
-    if getattr(user, "is_admin", False):
+    """Max active listings for a user's tier (None = unlimited). Owner/Creator
+    are unlimited; Healing gets 1; free gets 0."""
+    if getattr(user, "is_creator", lambda: False)():
         return None
-    return MARKETPLACE_LIMITS.get(getattr(user, "membership", "none"), 0)
+    tier = (user.effective_membership() if hasattr(user, "effective_membership")
+            else getattr(user, "membership", None) or "none")
+    return MARKETPLACE_LIMITS.get(tier, 0)
 
 
 def active_listing_count(user) -> int:

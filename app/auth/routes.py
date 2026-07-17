@@ -103,6 +103,10 @@ def _log_in(user: User, remember: bool = True):
     # honour any membership bought before this account existed / signed in
     from ..services.memberships import reconcile_user
     reconcile_user(user)
+    # owner always holds Creator perks in the DB too — some older rows still
+    # have membership="none" from before tiers existed
+    if user.is_admin and user.membership != "creator":
+        user.membership = "creator"
     db.session.commit()
     login_user(user, remember=remember)
     # permanent session so the admin idle-timeout window survives browser restarts
@@ -151,6 +155,7 @@ def setup():
         db.session.add(user)
     user.set_password(password)
     user.is_admin = True
+    user.membership = "creator"   # full site access, not just Studio
     user.email_verified_at = user.email_verified_at or utcnow()
     user.deleted_at = None
     db.session.commit()
