@@ -1,0 +1,79 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Reel reviews{% endblock %}
+
+{% block content %}
+<h1>Reel reviews</h1>
+<p class="field-help">This week's draw (week of {{ week_key.strftime('%b %d, %Y') }}).
+  One applicant is chosen at random; publish their review to the Content Hub.
+  A new week starts every Monday and last week's entries no longer count.</p>
+
+<div class="admin-panel" style="margin-top: 20px;">
+  <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+    <h2 style="margin:0;">This week's applicants ({{ applicants|length }})</h2>
+    <form method="post" action="{{ url_for('admin.reel_reviews_pick') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn--primary btn--sm" type="submit"
+              {% if not applicants %}disabled{% endif %}>Pick random winner</button>
+    </form>
+  </div>
+
+  {% if applicants %}
+  <table class="admin-table" style="margin-top: 16px;">
+    <thead>
+      <tr><th>Member</th><th>Reel</th><th>Raw video</th><th>Selected</th><th>Publish review</th></tr>
+    </thead>
+    <tbody>
+      {% for a in applicants %}
+      <tr>
+        <td>{{ a.author.public_name() }}<br><span class="field-help">{{ a.author.email }}</span></td>
+        <td><a href="{{ a.reel_url }}" target="_blank" rel="noopener">Open reel</a></td>
+        <td>{{ a.filename or '—' }} ({{ a.size_mb() if a.size_mb is defined else (a.size / 1024 / 1024)|round(1) }} MB)</td>
+        <td>{% if a.selected %}<strong>Yes</strong>{% else %}—{% endif %}</td>
+        <td>
+          <form method="post" action="{{ url_for('admin.reel_reviews_publish', app_id=a.id) }}"
+                enctype="multipart/form-data" class="stack-form" style="min-width:220px;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="text" name="title" placeholder="Review title" required
+                   value="{{ a.review.title if a.review else '' }}">
+            <textarea name="body" rows="3" placeholder="Written feedback…">{{ a.review.body if a.review else '' }}</textarea>
+            <input type="file" name="review_video" accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm">
+            <button class="btn btn--secondary btn--sm" type="submit">Publish</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="margin-top: 14px;">No applicants yet this week.</p>
+  {% endif %}
+</div>
+
+<div class="admin-panel" style="margin-top: 28px;">
+  <h2>Published reviews</h2>
+  {% if reviews %}
+  <table class="admin-table">
+    <thead><tr><th>Title</th><th>Member</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+      {% for r in reviews %}
+      <tr>
+        <td>{{ r.title }}</td>
+        <td>{% if r.application and r.application.author %}{{ r.application.author.public_name() }}{% else %}—{% endif %}</td>
+        <td>{{ 'Live' if r.published else 'Hidden' }}</td>
+        <td>
+          {% if r.published %}
+          <form method="post" action="{{ url_for('admin.reel_reviews_unpublish', review_id=r.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn--secondary btn--sm" type="submit">Unpublish</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No reviews published yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

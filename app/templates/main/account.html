@@ -85,6 +85,46 @@
       </div>
       <div class="journey-card__mark" aria-hidden="true">&#10022;</div>
     </div>
+
+    {% if current_user.is_creator() %}
+    <div class="journey-card" id="coaching" style="margin-top: 20px;">
+      <div class="journey-card__body">
+        <p class="eyebrow">1-on-1 coaching</p>
+        <h3>Book a private session — $100</h3>
+        <p>Creator members can request a personal coaching session. Share what you'd like
+          help with, then complete checkout to lock in your spot.</p>
+        <form method="post" action="{{ url_for('main.request_coaching') }}" class="stack-form" style="margin-top: 14px; max-width: 480px;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label>What would you like to work on?
+            <textarea name="message" rows="3" required
+                      placeholder="e.g. Reel ideas, posting rhythm, confidence on camera…"></textarea>
+          </label>
+          <label>Preferred times (optional)
+            <input type="text" name="preferred_times" maxlength="300"
+                   placeholder="e.g. Weekday evenings, weekends">
+          </label>
+          {% if coaching_checkout %}
+          <button class="btn btn--primary" type="submit">Request &amp; checkout ($100)</button>
+          {% else %}
+          <button class="btn btn--primary" type="submit">Send coaching request</button>
+          <p class="field-help">Checkout link isn't set yet — your request still reaches the owner.</p>
+          {% endif %}
+        </form>
+        {% if my_coaching %}
+        <ul class="spotlight-list" style="margin-top: 18px;">
+          {% for c in my_coaching %}
+          <li>
+            <strong>{{ c.status|capitalize }}</strong>
+            &mdash; {{ c.created_at.strftime('%b %d, %Y') }}
+            {% if c.message %}<br><span class="field-help">{{ c.message|truncate(120) }}</span>{% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </div>
+      <div class="journey-card__mark" aria-hidden="true">$</div>
+    </div>
+    {% endif %}
   </div>
 </section>
 

@@ -55,7 +55,7 @@
       {% if current == 'healing' %}
       <span class="btn btn--secondary btn--block is-disabled">Your current plan</span>
       {% elif healing and healing.is_buyable() %}
-      <a class="btn btn--primary btn--block lemonsqueezy-button" href="{{ healing.ls_checkout_url }}">Join Healing</a>
+      <a class="btn btn--primary btn--block lemonsqueezy-button" href="{{ checkout.get('healing') or healing.ls_checkout_url }}">Join Healing</a>
       {% else %}
       <span class="btn btn--secondary btn--block is-disabled">Coming soon</span>
       {% endif %}
@@ -73,7 +73,8 @@
       <p class="plan-tagline">{{ creator.tagline if creator and creator.tagline else 'Everything, plus the tools to be seen.' }}</p>
       <ul class="plan-perks">
         <li>Everything in Healing</li>
-        <li>The owner's private video room</li>
+        <li>Content Hub videos &amp; weekly reel reviews</li>
+        <li>1-on-1 coaching sessions ($100)</li>
         <li>Social links on your profile</li>
         <li>A shot at the home-page spotlight</li>
         <li>The &ldquo;My Journey&rdquo; keepsake export</li>
@@ -81,12 +82,18 @@
       {% if current == 'creator' %}
       <span class="btn btn--secondary btn--block is-disabled">Your current plan</span>
       {% elif creator and creator.is_buyable() %}
-      <a class="btn btn--primary btn--block lemonsqueezy-button" href="{{ creator.ls_checkout_url }}">Become a Creator</a>
+      <a class="btn btn--primary btn--block lemonsqueezy-button" href="{{ checkout.get('creator') or creator.ls_checkout_url }}">Become a Creator</a>
       {% else %}
       <span class="btn btn--secondary btn--block is-disabled">Coming soon</span>
       {% endif %}
     </div>
   </div>
+  {% if discount %}
+  <p class="field-help" style="text-align:center; margin-top: 20px;">
+    Promo code <strong>{{ discount.code }}</strong>{% if discount.label %} &mdash; {{ discount.label }}{% endif %}
+    is applied automatically at checkout.
+  </p>
+  {% endif %}
 </section>
 
 <section class="section">

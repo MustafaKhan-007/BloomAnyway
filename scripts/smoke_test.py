@@ -631,19 +631,28 @@ with app.app_context():
     vid_id = Video.query.filter_by(title="Morning pages walkthrough").first().id
 
 r = free_client.get("/watch", follow_redirects=False)
-ok("Free member can't open the video room", r.status_code == 302)
+ok("Free member can open Content Hub (public reviews)",
+   r.status_code == 200 and "Content Hub" in r.get_data(as_text=True)
+   and "members' perk" in r.get_data(as_text=True))
 r = free_client.get(f"/watch/{vid_id}/stream")
 ok("Free member can't stream a video", r.status_code == 404)
 
 r = client.get("/watch")
 ok("Creator member sees the video room",
-   r.status_code == 200 and "Morning pages walkthrough" in r.get_data(as_text=True))
+   r.status_code == 200 and "Morning pages walkthrough" in r.get_data(as_text=True)
+   and "Content Hub" in r.get_data(as_text=True))
 r = client.get(f"/watch/{vid_id}")
 ok("Creator member opens a video page", r.status_code == 200)
 r = client.get(f"/watch/{vid_id}/stream", headers={"Range": "bytes=0-3"})
 ok("Video streams with range support (206 partial)",
    r.status_code == 206 and r.headers.get("Accept-Ranges") == "bytes"
    and "Content-Range" in r.headers)
+r = admin.get(f"/watch/{vid_id}")
+ok("Owner can open a Content Hub video page",
+   r.status_code == 200 and "video-player" in r.get_data(as_text=True))
+r = admin.get(f"/watch/{vid_id}/stream", headers={"Range": "bytes=0-3"})
+ok("Owner can stream Content Hub videos",
+   r.status_code == 206 and "Content-Range" in r.headers)
 
 r = admin.post("/admin/videos/new", data={
     "title": "Bad file", "video_file": (io.BytesIO(b"nope"), "notes.txt"),
@@ -768,12 +777,13 @@ with app.app_context():
        owner.effective_membership() == "creator" and owner.is_creator()
        and owner.is_member())
 r = admin.get("/watch")
-ok("Owner can open the Content Library", r.status_code == 200)
+ok("Owner can open the Content Hub",
+   r.status_code == 200 and "Content Hub" in r.get_data(as_text=True))
 r = admin.get("/account/journey.pdf")
 ok("Owner can export My Journey",
    r.status_code == 200 and r.mimetype == "application/pdf")
 r = admin.get("/marketplace/mine")
-ok("Owner can open marketplace listings", r.status_code == 200)
+ok("Owner can open Showcase listings", r.status_code == 200)
 r = admin.post("/account/profile", data={
     "display_name": "Owner", "link_url_0": "https://owner.example/site",
     "link_label_0": "Site"}, follow_redirects=True)
@@ -804,17 +814,18 @@ r = banclient.get("/account/journey.pdf")
 ok("Healing member can export My Journey",
    r.status_code == 200 and r.mimetype == "application/pdf")
 
-# Content Library: Healing can browse but not play; the page is locked
+# Content Hub: Healing can browse but not play; the page is locked
 r = banclient.get("/watch")
-ok("Healing member can browse the Content Library",
-   r.status_code == 200 and "Content Library" in r.get_data(as_text=True))
+ok("Healing member can browse the Content Hub",
+   r.status_code == 200 and "Content Hub" in r.get_data(as_text=True)
+   and "Morning pages walkthrough" in r.get_data(as_text=True))
 r = banclient.get(f"/watch/{vid_id}")
 ok("Healing member sees the locked video page",
    r.status_code == 200 and "Upgrade to Creator" in r.get_data(as_text=True))
 r = banclient.get(f"/watch/{vid_id}/stream")
 ok("Healing member can't stream a locked video", r.status_code == 404)
 
-# Marketplace
+# Showcase (marketplace)
 from app.models import MarketplaceListing
 with app.app_context():
     nf = User(email="nofrills@example.com", membership="none", email_verified_at=utcnow())
@@ -824,7 +835,7 @@ with app.app_context():
 nofrills = app.test_client()
 nofrills.post("/login", data={"email": "nofrills@example.com", "password": USER_PW})
 r = nofrills.get("/marketplace/mine", follow_redirects=False)
-ok("Free member can't run marketplace listings", r.status_code == 302)
+ok("Free member can't run Showcase listings", r.status_code == 302)
 
 r = banclient.get("/marketplace/new")
 form_html = r.get_data(as_text=True)
@@ -856,10 +867,11 @@ with app.app_context():
         user_id=hu.id, active=True).count()
 ok("Healing plan caps at one active listing", hcount2 == 1)
 
-r = app.test_client().get("/marketplace")
-ok("Marketplace lists the item", "My ebook" in r.get_data(as_text=True))
+r = app.test_client().get("/showcase")
+ok("Showcase lists the item",
+   "My ebook" in r.get_data(as_text=True) and "Showcase" in r.get_data(as_text=True))
 r = app.test_client().get("/marketplace?view=list")
-ok("Marketplace list view renders",
+ok("Showcase list view renders (legacy /marketplace URL)",
    r.status_code == 200 and "market-list" in r.get_data(as_text=True))
 
 # services require a location
@@ -999,6 +1011,103 @@ r = admin.get("/admin/orders")
 ok("Admin orders page", r.status_code == 200)
 r = admin.get("/admin/subscribers/export.csv")
 ok("Subscriber CSV export", r.status_code == 200 and "fan@example.com" in r.get_data(as_text=True))
+
+# --- 7b. reel reviews, discounts, coaching, nav order ----------------------
+from app.models import CoachingRequest, DiscountCode, ReelReview, ReelReviewApplication
+from app.services.checkout import with_discount
+from app.services import reel_reviews as reel_svc
+
+nav = client.get("/").get_data(as_text=True)
+# order inside the desktop nav-links block only
+nav_block = nav.split('class="nav-links"', 1)[-1].split("</div>", 1)[0]
+i_courses = nav_block.find("Courses &amp; Guides")
+i_community = nav_block.find(">Community<")
+i_showcase = nav_block.find(">Showcase<")
+i_hub = nav_block.find(">Content Hub<")
+i_quotes = nav_block.find(">Daily quotes<")
+i_space = nav_block.find(">My space<")
+ok("Nav order is Courses, Community, Showcase, Content Hub, Quotes, My space",
+   -1 not in (i_courses, i_community, i_showcase, i_hub, i_quotes, i_space)
+   and i_courses < i_community < i_showcase < i_hub < i_quotes < i_space,
+   f"idx={(i_courses, i_community, i_showcase, i_hub, i_quotes, i_space)}")
+
+ok("Discount helper appends Lemon checkout param",
+   "checkout%5Bdiscount_code%5D=BLOOM20" in with_discount(
+       "https://store.lemonsqueezy.com/buy/x", "BLOOM20")
+   or "checkout[discount_code]=BLOOM20" in with_discount(
+       "https://store.lemonsqueezy.com/buy/x", "BLOOM20"))
+
+r = admin.post("/admin/discounts", data={"code": "bloom20", "label": "20% off"},
+               follow_redirects=True)
+ok("Owner can save a discount code", "Discount code saved" in r.get_data(as_text=True))
+r = client.get("/membership")
+ok("Membership checkout carries the active discount code",
+   "checkout%5Bdiscount_code%5D=BLOOM20" in r.get_data(as_text=True)
+   or "checkout[discount_code]=BLOOM20" in r.get_data(as_text=True)
+   or "BLOOM20" in r.get_data(as_text=True))
+
+# reel review: Creator can enter once/week; Healing cannot
+r = banclient.post("/watch/review-request", data={
+    "reel_url": "https://www.instagram.com/reel/TESTREEL1/",
+    "raw_video": (io.BytesIO(minimal_mp4), "raw.mp4"),
+}, content_type="multipart/form-data", follow_redirects=True)
+ok("Healing member can't request a reel review",
+   "Creator membership" in r.get_data(as_text=True)
+   or banclient.get("/membership").status_code == 200)
+
+r = client.post("/watch/review-request", data={
+    "reel_url": "https://www.instagram.com/reel/TESTREEL1/",
+    "raw_video": (io.BytesIO(minimal_mp4), "raw.mp4"),
+}, content_type="multipart/form-data", follow_redirects=True)
+ok("Creator member can enter the weekly reel-review draw",
+   "You're in this week's" in r.get_data(as_text=True)
+   or "reel-review draw" in r.get_data(as_text=True))
+r = client.post("/watch/review-request", data={
+    "reel_url": "https://www.instagram.com/reel/TESTREEL2/",
+    "raw_video": (io.BytesIO(minimal_mp4), "raw2.mp4"),
+}, content_type="multipart/form-data", follow_redirects=True)
+ok("Second reel-review request in the same week is blocked",
+   "already entered" in r.get_data(as_text=True))
+
+r = admin.post("/admin/reel-reviews/pick", follow_redirects=True)
+ok("Owner can pick a random reel-review applicant",
+   "Selected" in r.get_data(as_text=True))
+with app.app_context():
+    app_row = ReelReviewApplication.query.first()
+    app_id = app_row.id
+r = admin.post(f"/admin/reel-reviews/{app_id}/publish", data={
+    "title": "Loved your pacing", "body": "Keep the hook under 2 seconds.",
+}, follow_redirects=True)
+ok("Owner can publish a reel review",
+   "published to the Content Hub" in r.get_data(as_text=True))
+r = app.test_client().get("/watch")
+ok("Published reel reviews are public on Content Hub",
+   "Loved your pacing" in r.get_data(as_text=True))
+
+# coaching request (Creator only)
+admin.post("/admin/settings", data={
+    "site_title": "Bloom Anyway", "instagram_url": "", "hero_image_url": "",
+    "portrait_url": "", "contact_email": "", "announcement_text": "",
+    "announcement_expires": "", "creator_name": "", "creator_instagram": "",
+    "creator_image_url": "", "creator_blurb": "", "reel_url": "",
+    "reel_description": "",
+    "coaching_checkout_url": "https://store.lemonsqueezy.com/buy/coach100",
+}, follow_redirects=True)
+r = client.get("/account")
+ok("Creator sees 1-on-1 coaching on My space",
+   "1-on-1 coaching" in r.get_data(as_text=True) and "$100" in r.get_data(as_text=True))
+r = client.post("/account/coaching", data={
+    "message": "Help me plan a month of reels.",
+    "preferred_times": "Weekends",
+}, follow_redirects=False)
+ok("Creator coaching request redirects to Lemon checkout",
+   r.status_code == 302 and "coach100" in (r.headers.get("Location") or ""))
+with app.app_context():
+    creq = CoachingRequest.query.filter_by(message="Help me plan a month of reels.").first()
+ok("Coaching request is stored", creq is not None and creq.status == "pending")
+r = admin.get("/admin/coaching")
+ok("Studio lists coaching requests",
+   r.status_code == 200 and "Help me plan a month of reels" in r.get_data(as_text=True))
 
 # brand rename: leftover "First Light" becomes Bloom Anyway on boot
 from app.services.settings import ensure_brand_title, get_setting, invalidate_cache, set_setting

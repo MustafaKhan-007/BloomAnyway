@@ -120,7 +120,7 @@
     <div class="settings-block">
       <h3>Membership</h3>
       <p class="field-help">You're on the <strong>{{ current_user.membership_label() }}</strong> plan.
-        {% if current_user.is_member() %}Manage your links, the Content Library and the marketplace from here.{% else %}Join to unlock the community, links and more.{% endif %}</p>
+        {% if current_user.is_member() %}Manage your links, the Content Hub and the Showcase from here.{% else %}Join to unlock the community, links and more.{% endif %}</p>
       <div class="settings-actions">
         <a class="btn btn--secondary btn--sm" href="{{ url_for('main.membership') }}">
           {{ 'Change plan' if current_user.is_member() else 'See memberships' }}</a>

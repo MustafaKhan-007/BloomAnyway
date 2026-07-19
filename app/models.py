@@ -757,3 +757,81 @@ class ListingImage(db.Model):
     data = db.Column(db.LargeBinary, nullable=False)
     mime = db.Column(db.String(40), nullable=False, default="image/jpeg")
     sort_order = db.Column(db.Integer, nullable=False, default=0)
+
+
+# --- reel reviews (Content Hub) ---------------------------------------------
+
+class ReelReviewApplication(db.Model):
+    """A Creator member's weekly request for a reel review.
+
+    One application per user per ISO week (``week_key`` = that Monday). Each
+    week one applicant is randomly selected; Monday clears the slate.
+    """
+    __tablename__ = "reel_review_applications"
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "week_key", name="uq_reel_app_user_week"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    week_key = db.Column(db.Date, nullable=False, index=True)  # Monday of the week
+    reel_url = db.Column(db.String(500), nullable=False)
+    disk_name = db.Column(db.String(64))   # raw video on disk
+    filename = db.Column(db.String(255))
+    mime = db.Column(db.String(120), nullable=False, default="video/mp4")
+    size = db.Column(db.Integer, nullable=False, default=0)
+    selected = db.Column(db.Boolean, nullable=False, default=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+
+    author = db.relationship("User")
+    review = db.relationship("ReelReview", backref="application", uselist=False,
+                             cascade="all, delete-orphan")
+
+
+class ReelReview(db.Model):
+    """A published reel review — public on the Content Hub."""
+    __tablename__ = "reel_reviews"
+
+    id = db.Column(db.Integer, primary_key=True)
+    application_id = db.Column(db.Integer, db.ForeignKey("reel_review_applications.id"),
+                               nullable=False, unique=True)
+    title = db.Column(db.String(160), nullable=False)
+    body = db.Column(db.Text, nullable=False, default="")
+    review_disk_name = db.Column(db.String(64))  # optional owner review video
+    review_mime = db.Column(db.String(120))
+    review_filename = db.Column(db.String(255))
+    published = db.Column(db.Boolean, nullable=False, default=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+
+
+# --- discount codes ---------------------------------------------------------
+
+class DiscountCode(db.Model):
+    """A Lemon Squeezy discount code we surface on the site.
+
+    Checkout URLs get ``checkout[discount_code]=CODE`` appended. The code itself
+    must also exist in Lemon Squeezy — we only remember/advertise it here.
+    """
+    __tablename__ = "discount_codes"
+
+    id = db.Column(db.Integer, primary_key=True)
+    code = db.Column(db.String(60), unique=True, nullable=False)
+    label = db.Column(db.String(120))          # e.g. "Spring 20%"
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+
+
+# --- 1:1 coaching requests --------------------------------------------------
+
+class CoachingRequest(db.Model):
+    """A Creator member's request for a $100 1-on-1 coaching session."""
+    __tablename__ = "coaching_requests"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    message = db.Column(db.Text, nullable=False, default="")
+    preferred_times = db.Column(db.String(300))
+    status = db.Column(db.String(20), nullable=False, default="pending")  # pending/booked/done/cancelled
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+
+    author = db.relationship("User")

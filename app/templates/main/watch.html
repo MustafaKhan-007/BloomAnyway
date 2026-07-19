@@ -1,19 +1,30 @@
 {% extends "base.html" %}
-{% block title %}{{ video.title }} — Content Library — {{ site.site_title }}{% endblock %}
+{% block title %}{{ video.title }} — Content Hub — {{ site.site_title }}{% endblock %}
 
 {% block content %}
 <section class="section">
   <div class="container" style="max-width: 900px;">
-    <p class="eyebrow"><a href="{{ url_for('main.videos') }}">&larr; Content Library</a></p>
+    <p class="eyebrow"><a href="{{ url_for('main.videos') }}">&larr; Content Hub</a></p>
 
-    {% if can_play %}
+    {% if can_play and playable %}
     <div class="video-player">
-      <video controls playsinline preload="metadata"
+      <video controls playsinline preload="auto"
              {% if video.has_thumb() %}poster="{{ url_for('main.video_thumb', video_id=video.id) }}"{% endif %}
              controlslist="nodownload" oncontextmenu="return false;">
-        <source src="{{ url_for('main.video_stream', video_id=video.id) }}" type="{{ video.mime }}">
+        <source src="{{ url_for('main.video_stream', video_id=video.id) }}" type="{{ video.mime or 'video/mp4' }}">
         Your browser can't play this video.
       </video>
+    </div>
+    {% elif can_play and not playable %}
+    <div class="empty-state">
+      <p>This video's file isn't on the server right now
+        {% if current_user.is_admin %}
+        &mdash; re-upload it from <a href="{{ url_for('admin.videos') }}">Studio &rarr; Content Hub</a>
+        (make sure <code>VIDEO_STORAGE_DIR</code> points at a persistent disk on Render).
+        {% else %}
+        &mdash; please check back soon.
+        {% endif %}
+      </p>
     </div>
     {% else %}
     <div class="video-locked"
@@ -21,7 +32,7 @@
       <div class="video-locked__veil">
         <span class="video-locked__icon" aria-hidden="true">&#128274;</span>
         <h2>Creator members only</h2>
-        <p>You can browse the Content Library on Healing, but watching is a Creator perk.</p>
+        <p>You can browse the Content Hub on Healing, but watching is a Creator perk.</p>
         <a class="btn btn--primary" href="{{ url_for('main.membership') }}">Upgrade to Creator</a>
       </div>
     </div>

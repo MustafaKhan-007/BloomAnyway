@@ -4,8 +4,6 @@ import logging
 import os
 import re
 from datetime import date, datetime
-from urllib.parse import quote
-
 from flask import (Response, abort, current_app, flash, redirect,
                    render_template, request, send_file, url_for)
 from flask_login import current_user, login_required
@@ -15,14 +13,18 @@ from sqlalchemy import func
 
 from ..models import (MARKETPLACE_KINDS, MARKETPLACE_KIND_LABELS,
                       MARKETPLACE_TAG_MAX, MARKETPLACE_TAGS, PRODUCT_SUBJECTS,
-                      ContactMessage, FaqItem, ListingImage, MarketplaceListing,
-                      MembershipPlan, Order, Page, Product, ProductAsset, Quote,
-                      QuoteFavorite, Subscriber, Testimonial, User, Video, utcnow)
+                      CoachingRequest, ContactMessage, DiscountCode, FaqItem,
+                      ListingImage, MarketplaceListing, MembershipPlan, Order,
+                      Page, Product, ProductAsset, Quote, QuoteFavorite,
+                      ReelReview, ReelReviewApplication, Subscriber,
+                      Testimonial, User, Video, utcnow)
 from ..services import quotes as quotes_service
+from ..services import reel_reviews as reel_svc
 from ..services import settings as settings_service
 from ..services.assets import docx_to_html
 from ..services.avatars import AvatarError, process_avatar
 from ..services.badges import CATEGORIES, category_progress, earned_badges
+from ..services.checkout import with_custom, with_discount
 from ..services.journey import build_journey_pdf
 from ..services.mailer import send_contact_notification
 from ..services.recommend import INTENTS, recommend_products, valid_intent_keys
@@ -31,6 +33,7 @@ from ..services.listings import (ListingError, can_add_listing, listing_limit,
 from ..services.social import (ALLOWED_LABELS, clean_social_links,
                                instagram_embed_url, instagram_handle,
                                instagram_profile_url)
+from ..services.videos import VideoError, process_video
 from . import bp
 
 log = logging.getLogger(__name__)
@@ -182,13 +185,26 @@ MEMBERSHIP_MATRIX = [
     ("Earn & display badges", True, True, True),
     ("Read the community", "Top 3 threads", True, True),
     ("Post, reply & like", False, True, True),
-    ("Browse the Content Library", False, True, True),
-    ("Watch the Content Library", False, False, True),
+    ("Browse the Content Hub", False, True, True),
+    ("Watch Content Hub videos", False, False, True),
+    ("Request a weekly reel review", False, False, True),
+    ("1-on-1 coaching sessions", False, False, True),
     ("Profile links", False, True, True),
     ("My Journey keepsake export", False, True, True),
-    ("Marketplace listings", False, "1 active", "Unlimited"),
+    ("Showcase listings", False, "1 active", "Unlimited"),
     ("Home-page spotlight eligibility", False, False, True),
 ]
+
+
+def _active_discount_code():
+    row = (DiscountCode.query.filter_by(active=True)
+           .order_by(DiscountCode.created_at.desc()).first())
+    return row.code if row else None
+
+
+def _checkout_url(url, code=None):
+    """Apply the active (or given) discount code to a Lemon checkout URL."""
+    return with_discount(url or "", code if code is not None else _active_discount_code())
 
 
 @bp.route("/membership")
@@ -196,8 +212,15 @@ def membership():
     plans = {p.tier: p for p in MembershipPlan.query.filter_by(active=True).all()}
     current = (current_user.effective_membership()
                if current_user.is_authenticated else None)
+    discount = DiscountCode.query.filter_by(active=True).order_by(
+        DiscountCode.created_at.desc()).first()
+    # decorate plan checkout URLs with the active discount code
+    checkout = {}
+    for tier, plan in plans.items():
+        checkout[tier] = _checkout_url(plan.ls_checkout_url) if plan else None
     return render_template("main/membership.html", plans=plans,
-                           matrix=MEMBERSHIP_MATRIX, current=current)
+                           matrix=MEMBERSHIP_MATRIX, current=current,
+                           discount=discount, checkout=checkout)
 
 
 # --- marketplace (member adverts; we redirect out, we don't sell) ----------
@@ -205,8 +228,7 @@ def membership():
 MARKETPLACE_SORTS = {"popular": "Most popular", "new": "Newest"}
 
 
-@bp.route("/marketplace")
-def marketplace():
+def _showcase_index():
     kind = request.args.get("kind")
     if kind not in MARKETPLACE_KINDS:
         kind = None
@@ -248,6 +270,16 @@ def marketplace():
                            kind=kind, kinds=MARKETPLACE_KIND_LABELS, q=q, tag=tag,
                            location=location, sort=sort, sorts=MARKETPLACE_SORTS,
                            view=view, all_tags=all_tags, locations=locations)
+
+
+@bp.route("/showcase")
+def showcase():
+    return _showcase_index()
+
+
+@bp.route("/marketplace")
+def marketplace():
+    return _showcase_index()
 
 
 @bp.route("/marketplace/l/<int:listing_id>")
@@ -443,9 +475,11 @@ def product_detail(slug):
                .order_by(Product.sort_order).limit(3).all())
     testimonials = product.testimonials.order_by(Testimonial.sort_order).all()
     faqs = FaqItem.query.order_by(FaqItem.sort_order).limit(6).all()
+    checkout_url = _checkout_url(product.ls_checkout_url) if product.ls_checkout_url else ""
     return render_template("main/product_detail.html", product=product,
                            curriculum=curriculum, contents=contents,
-                           related=related, testimonials=testimonials, faqs=faqs)
+                           related=related, testimonials=testimonials, faqs=faqs,
+                           checkout_url=checkout_url)
 
 
 @bp.route("/courses/<slug>/gift", methods=["POST"])
@@ -470,9 +504,7 @@ def gift_checkout(slug):
     if not (product.ls_checkout_url or "").strip():
         flash("This one isn't available for checkout yet.", "error")
         return redirect(url_for("main.product_detail", slug=slug))
-    sep = "&" if "?" in product.ls_checkout_url else "?"
-    url = (product.ls_checkout_url + sep +
-           "checkout[custom][gift_to]=" + quote(friend, safe=""))
+    url = with_custom(_checkout_url(product.ls_checkout_url), gift_to=friend)
     return redirect(url)
 
 
@@ -531,10 +563,39 @@ def account():
     favorites = (db.session.query(Quote).join(QuoteFavorite)
                  .filter(QuoteFavorite.user_id == current_user.id)
                  .order_by(QuoteFavorite.created_at.desc()).all())
+    coaching_url = settings_service.get_setting("coaching_checkout_url") or ""
+    coaching_checkout = _checkout_url(coaching_url) if coaching_url else ""
+    my_coaching = (CoachingRequest.query.filter_by(user_id=current_user.id)
+                   .order_by(CoachingRequest.created_at.desc()).limit(5).all())
     return render_template("main/account.html", greeting=greeting, orders=orders,
                            favorites=favorites, library=_owned_products(current_user),
                            recommended=recommend_products(current_user),
-                           premium=is_premium(current_user))
+                           premium=is_premium(current_user),
+                           coaching_checkout=coaching_checkout,
+                           my_coaching=my_coaching)
+
+
+@bp.route("/account/coaching", methods=["POST"])
+@login_required
+def request_coaching():
+    if not current_user.is_creator():
+        flash("1-on-1 coaching is a Creator membership perk.", "info")
+        return redirect(url_for("main.membership"))
+    message = (request.form.get("message") or "").strip()[:2000]
+    preferred = (request.form.get("preferred_times") or "").strip()[:300]
+    if len(message) < 10:
+        flash("Tell us a little about what you'd like help with (a sentence or two).",
+              "error")
+        return redirect(url_for("main.account") + "#coaching")
+    db.session.add(CoachingRequest(
+        user_id=current_user.id, message=message, preferred_times=preferred or None))
+    db.session.commit()
+    flash("Coaching request sent — check out below to book your $100 session.",
+          "success")
+    checkout = settings_service.get_setting("coaching_checkout_url") or ""
+    if checkout:
+        return redirect(_checkout_url(checkout))
+    return redirect(url_for("main.account") + "#coaching")
 
 
 @bp.route("/account/journey.pdf")
@@ -726,39 +787,101 @@ def library_asset(slug, asset_id):
 # --- Content Library --------------------------------------------------------
 # Members (Healing+) can browse titles/thumbnails; only Creators can play.
 
-def _require_member_library():
-    """Flash + redirect if the user can't even browse the library; else None."""
-    if not (getattr(current_user, "is_authenticated", False) and current_user.is_member()):
-        flash("The Content Library is a members' perk \u2014 join to browse it.", "info")
-        return redirect(url_for("main.membership"))
-    return None
+def _can_play_videos(user) -> bool:
+    """Creator members and the site owner can press play."""
+    return bool(getattr(user, "is_authenticated", False)
+                and (getattr(user, "is_admin", False) or user.is_creator()))
+
+
+def _video_playable(video) -> bool:
+    """True when the file (disk or legacy DB bytes) is actually available."""
+    if video is None:
+        return False
+    if video.data:
+        return True
+    if video.disk_name:
+        path = os.path.join(current_app.config["VIDEO_STORAGE_DIR"], video.disk_name)
+        return os.path.exists(path)
+    return False
 
 
 @bp.route("/watch")
-@login_required
 def videos():
-    guard = _require_member_library()
-    if guard:
-        return guard
-    items = (Video.query.filter_by(published=True)
-             .order_by(Video.sort_order, Video.created_at.desc()).all())
-    return render_template("main/videos.html", videos=items,
-                           can_play=current_user.is_creator())
+    """Content Hub: public reel reviews + member video library."""
+    can_browse = (current_user.is_authenticated and current_user.is_member())
+    can_play = _can_play_videos(current_user)
+    items = []
+    if can_browse:
+        items = (Video.query.filter_by(published=True)
+                 .order_by(Video.sort_order, Video.created_at.desc()).all())
+    reviews = (ReelReview.query.filter_by(published=True)
+               .order_by(ReelReview.created_at.desc()).limit(24).all())
+    my_app = None
+    week_key = reel_svc.current_week_key()
+    if current_user.is_authenticated and current_user.is_creator():
+        my_app = reel_svc.application_for(current_user.id, week_key)
+    return render_template(
+        "main/videos.html", videos=items, can_browse=can_browse, can_play=can_play,
+        reviews=reviews, my_application=my_app, week_key=week_key,
+        max_mb=current_app.config.get("MAX_VIDEO_MB", 200),
+    )
+
+
+@bp.route("/watch/review-request", methods=["POST"])
+@login_required
+def reel_review_request():
+    if not current_user.is_creator():
+        flash("Reel reviews are a Creator membership perk.", "info")
+        return redirect(url_for("main.membership"))
+    week = reel_svc.current_week_key()
+    if reel_svc.application_for(current_user.id, week):
+        flash("You've already entered this week's reel-review draw. "
+              "A fresh round opens every Monday.", "info")
+        return redirect(url_for("main.videos") + "#reviews")
+    reel_url = (request.form.get("reel_url") or "").strip()[:500]
+    if not reel_svc.is_instagram_reel_url(reel_url):
+        flash("Paste the Instagram link of the reel you posted "
+              "(it should look like instagram.com/reel/\u2026).", "error")
+        return redirect(url_for("main.videos") + "#reviews")
+    upload = request.files.get("raw_video")
+    if not upload or not upload.filename:
+        flash("Upload the raw video file for your reel too.", "error")
+        return redirect(url_for("main.videos") + "#reviews")
+    try:
+        disk_name, mime, fname, size = process_video(
+            upload, current_app.config["VIDEO_STORAGE_DIR"],
+            current_app.config["MAX_VIDEO_MB"] * 1024 * 1024)
+    except VideoError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("main.videos") + "#reviews")
+    app_row = ReelReviewApplication(
+        user_id=current_user.id, week_key=week, reel_url=reel_url,
+        disk_name=disk_name, filename=fname, mime=mime, size=size)
+    db.session.add(app_row)
+    db.session.commit()
+    flash("You're in this week's reel-review draw. One applicant is chosen at random.",
+          "success")
+    return redirect(url_for("main.videos") + "#reviews")
 
 
 @bp.route("/watch/<int:video_id>")
 @login_required
 def watch(video_id):
-    guard = _require_member_library()
-    if guard:
-        return guard
+    if not current_user.is_member():
+        flash("The Content Hub videos are a members' perk \u2014 join to watch.", "info")
+        return redirect(url_for("main.membership"))
     video = db.session.get(Video, video_id)
-    if video is None or not video.published:
+    # Owner can preview unpublished drafts; everyone else needs published.
+    if video is None:
+        abort(404)
+    if not video.published and not current_user.is_admin:
         abort(404)
     more = (Video.query.filter(Video.published.is_(True), Video.id != video.id)
             .order_by(Video.sort_order, Video.created_at.desc()).limit(6).all())
+    can_play = _can_play_videos(current_user)
+    playable = _video_playable(video)
     return render_template("main/watch.html", video=video, more=more,
-                           can_play=current_user.is_creator())
+                           can_play=can_play, playable=playable)
 
 
 @bp.route("/watch/<int:video_id>/thumb")
@@ -768,6 +891,8 @@ def video_thumb(video_id):
         abort(404)
     video = db.session.get(Video, video_id)
     if video is None or not video.thumb_data:
+        abort(404)
+    if not video.published and not current_user.is_admin:
         abort(404)
     resp = Response(bytes(video.thumb_data), mimetype=video.thumb_mime or "image/jpeg")
     resp.headers["Cache-Control"] = "private, max-age=86400"
@@ -799,7 +924,6 @@ def _range_response(data, mime, filename):
         return resp
     chunk = data[start:end + 1]
     resp = Response(chunk, status=206, mimetype=mime)
-    resp.headers["Content-Range"] = f"bytes {start}-{end}/{length}"
     resp.headers["Accept-Ranges"] = "bytes"
     resp.headers["Content-Length"] = str(len(chunk))
     resp.headers["Cache-Control"] = "private, no-store"
@@ -809,24 +933,47 @@ def _range_response(data, mime, filename):
 @bp.route("/watch/<int:video_id>/stream")
 @login_required
 def video_stream(video_id):
-    if not (current_user.is_authenticated and current_user.is_creator()):
+    if not _can_play_videos(current_user):
         abort(404)
     video = db.session.get(Video, video_id)
-    if video is None or not video.published:
+    if video is None:
+        abort(404)
+    if not video.published and not current_user.is_admin:
         abort(404)
     if video.disk_name:
         path = os.path.join(current_app.config["VIDEO_STORAGE_DIR"], video.disk_name)
         if not os.path.exists(path):
+            log.error("Video %s missing on disk: %s", video_id, path)
             abort(404)
-        # send_file(conditional=True) handles Range requests (206 + Content-Range)
-        resp = send_file(path, mimetype=video.mime, conditional=True,
-                         download_name=video.filename or "video")
+        # conditional=True enables HTTP Range (206) so <video> can seek.
+        resp = send_file(path, mimetype=video.mime or "video/mp4",
+                         conditional=True, download_name=video.filename or "video",
+                         as_attachment=False)
         resp.headers["Accept-Ranges"] = "bytes"
         resp.headers["Cache-Control"] = "private, no-store"
         return resp
     if video.data:  # legacy rows still stored in the database
-        return _range_response(bytes(video.data), video.mime, video.filename or "video")
+        return _range_response(bytes(video.data), video.mime or "video/mp4",
+                               video.filename or "video")
     abort(404)
+
+
+@bp.route("/watch/reviews/<int:review_id>/stream")
+@login_required
+def reel_review_stream(review_id):
+    """Stream the owner's published review video (public to signed-in visitors)."""
+    review = db.session.get(ReelReview, review_id)
+    if review is None or not review.published or not review.review_disk_name:
+        abort(404)
+    path = os.path.join(current_app.config["VIDEO_STORAGE_DIR"], review.review_disk_name)
+    if not os.path.exists(path):
+        abort(404)
+    resp = send_file(path, mimetype=review.review_mime or "video/mp4",
+                     conditional=False, download_name=review.review_filename or "review",
+                     as_attachment=False)
+    resp.headers["Accept-Ranges"] = "bytes"
+    resp.headers["Cache-Control"] = "private, no-store"
+    return resp
 
 
 @bp.route("/account/password", methods=["GET", "POST"])

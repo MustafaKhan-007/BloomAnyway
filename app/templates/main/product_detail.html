@@ -26,7 +26,7 @@
         {% if product.compare_at_cents %}from {% endif %}{{ product.price_display() }}
         {% if product.compare_at_cents %}<del>{{ product.compare_at_display() }}</del>{% endif %}
       </p>
-      <a href="{{ product.ls_checkout_url }}" class="btn btn--primary lemonsqueezy-button">Get {{ product.type_label().lower() }} now</a>
+      <a href="{{ checkout_url or product.ls_checkout_url }}" class="btn btn--primary lemonsqueezy-button">Get {{ product.type_label().lower() }} now</a>
       <p class="trust-line">Secure checkout &middot; Cards &amp; PayPal &middot; Instant delivery by email</p>
 
       {% if product.ls_checkout_url %}

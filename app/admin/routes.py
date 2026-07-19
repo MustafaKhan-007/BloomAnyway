@@ -20,13 +20,15 @@ from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 
 from ..extensions import db
-from ..models import (Announcement, FaqItem, ForumComment, ForumPost,
-                      MEMBERSHIPS, MarketplaceListing, MembershipPlan, Order,
-                      Page, Product, PRODUCT_SUBJECTS, ProductAsset, Quote,
-                      QuoteFavorite, QuotePin, Subscriber, Testimonial, User,
+from ..models import (Announcement, CoachingRequest, DiscountCode, FaqItem,
+                      ForumComment, ForumPost, MEMBERSHIPS, MarketplaceListing,
+                      MembershipPlan, Order, Page, Product, PRODUCT_SUBJECTS,
+                      ProductAsset, Quote, QuoteFavorite, QuotePin, ReelReview,
+                      ReelReviewApplication, Subscriber, Testimonial, User,
                       Video, QUOTE_CATEGORIES)
 from ..services import badges as badges_service
 from ..services import quotes as quotes_service
+from ..services import reel_reviews as reel_svc
 from ..services import stats
 from ..services.assets import AssetError, process_asset
 from ..services.lemonsqueezy import sync_recent_orders
@@ -1063,3 +1065,141 @@ def community_reset_member(user_id):
     db.session.commit()
     flash("Fresh start given \u2014 warnings cleared and posting restored.", "success")
     return redirect(url_for("admin.community"))
+
+
+# ============================ REEL REVIEWS ===================================
+
+@bp.route("/reel-reviews")
+@admin_required
+def reel_reviews():
+    week = reel_svc.current_week_key()
+    applicants = reel_svc.week_applicants(week)
+    published = (ReelReview.query
+                 .order_by(ReelReview.created_at.desc()).limit(40).all())
+    return render_template("admin/reel_reviews.html", week_key=week,
+                           applicants=applicants, reviews=published,
+                           max_mb=current_app.config["MAX_VIDEO_MB"])
+
+
+@bp.route("/reel-reviews/pick", methods=["POST"])
+@admin_required
+def reel_reviews_pick():
+    chosen = reel_svc.pick_random_applicant()
+    if chosen is None:
+        flash("No applicants in this week's draw yet.", "error")
+    else:
+        flash(f"Selected {chosen.author.public_name()} for this week's review.",
+              "success")
+    return redirect(url_for("admin.reel_reviews"))
+
+
+@bp.route("/reel-reviews/<int:app_id>/publish", methods=["POST"])
+@admin_required
+def reel_reviews_publish(app_id):
+    application = db.session.get(ReelReviewApplication, app_id) or abort(404)
+    title = (request.form.get("title") or "").strip()[:160]
+    body = (request.form.get("body") or "").strip()
+    if not title:
+        flash("Give the review a title.", "error")
+        return redirect(url_for("admin.reel_reviews"))
+    review = application.review or ReelReview(application_id=application.id)
+    if application.review is None:
+        db.session.add(review)
+    review.title = title
+    review.body = body or ""
+    review.published = True
+    upload = request.files.get("review_video")
+    if upload and upload.filename:
+        try:
+            disk_name, mime, fname, _size = process_video(
+                upload, current_app.config["VIDEO_STORAGE_DIR"],
+                current_app.config["MAX_VIDEO_MB"] * 1024 * 1024)
+        except VideoError as exc:
+            flash(str(exc), "error")
+            return redirect(url_for("admin.reel_reviews"))
+        if review.review_disk_name:
+            delete_stored(current_app.config["VIDEO_STORAGE_DIR"],
+                          review.review_disk_name)
+        review.review_disk_name = disk_name
+        review.review_mime = mime
+        review.review_filename = fname
+    application.selected = True
+    db.session.commit()
+    flash("Reel review published to the Content Hub.", "success")
+    return redirect(url_for("admin.reel_reviews"))
+
+
+@bp.route("/reel-reviews/review/<int:review_id>/unpublish", methods=["POST"])
+@admin_required
+def reel_reviews_unpublish(review_id):
+    review = db.session.get(ReelReview, review_id) or abort(404)
+    review.published = False
+    db.session.commit()
+    flash("Review hidden from the Content Hub.", "success")
+    return redirect(url_for("admin.reel_reviews"))
+
+
+# ============================ DISCOUNT CODES =================================
+
+@bp.route("/discounts", methods=["GET", "POST"])
+@admin_required
+def discounts():
+    if request.method == "POST":
+        code = (request.form.get("code") or "").strip().upper()[:60]
+        label = (request.form.get("label") or "").strip()[:120]
+        if not code:
+            flash("Enter a discount code.", "error")
+        elif DiscountCode.query.filter_by(code=code).first():
+            flash("That code is already saved.", "error")
+        else:
+            db.session.add(DiscountCode(code=code, label=label or None, active=True))
+            db.session.commit()
+            flash("Discount code saved. Create the same code in Lemon Squeezy "
+                  "so checkout can apply it.", "success")
+        return redirect(url_for("admin.discounts"))
+    codes = DiscountCode.query.order_by(DiscountCode.created_at.desc()).all()
+    return render_template("admin/discounts.html", codes=codes)
+
+
+@bp.route("/discounts/<int:code_id>/toggle", methods=["POST"])
+@admin_required
+def discounts_toggle(code_id):
+    row = db.session.get(DiscountCode, code_id) or abort(404)
+    row.active = not row.active
+    db.session.commit()
+    flash("Code activated." if row.active else "Code deactivated.", "success")
+    return redirect(url_for("admin.discounts"))
+
+
+@bp.route("/discounts/<int:code_id>/delete", methods=["POST"])
+@admin_required
+def discounts_delete(code_id):
+    row = db.session.get(DiscountCode, code_id) or abort(404)
+    db.session.delete(row)
+    db.session.commit()
+    flash("Discount code removed.", "success")
+    return redirect(url_for("admin.discounts"))
+
+
+# =============================== COACHING ====================================
+
+@bp.route("/coaching")
+@admin_required
+def coaching():
+    rows = (CoachingRequest.query.options(joinedload(CoachingRequest.author))
+            .order_by(CoachingRequest.created_at.desc()).limit(100).all())
+    return render_template("admin/coaching.html", requests=rows)
+
+
+@bp.route("/coaching/<int:req_id>/status", methods=["POST"])
+@admin_required
+def coaching_status(req_id):
+    row = db.session.get(CoachingRequest, req_id) or abort(404)
+    status = (request.form.get("status") or "").strip()
+    if status not in ("pending", "booked", "done", "cancelled"):
+        flash("Unknown status.", "error")
+    else:
+        row.status = status
+        db.session.commit()
+        flash("Coaching request updated.", "success")
+    return redirect(url_for("admin.coaching"))

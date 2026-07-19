@@ -1,0 +1,40 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Coaching{% endblock %}
+
+{% block content %}
+<h1>1-on-1 coaching requests</h1>
+<p class="field-help">Creator members request $100 sessions from My space.
+  Set the Lemon checkout URL under Settings.</p>
+
+{% if requests %}
+<table class="admin-table" style="margin-top: 20px;">
+  <thead>
+    <tr><th>Member</th><th>Message</th><th>Preferred times</th><th>Status</th><th>When</th></tr>
+  </thead>
+  <tbody>
+    {% for r in requests %}
+    <tr>
+      <td>{{ r.author.public_name() }}<br><span class="field-help">{{ r.author.email }}</span></td>
+      <td style="max-width: 280px;">{{ r.message }}</td>
+      <td>{{ r.preferred_times or '—' }}</td>
+      <td>
+        <form method="post" action="{{ url_for('admin.coaching_status', req_id=r.id) }}"
+              style="display:flex; gap:6px; align-items:center;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <select name="status">
+            {% for s in ['pending', 'booked', 'done', 'cancelled'] %}
+            <option value="{{ s }}" {% if r.status == s %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+          </select>
+          <button class="btn btn--secondary btn--sm" type="submit">Update</button>
+        </form>
+      </td>
+      <td>{{ r.created_at.strftime('%b %d, %Y') }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p style="margin-top: 20px;">No coaching requests yet.</p>
+{% endif %}
+{% endblock %}

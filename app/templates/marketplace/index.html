@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% from "partials/avatar.html" import avatar, author_name %}
-{% block title %}Marketplace — {{ site.site_title }}{% endblock %}
+{% block title %}Showcase — {{ site.site_title }}{% endblock %}
 
 {% macro qs(overrides) -%}
   {%- set args = {'kind': kind, 'q': q, 'tag': tag, 'location': location, 'sort': sort, 'view': view} -%}
   {%- set _ = args.update(overrides) -%}
-  {{- url_for('main.marketplace', **args) -}}
+  {{- url_for('main.showcase', **args) -}}
 {%- endmacro %}
 
 {% block content %}
@@ -14,7 +14,7 @@
     <div class="market-head">
       <div>
         <p class="eyebrow">By the community</p>
-        <h1>Marketplace</h1>
+        <h1>Showcase</h1>
         <p class="subline">Products and services from our members. We point you to the maker &mdash; you buy on their own site.</p>
       </div>
       {% if current_user.is_authenticated and current_user.is_member() %}
@@ -30,7 +30,7 @@
     </div>
 
     <!-- filters row -->
-    <form class="market-filters" method="get" action="{{ url_for('main.marketplace') }}">
+    <form class="market-filters" method="get" action="{{ url_for('main.showcase') }}">
       {% if kind %}<input type="hidden" name="kind" value="{{ kind }}">{% endif %}
       {% if tag %}<input type="hidden" name="tag" value="{{ tag }}">{% endif %}
       <input type="hidden" name="view" value="{{ view }}">

@@ -107,6 +107,20 @@
     {% endif %}
   </div>
 
+  <h2 style="margin-top: 32px;">1-on-1 coaching</h2>
+  <div class="admin-panel">
+    <p class="field-help" style="margin-top: 0;">
+      Creator members request sessions from My space ($100 each). Paste your Lemon Squeezy
+      checkout URL for the coaching product here.
+    </p>
+    <div class="field">
+      <label for="coaching_checkout_url">Coaching checkout URL</label>
+      <input type="url" id="coaching_checkout_url" name="coaching_checkout_url"
+             value="{{ values.coaching_checkout_url }}"
+             placeholder="https://store.lemonsqueezy.com/buy/…">
+    </div>
+  </div>
+
   <button class="btn btn--primary" type="submit">Save settings</button>
 </form>
 

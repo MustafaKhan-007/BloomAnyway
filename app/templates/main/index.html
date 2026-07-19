@@ -13,7 +13,7 @@
     {% if latest_video %}
     <a class="hero-newvideo" href="{{ url_for('main.watch', video_id=latest_video.id) }}">
       <span class="hero-newvideo__spark" aria-hidden="true">&#9654;</span>
-      <span class="hero-newvideo__text">New in the Content Library: <strong>{{ latest_video.title }}</strong></span>
+      <span class="hero-newvideo__text">New in the Content Hub: <strong>{{ latest_video.title }}</strong></span>
     </a>
     {% endif %}
   </div>
@@ -68,14 +68,14 @@
   <div class="container">
     <p class="eyebrow text-center">In the spotlight</p>
     <h2 class="text-center">Faces &amp; moments we love</h2>
-    <div class="spotlight-grid">
+    <div class="spotlight-grid{% if not (creator_of_month and reel_of_week) %} spotlight-grid--solo{% endif %}">
       {% if creator_of_month %}
       <article class="spotlight-card spotlight-card--creator reveal">
         <span class="spotlight-tag">Creator of the month</span>
         <div class="spotlight-creator">
           {% if creator_of_month.image %}
           <img class="spotlight-creator__photo" src="{{ creator_of_month.image }}"
-               alt="{{ creator_of_month.name }}" loading="lazy"
+               alt="{{ creator_of_month.name }}" loading="lazy" width="112" height="112"
                onerror="this.hidden=true; this.nextElementSibling.hidden=false;">
           <span class="spotlight-creator__photo spotlight-creator__photo--ph" hidden aria-hidden="true">&#127803;</span>
           {% else %}
@@ -85,14 +85,14 @@
           {% if creator_of_month.handle %}
           <p class="spotlight-creator__handle">@{{ creator_of_month.handle }}</p>
           {% endif %}
+          {% if creator_of_month.blurb %}
+          <p class="spotlight-creator__bio">{{ creator_of_month.blurb }}</p>
+          {% endif %}
+          {% if creator_of_month.instagram %}
+          <a class="btn btn--primary btn--sm spotlight-creator__cta"
+             href="{{ creator_of_month.instagram }}" target="_blank" rel="noopener">View their Instagram &rarr;</a>
+          {% endif %}
         </div>
-        {% if creator_of_month.blurb %}
-        <p class="spotlight-creator__bio">{{ creator_of_month.blurb }}</p>
-        {% endif %}
-        {% if creator_of_month.instagram %}
-        <a class="btn btn--primary btn--sm spotlight-creator__cta"
-           href="{{ creator_of_month.instagram }}" target="_blank" rel="noopener">View their Instagram &rarr;</a>
-        {% endif %}
       </article>
       {% endif %}
 

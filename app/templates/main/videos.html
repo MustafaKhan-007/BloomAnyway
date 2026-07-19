@@ -1,39 +1,137 @@
 {% extends "base.html" %}
-{% block title %}Content Library — {{ site.site_title }}{% endblock %}
+{% block title %}Content Hub — {{ site.site_title }}{% endblock %}
 
 {% block content %}
 <section class="section">
   <div class="container">
-    <p class="eyebrow">{{ 'Creator members watch' if not can_play else 'Content Library' }}</p>
-    <h1>The Content Library</h1>
-    <p style="color: var(--ink-soft); max-width: 60ch;">Longer-form videos, made just for you.
-      {% if can_play %}Watch here whenever you need them &mdash; nothing to download, always right where you left it.
-      {% else %}Browse what's inside on Healing; upgrade to Creator to press play.{% endif %}</p>
+    <p class="eyebrow">Videos &amp; reel reviews</p>
+    <h1>Content Hub</h1>
+    <p style="color: var(--ink-soft); max-width: 62ch;">
+      Longer-form videos for Creator members, plus public reel reviews from the community.
+    </p>
+  </div>
+</section>
 
-    {% if videos %}
-    <div class="video-grid">
-      {% for v in videos %}
-      <a class="video-card {{ 'video-card--locked' if not can_play }}" href="{{ url_for('main.watch', video_id=v.id) }}">
-        <div class="video-card__thumb">
-          {% if v.has_thumb() %}
-          <img src="{{ url_for('main.video_thumb', video_id=v.id) }}" alt="" loading="lazy">
-          {% else %}
-          <span class="video-card__play" aria-hidden="true">&#9654;</span>
-          {% endif %}
-          {% if not can_play %}<span class="video-card__lock" aria-hidden="true">&#128274;</span>{% endif %}
+<section class="section section--band" id="reviews">
+  <div class="container">
+    <h2>Reel reviews</h2>
+    <p style="color: var(--ink-soft); max-width: 60ch; margin-top: -4px;">
+      Finished reviews are public for everyone. Creator members can enter the weekly draw
+      once per week &mdash; one applicant is chosen at random. A fresh round opens every Monday.
+    </p>
+
+    {% if current_user.is_authenticated and current_user.is_creator() %}
+    <div class="hub-request" style="margin-top: 24px;">
+      {% if my_application %}
+      <div class="empty-state" style="padding: 28px;">
+        <p>You're in this week's draw
+          (week of {{ week_key.strftime('%b %d, %Y') }}).
+          Hang tight &mdash; one person is selected at random.</p>
+        <p class="field-help" style="margin-top: 8px;">
+          Your reel: <a href="{{ my_application.reel_url }}" target="_blank" rel="noopener">view on Instagram</a>
+        </p>
+      </div>
+      {% else %}
+      <form class="stack-form" method="post" action="{{ url_for('main.reel_review_request') }}"
+            enctype="multipart/form-data" style="max-width: 520px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <h3 style="margin: 0 0 8px;">Request a reel review</h3>
+        <p class="field-help">Submit your posted Instagram reel link and the raw video file. One entry per week.</p>
+        <label>Instagram reel link
+          <input type="url" name="reel_url" required
+                 placeholder="https://www.instagram.com/reel/…">
+        </label>
+        <label>Raw video file
+          <input type="file" name="raw_video" accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm" required>
+        </label>
+        <p class="field-help">Max {{ max_mb }} MB. MP4, MOV or WEBM.</p>
+        <button class="btn btn--primary" type="submit">Enter this week's draw</button>
+      </form>
+      {% endif %}
+    </div>
+    {% elif current_user.is_authenticated %}
+    <p style="margin-top: 18px;">
+      Reel review requests are for Creator members.
+      <a href="{{ url_for('main.membership') }}">Upgrade to Creator</a> to enter the weekly draw.
+    </p>
+    {% else %}
+    <p style="margin-top: 18px;">
+      <a href="{{ url_for('auth.login') }}">Sign in</a> as a Creator member to request a review.
+    </p>
+    {% endif %}
+
+    {% if reviews %}
+    <div class="review-grid" style="margin-top: 32px;">
+      {% for rev in reviews %}
+      <article class="review-card">
+        <h3>{{ rev.title }}</h3>
+        {% if rev.application and rev.application.author %}
+        <p class="field-help">For {{ rev.application.author.public_name() }}</p>
+        {% endif %}
+        {% if rev.application and rev.application.reel_url %}
+        <p><a href="{{ rev.application.reel_url }}" target="_blank" rel="noopener">Original reel on Instagram &rarr;</a></p>
+        {% endif %}
+        {% if rev.body %}
+        <div class="forum-body">{{ rev.body|nl2br }}</div>
+        {% endif %}
+        {% if rev.review_disk_name %}
+        <div class="video-player" style="margin-top: 14px;">
+          <video controls playsinline preload="metadata">
+            <source src="{{ url_for('main.reel_review_stream', review_id=rev.id) }}"
+                    type="{{ rev.review_mime or 'video/mp4' }}">
+          </video>
         </div>
-        <div class="video-card__body">
-          <h3>{{ v.title }}</h3>
-          {% if v.description %}<p>{{ v.description|truncate(110) }}</p>{% endif %}
-          <span class="video-card__date">{{ v.created_at.strftime('%b %d, %Y') }}</span>
-        </div>
-      </a>
+        {% endif %}
+        <span class="video-card__date">{{ rev.created_at.strftime('%b %d, %Y') }}</span>
+      </article>
       {% endfor %}
     </div>
     {% else %}
-    <div class="empty-state">
-      <p>No videos yet &mdash; the first one is on its way. Check back soon.</p>
+    <div class="empty-state" style="margin-top: 28px;">
+      <p>No published reel reviews yet &mdash; the first ones will show up here.</p>
     </div>
+    {% endif %}
+  </div>
+</section>
+
+<section class="section" id="videos">
+  <div class="container">
+    <h2>Video library</h2>
+    {% if can_browse %}
+      <p style="color: var(--ink-soft); max-width: 60ch; margin-top: -4px;">
+        {% if can_play %}Watch here whenever you need them &mdash; nothing to download.
+        {% else %}Browse what's inside on Healing; upgrade to Creator to press play.{% endif %}
+      </p>
+      {% if videos %}
+      <div class="video-grid">
+        {% for v in videos %}
+        <a class="video-card {{ 'video-card--locked' if not can_play }}" href="{{ url_for('main.watch', video_id=v.id) }}">
+          <div class="video-card__thumb">
+            {% if v.has_thumb() %}
+            <img src="{{ url_for('main.video_thumb', video_id=v.id) }}" alt="" loading="lazy">
+            {% else %}
+            <span class="video-card__play" aria-hidden="true">&#9654;</span>
+            {% endif %}
+            {% if not can_play %}<span class="video-card__lock" aria-hidden="true">&#128274;</span>{% endif %}
+          </div>
+          <div class="video-card__body">
+            <h3>{{ v.title }}</h3>
+            {% if v.description %}<p>{{ v.description|truncate(110) }}</p>{% endif %}
+            <span class="video-card__date">{{ v.created_at.strftime('%b %d, %Y') }}</span>
+          </div>
+        </a>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <p>No videos yet &mdash; the first one is on its way. Check back soon.</p>
+      </div>
+      {% endif %}
+    {% else %}
+      <div class="empty-state">
+        <p>Video browsing is a members' perk.
+          <a href="{{ url_for('main.membership') }}">Join Healing or Creator</a> to open the library.</p>
+      </div>
     {% endif %}
   </div>
 </section>
