@@ -689,10 +689,10 @@ ok("Creator of the month shows on home",
    "Maya R." in hbody and "@mayar" in hbody and "instagram.com/mayar" in hbody
    and "igsh=" not in hbody)
 ok("Creator of the month shows their bio", "Rebuilt her mornings." in hbody)
-ok("Creator of the month pulls a profile photo from the handle",
-   "unavatar.io/instagram/mayar" in hbody
-   or "creator_image" in hbody.lower()
-   or "spotlight-creator__photo" in hbody)
+ok("Creator of the month shows the flower mark (no broken photo circle)",
+   "spotlight-creator__photo--ph" in hbody
+   and "unavatar.io" not in hbody
+   and 'class="spotlight-creator__photo"' not in hbody)
 ok("Reel of the week embeds + links out",
    "instagram.com/reel/ABC123xyz/embed" in hbody and "Watch on Instagram" in hbody)
 
@@ -1114,20 +1114,42 @@ admin.post("/admin/settings", data={
     "coaching_checkout_url": "https://store.lemonsqueezy.com/buy/coach100",
 }, follow_redirects=True)
 r = client.get("/account")
-ok("Creator sees 1-on-1 coaching on My space",
-   "1-on-1 coaching" in r.get_data(as_text=True) and "$100" in r.get_data(as_text=True))
+abody = r.get_data(as_text=True)
+ok("Creator sees coaching fold on My space",
+   "1-on-1 coaching" in abody and "data-coaching-toggle" in abody
+   and "datetime-local" in abody and "$100" in abody)
 r = client.post("/account/coaching", data={
     "message": "Help me plan a month of reels.",
-    "preferred_times": "Weekends",
+    "preferred_times": "2026-08-01T15:30",
 }, follow_redirects=False)
 ok("Creator coaching request redirects to Lemon checkout",
    r.status_code == 302 and "coach100" in (r.headers.get("Location") or ""))
 with app.app_context():
     creq = CoachingRequest.query.filter_by(message="Help me plan a month of reels.").first()
-ok("Coaching request is stored", creq is not None and creq.status == "pending")
+ok("Coaching request stores the chosen date/time",
+   creq is not None and creq.status == "pending"
+   and creq.preferred_times and "2026" in creq.preferred_times)
 r = admin.get("/admin/coaching")
 ok("Studio lists coaching requests",
    r.status_code == 200 and "Help me plan a month of reels" in r.get_data(as_text=True))
+r = admin.get("/account")
+ok("Owner My space shows coaching request notification",
+   "New coaching requests" in r.get_data(as_text=True)
+   and "Help me plan a month of reels" in r.get_data(as_text=True))
+
+# Content Hub: video library appears before reel reviews
+r = client.get("/watch")
+hub = r.get_data(as_text=True)
+ok("Content Hub lists video library above reel reviews",
+   hub.find('id="videos"') < hub.find('id="reviews"')
+   and hub.find("Video library") < hub.find("Reel reviews"))
+
+# Brevo helper strips Bearer / whitespace
+from app.services import mailer as mailer_mod
+with app.app_context():
+    app.config["BREVO_API_KEY"] = "  Bearer  abc123  "
+    cleaned = mailer_mod._brevo_api_key()
+ok("Brevo API key is normalized", cleaned == "abc123")
 
 # brand rename: leftover "First Light" becomes Bloom Anyway on boot
 from app.services.settings import ensure_brand_title, get_setting, invalidate_cache, set_setting

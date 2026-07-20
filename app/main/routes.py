@@ -101,16 +101,10 @@ def _spotlight_context():
         raw_ig = (site.get("creator_instagram") or "").strip()
         handle = instagram_handle(raw_ig)
         profile = instagram_profile_url(handle) if handle else ""
-        image = (site.get("creator_image_url") or "").strip()
-        # If the owner didn't paste a photo URL, resolve one from the handle
-        # via unavatar (public avatar proxy). Falls back in the template if it 404s.
-        if not image and handle:
-            image = f"https://unavatar.io/instagram/{handle}"
         creator = {
             "name": site["creator_name"].strip(),
             "instagram": profile or raw_ig,
             "handle": handle,
-            "image": image,
             "blurb": (site.get("creator_blurb") or "").strip(),
         }
     reel = None
@@ -567,12 +561,19 @@ def account():
     coaching_checkout = _checkout_url(coaching_url) if coaching_url else ""
     my_coaching = (CoachingRequest.query.filter_by(user_id=current_user.id)
                    .order_by(CoachingRequest.created_at.desc()).limit(5).all())
+    owner_coaching = []
+    if current_user.is_admin:
+        owner_coaching = (CoachingRequest.query
+                          .filter(CoachingRequest.status == "pending")
+                          .order_by(CoachingRequest.created_at.desc())
+                          .limit(20).all())
     return render_template("main/account.html", greeting=greeting, orders=orders,
                            favorites=favorites, library=_owned_products(current_user),
                            recommended=recommend_products(current_user),
                            premium=is_premium(current_user),
                            coaching_checkout=coaching_checkout,
-                           my_coaching=my_coaching)
+                           my_coaching=my_coaching,
+                           owner_coaching=owner_coaching)
 
 
 @bp.route("/account/coaching", methods=["POST"])
@@ -587,8 +588,18 @@ def request_coaching():
         flash("Tell us a little about what you'd like help with (a sentence or two).",
               "error")
         return redirect(url_for("main.account") + "#coaching")
+    if not preferred:
+        flash("Pick a date and time for your session.", "error")
+        return redirect(url_for("main.account") + "#coaching")
+    # datetime-local is "YYYY-MM-DDTHH:MM" — store a readable version
+    try:
+        when = datetime.fromisoformat(preferred)
+        preferred_display = when.strftime("%a %b %d, %Y at %I:%M %p").replace(" 0", " ")
+    except ValueError:
+        preferred_display = preferred
     db.session.add(CoachingRequest(
-        user_id=current_user.id, message=message, preferred_times=preferred or None))
+        user_id=current_user.id, message=message,
+        preferred_times=preferred_display[:300]))
     db.session.commit()
     flash("Coaching request sent — check out below to book your $100 session.",
           "success")

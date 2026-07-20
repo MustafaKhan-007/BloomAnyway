@@ -31,6 +31,35 @@
   </div>
 </section>
 
+{% if current_user.is_admin and owner_coaching %}
+<section class="section" id="coaching-inbox">
+  <div class="container">
+    <div class="owner-notice">
+      <div class="owner-notice__head">
+        <span class="owner-notice__icon" aria-hidden="true">&#128222;</span>
+        <div>
+          <p class="eyebrow">New coaching requests</p>
+          <h2 style="margin: 0; font-size: 22px;">
+            {{ owner_coaching|length }} pending session{{ '' if owner_coaching|length == 1 else 's' }}
+          </h2>
+        </div>
+      </div>
+      <ul class="owner-notice__list">
+        {% for c in owner_coaching %}
+        <li>
+          <strong>{{ c.author.public_name() }}</strong>
+          <span class="field-help">{{ c.author.email }}</span>
+          {% if c.preferred_times %}<br><span>Requested: {{ c.preferred_times }}</span>{% endif %}
+          {% if c.message %}<br><span class="field-help">{{ c.message|truncate(160) }}</span>{% endif %}
+          <br><a href="{{ url_for('admin.coaching') }}">Manage in Studio &rarr;</a>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+</section>
+{% endif %}
+
 <section class="section">
   <div class="container">
     <div class="streak-card">
@@ -87,42 +116,48 @@
     </div>
 
     {% if current_user.is_creator() %}
-    <div class="journey-card" id="coaching" style="margin-top: 20px;">
-      <div class="journey-card__body">
+    <div class="journey-card coaching-card" id="coaching" style="margin-top: 20px;">
+      <div class="journey-card__body" style="width: 100%;">
         <p class="eyebrow">1-on-1 coaching</p>
-        <h3>Book a private session — $100</h3>
-        <p>Creator members can request a personal coaching session. Share what you'd like
-          help with, then complete checkout to lock in your spot.</p>
-        <form method="post" action="{{ url_for('main.request_coaching') }}" class="stack-form" style="margin-top: 14px; max-width: 480px;">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <label>What would you like to work on?
-            <textarea name="message" rows="3" required
-                      placeholder="e.g. Reel ideas, posting rhythm, confidence on camera…"></textarea>
-          </label>
-          <label>Preferred times (optional)
-            <input type="text" name="preferred_times" maxlength="300"
-                   placeholder="e.g. Weekday evenings, weekends">
-          </label>
-          {% if coaching_checkout %}
-          <button class="btn btn--primary" type="submit">Request &amp; checkout ($100)</button>
-          {% else %}
-          <button class="btn btn--primary" type="submit">Send coaching request</button>
-          <p class="field-help">Checkout link isn't set yet — your request still reaches the owner.</p>
+        <button type="button" class="coaching-fold__toggle" data-coaching-toggle
+                aria-expanded="false" aria-controls="coaching-panel">
+          <span>Book a private session — $100</span>
+          <span class="coaching-fold__arrow" aria-hidden="true">&#9662;</span>
+        </button>
+        <div class="coaching-fold__panel" id="coaching-panel" aria-hidden="true">
+          <p>Creator members can request a personal coaching session. Pick a date and time,
+            share what you'd like help with, then complete checkout to lock in your spot.</p>
+          <form method="post" action="{{ url_for('main.request_coaching') }}" class="stack-form" style="margin-top: 14px; max-width: 480px;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label>What would you like to work on?
+              <textarea name="message" rows="3" required
+                        placeholder="e.g. Reel ideas, posting rhythm, confidence on camera…"></textarea>
+            </label>
+            <label>Date &amp; time
+              <input type="datetime-local" name="preferred_times" required>
+            </label>
+            {% if coaching_checkout %}
+            <button class="btn btn--primary" type="submit">Request &amp; checkout ($100)</button>
+            {% else %}
+            <button class="btn btn--primary" type="submit">Send coaching request</button>
+            <p class="field-help">Checkout link isn't set yet — your request still reaches the owner.</p>
+            {% endif %}
+          </form>
+          {% if my_coaching %}
+          <ul class="spotlight-list" style="margin-top: 18px;">
+            {% for c in my_coaching %}
+            <li>
+              <strong>{{ c.status|capitalize }}</strong>
+              &mdash; {{ c.created_at.strftime('%b %d, %Y') }}
+              {% if c.preferred_times %}<br><span>{{ c.preferred_times }}</span>{% endif %}
+              {% if c.message %}<br><span class="field-help">{{ c.message|truncate(120) }}</span>{% endif %}
+            </li>
+            {% endfor %}
+          </ul>
           {% endif %}
-        </form>
-        {% if my_coaching %}
-        <ul class="spotlight-list" style="margin-top: 18px;">
-          {% for c in my_coaching %}
-          <li>
-            <strong>{{ c.status|capitalize }}</strong>
-            &mdash; {{ c.created_at.strftime('%b %d, %Y') }}
-            {% if c.message %}<br><span class="field-help">{{ c.message|truncate(120) }}</span>{% endif %}
-          </li>
-          {% endfor %}
-        </ul>
-        {% endif %}
+        </div>
       </div>
-      <div class="journey-card__mark" aria-hidden="true">$</div>
+      <div class="journey-card__mark" aria-hidden="true">&#128222;</div>
     </div>
     {% endif %}
   </div>

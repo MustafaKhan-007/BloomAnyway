@@ -153,6 +153,31 @@
     syncTags();
   }
 
+  /* ---- Coaching fold: smooth expand on My space ---- */
+  document.querySelectorAll("[data-coaching-toggle]").forEach(function (btn) {
+    var panel = document.getElementById(btn.getAttribute("aria-controls"));
+    if (!panel) return;
+    btn.addEventListener("click", function () {
+      var open = btn.getAttribute("aria-expanded") === "true";
+      btn.setAttribute("aria-expanded", open ? "false" : "true");
+      btn.classList.toggle("is-open", !open);
+      panel.setAttribute("aria-hidden", open ? "true" : "false");
+      if (open) {
+        panel.style.maxHeight = panel.scrollHeight + "px";
+        requestAnimationFrame(function () {
+          panel.style.maxHeight = "0px";
+          panel.classList.remove("is-open");
+        });
+      } else {
+        panel.classList.add("is-open");
+        panel.style.maxHeight = "0px";
+        requestAnimationFrame(function () {
+          panel.style.maxHeight = panel.scrollHeight + "px";
+        });
+      }
+    });
+  });
+
   /* ---- Showcase listing gallery: thumbnails swap the hero image ---- */
   document.querySelectorAll("[data-listing-gallery]").forEach(function (gallery) {
     var hero = gallery.querySelector("#listing-hero") ||
