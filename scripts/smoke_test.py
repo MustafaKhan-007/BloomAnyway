@@ -946,7 +946,7 @@ ok("Gift webhook accepted", r.status_code == 200)
 r = free_client.get("/library/begin-again")
 ok("Gifted friend can read the course online", r.status_code == 200)
 
-# Multiple announcements stack tidily on the home page
+# Multiple announcements stack; blank expiry defaults to +1 day
 admin.post("/admin/settings", data={"add_announcement": "1",
            "ann_body": "First bloom of spring"}, follow_redirects=True)
 admin.post("/admin/settings", data={"add_announcement": "1",
@@ -954,11 +954,23 @@ admin.post("/admin/settings", data={"add_announcement": "1",
 hbody = app.test_client().get("/").get_data(as_text=True)
 ok("Multiple announcements stack on the home page",
    "First bloom of spring" in hbody and "Second gentle note" in hbody)
+with app.app_context():
+    from app.models import Announcement
+    fresh = Announcement.query.filter_by(body="First bloom of spring").first()
+    expected_exp = date.today() + timedelta(days=1)
+ok("Announcement defaults to a one-day expiry",
+   fresh is not None and fresh.expires == expected_exp, f"got {getattr(fresh, 'expires', None)}")
 
-# List / tile toggle for the forums
-r = client.get("/forums/c/healing?view=list")
-ok("Forum list view renders",
-   r.status_code == 200 and "post-list--list" in r.get_data(as_text=True))
+# Community is list-only (no tiles toggle)
+r = client.get("/forums/c/healing")
+ok("Forum list view renders without tiles toggle",
+   r.status_code == 200 and "post-list--list" in r.get_data(as_text=True)
+   and "view-toggle" not in r.get_data(as_text=True))
+
+# Showcase tags are collapsible
+r = app.test_client().get("/showcase")
+ok("Showcase tags fold is collapsible",
+   "tag-fold" in r.get_data(as_text=True) and "Browse tags" in r.get_data(as_text=True))
 
 # --- 6. quote pinning + bulk import dedupe ----------------------------------------
 with app.app_context():
@@ -1118,6 +1130,9 @@ abody = r.get_data(as_text=True)
 ok("Creator sees coaching fold on My space",
    "1-on-1 coaching" in abody and "data-coaching-toggle" in abody
    and "datetime-local" in abody and "$100" in abody)
+ok("My Journey and coaching sit at the bottom of My space",
+   abody.find("Quotes you kept") < abody.find("My Journey")
+   and abody.find("My Journey") < abody.find("1-on-1 coaching"))
 r = client.post("/account/coaching", data={
     "message": "Help me plan a month of reels.",
     "preferred_times": "2026-08-01T15:30",

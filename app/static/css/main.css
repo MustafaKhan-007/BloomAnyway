@@ -85,11 +85,16 @@ a  { color: var(--plum); }
 .horizon-rule--heading { width: 64px; margin: 12px 0 20px; }
 
 /* ------------------------------- layout ---------------------------------- */
-.container { max-width: var(--container); margin: 0 auto; padding: 0 24px; }
-.section { padding: 64px 0; }
+.container { max-width: var(--container); margin: 0 auto; padding: 0 20px; }
+.section { padding: 36px 0; }
+.section--tight { padding: 28px 0; }
 .section--band { background: var(--ivory-deep); }
 .section--rose { background: var(--rose-soft); }
-@media (min-width: 900px) { .section { padding: 96px 0; } }
+@media (min-width: 900px) {
+  .section { padding: 48px 0; }
+  .section--tight { padding: 36px 0; }
+  .container { padding: 0 28px; }
+}
 
 .grid { display: grid; gap: 28px; }
 .grid--3 { grid-template-columns: 1fr; }
@@ -161,7 +166,8 @@ a  { color: var(--plum); }
 
 /* -------------------------------- forms ---------------------------------- */
 input[type="text"], input[type="email"], input[type="password"], input[type="url"],
-input[type="number"], input[type="date"], select, textarea {
+input[type="number"], input[type="date"], input[type="datetime-local"],
+select, textarea {
   width: 100%;
   padding: 12px 16px;
   border-radius: var(--radius-input);
@@ -1264,26 +1270,68 @@ details.faq-item > form { padding: 0 20px 20px; }
 .hub-request { background: #fff; border-radius: var(--radius-card);
   padding: 22px; box-shadow: var(--shadow-card); }
 
+.tag-fold {
+  margin: 12px 0 18px; background: #fff; border-radius: 14px;
+  border: 1px solid var(--ivory-deep); padding: 4px 14px 10px;
+}
+.tag-fold__summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  cursor: pointer; list-style: none; padding: 12px 2px; font-weight: 700;
+  color: var(--plum); font-size: 15px; user-select: none;
+}
+.tag-fold__summary::-webkit-details-marker { display: none; }
+.tag-fold__arrow {
+  width: 28px; height: 28px; border-radius: 50%; background: var(--ivory-deep);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px; transition: transform .25s ease; color: var(--plum);
+}
+.tag-fold[open] .tag-fold__arrow { transform: rotate(180deg); }
+.tag-fold .tag-cloud { margin-top: 4px; max-height: none; }
+
 /* coaching fold + owner notice */
-.coaching-fold__toggle {
+.journey-card.coaching-card { margin-top: 16px; }
+.journey-card .coaching-fold__toggle {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   width: 100%; max-width: 520px; margin: 4px 0 0; padding: 0;
   border: 0; background: none; cursor: pointer; text-align: left;
   font-family: var(--font-display); font-size: clamp(22px, 3vw, 26px);
-  font-weight: 600; color: var(--plum-deep); line-height: 1.25;
+  font-weight: 600; color: #fff; line-height: 1.25;
 }
-.coaching-fold__arrow {
+.journey-card .coaching-fold__arrow {
   flex: none; width: 36px; height: 36px; border-radius: 50%;
   display: inline-flex; align-items: center; justify-content: center;
-  background: var(--ivory-deep); font-size: 14px; color: var(--plum);
+  background: rgba(250, 245, 238, 0.2); font-size: 14px; color: #fff;
   transition: transform .28s ease;
 }
-.coaching-fold__toggle.is-open .coaching-fold__arrow { transform: rotate(180deg); }
-.coaching-fold__panel {
+.journey-card .coaching-fold__toggle.is-open .coaching-fold__arrow { transform: rotate(180deg); }
+.journey-card .coaching-fold__panel {
   overflow: hidden; max-height: 0; opacity: 0;
   transition: max-height .35s ease, opacity .28s ease, margin .28s ease;
 }
-.coaching-fold__panel.is-open { opacity: 1; margin-top: 12px; }
+.journey-card .coaching-fold__panel.is-open { opacity: 1; margin-top: 12px; }
+.journey-card .coaching-fold__panel p { color: rgba(250, 245, 238, 0.9); }
+.journey-card .coaching-form label {
+  color: rgba(250, 245, 238, 0.95); font-weight: 600;
+}
+.journey-card .coaching-form .field-help { color: rgba(250, 245, 238, 0.75); }
+.journey-card .coaching-datetime {
+  font-family: var(--font-body);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--ink);
+  background: #fff;
+  border: 1.5px solid rgba(250, 245, 238, 0.55);
+  border-radius: 12px;
+  padding: 12px 14px;
+  color-scheme: light;
+}
+.journey-card .coaching-datetime::-webkit-calendar-picker-indicator {
+  opacity: 0.7; cursor: pointer;
+}
+.journey-card .spotlight-list li { color: rgba(250, 245, 238, 0.92);
+  border-bottom-color: rgba(250, 245, 238, 0.2); }
+.journey-card .spotlight-list .field-help { color: rgba(250, 245, 238, 0.72); }
 .owner-notice {
   background: #fff; border-radius: var(--radius-card); padding: 22px 24px;
   box-shadow: var(--shadow-card); border-left: 4px solid var(--horizon);

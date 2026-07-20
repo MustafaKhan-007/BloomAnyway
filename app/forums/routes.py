@@ -87,10 +87,9 @@ def category(slug):
     else:
         posts = query.limit(100).all()
 
-    view = "list" if request.args.get("view") == "list" else "tiles"
     return render_template("forums/category.html", category=cat, posts=posts,
                            tags=tags, active_tag=active_tag,
-                           anon_default=_anon_default(), view=view,
+                           anon_default=_anon_default(), view="list",
                            can_participate=can_participate, limited=limited)
 
 

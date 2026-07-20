@@ -38,9 +38,10 @@
                placeholder="e.g. The new course opens Monday ☀">
       </div>
       <div class="field">
-        <label for="announcement_expires">Show until (optional)</label>
-        <input type="date" id="announcement_expires" name="announcement_expires" value="{{ values.announcement_expires }}">
-        <p class="field-help">The announcement hides itself after this date. Leave blank to keep it up until you remove it.</p>
+        <label for="announcement_expires">Show until</label>
+        <input type="date" id="announcement_expires" name="announcement_expires"
+               value="{{ values.announcement_expires or default_expires }}">
+        <p class="field-help">Defaults to one day from now if you leave this blank.</p>
       </div>
     </div>
   </div>
@@ -145,8 +146,9 @@
       <input type="text" id="ann_body" name="ann_body" maxlength="300" placeholder="e.g. New reel this week ☀">
     </div>
     <div class="field">
-      <label for="ann_expires">Show until (optional)</label>
-      <input type="date" id="ann_expires" name="ann_expires">
+      <label for="ann_expires">Show until</label>
+      <input type="date" id="ann_expires" name="ann_expires" value="{{ default_expires }}">
+      <p class="field-help">Defaults to one day from now.</p>
     </div>
     <button class="btn btn--primary btn--sm" type="submit">Add</button>
   </form>

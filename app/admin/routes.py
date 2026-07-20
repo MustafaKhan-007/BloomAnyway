@@ -705,13 +705,13 @@ def settings():
         if request.form.get("add_announcement"):
             body = (request.form.get("ann_body") or "").strip()[:300]
             if body:
-                expires = None
+                expires = date.today() + timedelta(days=1)  # default: 1 day
                 raw = (request.form.get("ann_expires") or "").strip()
                 if raw:
                     try:
                         expires = date.fromisoformat(raw)
                     except ValueError:
-                        expires = None
+                        pass
                 db.session.add(Announcement(body=body, expires=expires))
                 db.session.commit()
                 flash("Announcement added.", "success")
@@ -739,6 +739,9 @@ def settings():
                 values["creator_image_url"] = preview["image"]
             if preview.get("blurb") and not values.get("creator_blurb"):
                 values["creator_blurb"] = preview["blurb"]
+        # quick announcement: blank expiry defaults to tomorrow
+        if values.get("announcement_text") and not values.get("announcement_expires"):
+            values["announcement_expires"] = (date.today() + timedelta(days=1)).isoformat()
         for key, val in values.items():
             set_setting(key, val)
         flash("Settings saved.", "success")
@@ -750,9 +753,11 @@ def settings():
         values["creator_instagram"] = f"@{h}" if h else values["creator_instagram"]
     announcements = (Announcement.query
                      .order_by(Announcement.sort_order, Announcement.created_at.desc()).all())
+    default_expires = (date.today() + timedelta(days=1)).isoformat()
     return render_template("admin/settings.html", values=values,
                            spotlight=_spotlight_candidates(),
-                           announcements=announcements, today=date.today())
+                           announcements=announcements, today=date.today(),
+                           default_expires=default_expires)
 
 
 # ============================ MARKETPLACE ====================================

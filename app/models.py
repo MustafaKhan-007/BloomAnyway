@@ -659,7 +659,7 @@ class Announcement(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     body = db.Column(db.String(300), nullable=False)
-    expires = db.Column(db.Date)   # None = never expires
+    expires = db.Column(db.Date)   # defaults to +1 day when created from Studio
     sort_order = db.Column(db.Integer, nullable=False, default=0)
     created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
 

@@ -4,7 +4,7 @@
 {% block title %}My space — {{ site.site_title }}{% endblock %}
 
 {% block content %}
-<section class="section">
+<section class="section section--tight">
   <div class="container">
     <div class="account-head">
       <div class="account-head__who">
@@ -32,7 +32,7 @@
 </section>
 
 {% if current_user.is_admin and owner_coaching %}
-<section class="section" id="coaching-inbox">
+<section class="section section--tight" id="coaching-inbox">
   <div class="container">
     <div class="owner-notice">
       <div class="owner-notice__head">
@@ -60,7 +60,7 @@
 </section>
 {% endif %}
 
-<section class="section">
+<section class="section section--tight">
   <div class="container">
     <div class="streak-card">
       <div class="streak-card__body">
@@ -95,80 +95,15 @@
     {% else %}
     <p class="field-help" style="margin-top:18px;">Earn badges by showing up, posting, and being helpful in <a href="{{ url_for('forums.index') }}">the community</a>. They'll appear here and by your name.</p>
     {% endif %}
-
-    <div class="journey-card{% if not premium %} journey-card--locked{% endif %}">
-      <div class="journey-card__body">
-        <p class="eyebrow">My Journey</p>
-        <h3>Your story, as a keepsake</h3>
-        {% if premium %}
-        <p>A beautifully laid-out PDF of your streaks, the days you showed up, and the
-          lines you held onto. Yours to keep, print, or share &mdash; a little proof of
-          how far you've come.</p>
-        <a class="btn btn--primary" href="{{ url_for('main.journey_pdf') }}">Download my journey (PDF)</a>
-        {% else %}
-        <p>Members can generate a keepsake PDF of their whole journey
-          &mdash; streaks, check-ins, and favorite lines. It'll be here waiting
-          when you're ready.</p>
-        <a class="btn btn--secondary" href="{{ url_for('main.membership') }}">See memberships</a>
-        {% endif %}
-      </div>
-      <div class="journey-card__mark" aria-hidden="true">&#10022;</div>
-    </div>
-
-    {% if current_user.is_creator() %}
-    <div class="journey-card coaching-card" id="coaching" style="margin-top: 20px;">
-      <div class="journey-card__body" style="width: 100%;">
-        <p class="eyebrow">1-on-1 coaching</p>
-        <button type="button" class="coaching-fold__toggle" data-coaching-toggle
-                aria-expanded="false" aria-controls="coaching-panel">
-          <span>Book a private session — $100</span>
-          <span class="coaching-fold__arrow" aria-hidden="true">&#9662;</span>
-        </button>
-        <div class="coaching-fold__panel" id="coaching-panel" aria-hidden="true">
-          <p>Creator members can request a personal coaching session. Pick a date and time,
-            share what you'd like help with, then complete checkout to lock in your spot.</p>
-          <form method="post" action="{{ url_for('main.request_coaching') }}" class="stack-form" style="margin-top: 14px; max-width: 480px;">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <label>What would you like to work on?
-              <textarea name="message" rows="3" required
-                        placeholder="e.g. Reel ideas, posting rhythm, confidence on camera…"></textarea>
-            </label>
-            <label>Date &amp; time
-              <input type="datetime-local" name="preferred_times" required>
-            </label>
-            {% if coaching_checkout %}
-            <button class="btn btn--primary" type="submit">Request &amp; checkout ($100)</button>
-            {% else %}
-            <button class="btn btn--primary" type="submit">Send coaching request</button>
-            <p class="field-help">Checkout link isn't set yet — your request still reaches the owner.</p>
-            {% endif %}
-          </form>
-          {% if my_coaching %}
-          <ul class="spotlight-list" style="margin-top: 18px;">
-            {% for c in my_coaching %}
-            <li>
-              <strong>{{ c.status|capitalize }}</strong>
-              &mdash; {{ c.created_at.strftime('%b %d, %Y') }}
-              {% if c.preferred_times %}<br><span>{{ c.preferred_times }}</span>{% endif %}
-              {% if c.message %}<br><span class="field-help">{{ c.message|truncate(120) }}</span>{% endif %}
-            </li>
-            {% endfor %}
-          </ul>
-          {% endif %}
-        </div>
-      </div>
-      <div class="journey-card__mark" aria-hidden="true">&#128222;</div>
-    </div>
-    {% endif %}
   </div>
 </section>
 
 {% if recommended %}
-<section class="section">
+<section class="section section--tight">
   <div class="container">
     <h2>Picked for where you are</h2>
     <p style="color: var(--ink-soft); margin-top: -6px;">Based on what you told us brings you here. Update it anytime in <a href="{{ url_for('main.settings') }}">your settings</a>.</p>
-    <div class="grid grid--3" style="margin-top: 24px;">
+    <div class="grid grid--3" style="margin-top: 20px;">
       {% for product in recommended %}
         {% include "partials/product_card.html" %}
       {% endfor %}
@@ -178,11 +113,11 @@
 {% endif %}
 
 {% if library %}
-<section class="section section--band">
+<section class="section section--band section--tight">
   <div class="container">
     <h2>Read your courses &amp; guides</h2>
     <p style="color: var(--ink-soft); margin-top: -6px;">Open any of these to read online, anytime.</p>
-    <div class="grid grid--3" style="margin-top: 24px;">
+    <div class="grid grid--3" style="margin-top: 20px;">
       {% for product in library %}
       <div class="library-card">
         {% if product.cover_url %}
@@ -198,7 +133,7 @@
 </section>
 {% endif %}
 
-<section class="section{% if not library %} section--band{% endif %}">
+<section class="section section--tight{% if not library %} section--band{% endif %}">
   <div class="container">
     <h2>Your purchases</h2>
     {% if orders %}
@@ -224,7 +159,7 @@
   </div>
 </section>
 
-<section class="section">
+<section class="section section--tight">
   <div class="container">
     <h2>Quotes you kept</h2>
     {% if favorites %}
@@ -243,6 +178,75 @@
       </div>
     {% else %}
       <p>When a line lands, tap the heart on the <a href="{{ url_for('main.quotes') }}">daily quotes page</a> and it'll live here.</p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="section section--tight">
+  <div class="container">
+    <div class="journey-card{% if not premium %} journey-card--locked{% endif %}">
+      <div class="journey-card__body">
+        <p class="eyebrow">My Journey</p>
+        <h3>Your story, as a keepsake</h3>
+        {% if premium %}
+        <p>A beautifully laid-out PDF of your streaks, the days you showed up, and the
+          lines you held onto. Yours to keep, print, or share &mdash; a little proof of
+          how far you've come.</p>
+        <a class="btn btn--primary" href="{{ url_for('main.journey_pdf') }}">Download my journey (PDF)</a>
+        {% else %}
+        <p>Members can generate a keepsake PDF of their whole journey
+          &mdash; streaks, check-ins, and favorite lines. It'll be here waiting
+          when you're ready.</p>
+        <a class="btn btn--secondary" href="{{ url_for('main.membership') }}">See memberships</a>
+        {% endif %}
+      </div>
+      <div class="journey-card__mark" aria-hidden="true">&#10022;</div>
+    </div>
+
+    {% if current_user.is_creator() %}
+    <div class="journey-card coaching-card" id="coaching">
+      <div class="journey-card__body" style="width: 100%;">
+        <p class="eyebrow">1-on-1 coaching</p>
+        <button type="button" class="coaching-fold__toggle" data-coaching-toggle
+                aria-expanded="false" aria-controls="coaching-panel">
+          <span>Book a private session — $100</span>
+          <span class="coaching-fold__arrow" aria-hidden="true">&#9662;</span>
+        </button>
+        <div class="coaching-fold__panel" id="coaching-panel" aria-hidden="true">
+          <p>Creator members can request a personal coaching session. Pick a date and time,
+            share what you'd like help with, then complete checkout to lock in your spot.</p>
+          <form method="post" action="{{ url_for('main.request_coaching') }}" class="stack-form coaching-form" style="margin-top: 14px; max-width: 480px;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label>What would you like to work on?
+              <textarea name="message" rows="3" required
+                        placeholder="e.g. Reel ideas, posting rhythm, confidence on camera…"></textarea>
+            </label>
+            <label>Date &amp; time
+              <input type="datetime-local" name="preferred_times" required class="coaching-datetime">
+            </label>
+            {% if coaching_checkout %}
+            <button class="btn btn--primary" type="submit">Request &amp; checkout ($100)</button>
+            {% else %}
+            <button class="btn btn--primary" type="submit">Send coaching request</button>
+            <p class="field-help">Checkout link isn't set yet — your request still reaches the owner.</p>
+            {% endif %}
+          </form>
+          {% if my_coaching %}
+          <ul class="spotlight-list" style="margin-top: 18px;">
+            {% for c in my_coaching %}
+            <li>
+              <strong>{{ c.status|capitalize }}</strong>
+              &mdash; {{ c.created_at.strftime('%b %d, %Y') }}
+              {% if c.preferred_times %}<br><span>{{ c.preferred_times }}</span>{% endif %}
+              {% if c.message %}<br><span class="field-help">{{ c.message|truncate(120) }}</span>{% endif %}
+            </li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+        </div>
+      </div>
+      <div class="journey-card__mark" aria-hidden="true">&#128222;</div>
+    </div>
     {% endif %}
   </div>
 </section>

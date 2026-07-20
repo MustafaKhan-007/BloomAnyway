@@ -119,11 +119,18 @@ def _spotlight_context():
 
 
 def _video_notice():
-    """The newest published video — creator members see a home-page nudge."""
+    """Newest published video, only for the first day after it goes live."""
     if not (getattr(current_user, "is_authenticated", False) and current_user.is_creator()):
         return None
-    return (Video.query.filter_by(published=True)
-            .order_by(Video.sort_order, Video.created_at.desc()).first())
+    video = (Video.query.filter_by(published=True)
+             .order_by(Video.sort_order, Video.created_at.desc()).first())
+    if video is None or not video.created_at:
+        return None
+    # hide after ~24 hours
+    age = utcnow() - video.created_at
+    if age.total_seconds() > 24 * 3600:
+        return None
+    return video
 
 
 @bp.route("/")

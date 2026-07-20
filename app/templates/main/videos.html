@@ -2,17 +2,17 @@
 {% block title %}Content Hub — {{ site.site_title }}{% endblock %}
 
 {% block content %}
-<section class="section">
+<section class="section section--tight">
   <div class="container">
     <p class="eyebrow">Videos &amp; reel reviews</p>
     <h1>Content Hub</h1>
-    <p style="color: var(--ink-soft); max-width: 62ch;">
+    <p style="color: var(--ink-soft); max-width: 62ch; margin-bottom: 0;">
       Longer-form videos for Creator members, plus public reel reviews from the community.
     </p>
   </div>
 </section>
 
-<section class="section" id="videos">
+<section class="section section--tight" id="videos">
   <div class="container">
     <h2>Video library</h2>
     {% if can_browse %}
@@ -54,7 +54,7 @@
   </div>
 </section>
 
-<section class="section section--band" id="reviews">
+<section class="section section--band section--tight" id="reviews">
   <div class="container">
     <h2>Reel reviews</h2>
     <p style="color: var(--ink-soft); max-width: 60ch; margin-top: -4px;">
