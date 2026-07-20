@@ -879,41 +879,34 @@ details.faq-item > form { padding: 0 20px 20px; }
   overflow: hidden;
   transition: border-color 160ms ease, box-shadow 160ms ease;
 }
-.reel-applicant__summary {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 8px 16px;
-  align-items: center;
-  padding: 14px 16px;
-  cursor: pointer;
-  list-style: none;
-}
-.reel-applicant__summary::-webkit-details-marker { display: none; }
+.reel-applicant__top { padding: 14px 16px 10px; }
 .reel-applicant__who { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .reel-applicant__who strong { font-size: 16px; color: var(--ink); }
 .reel-applicant__meta {
   display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px;
-  grid-column: 1 / -1;
-  font-size: 14px; color: var(--ink-soft);
+  margin-top: 10px; font-size: 14px; color: var(--ink-soft);
 }
-.reel-applicant__meta a { font-weight: 600; }
+.reel-applicant__meta > a:not(.btn) { font-weight: 600; }
+.reel-applicant__fold { border-top: 1px solid rgba(43, 38, 34, 0.08); }
+.reel-applicant__summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 16px; cursor: pointer; list-style: none;
+  font-weight: 700; color: var(--plum);
+}
+.reel-applicant__summary::-webkit-details-marker { display: none; }
 .reel-applicant__chevron {
-  grid-column: 2; grid-row: 1;
-  width: 28px; height: 28px; border-radius: 999px;
+  width: 28px; height: 28px; border-radius: 999px; flex: 0 0 auto;
   display: inline-flex; align-items: center; justify-content: center;
   background: rgba(122, 46, 98, 0.08); color: var(--plum);
   font-size: 18px; line-height: 1; font-weight: 700;
   transition: transform 160ms ease, background 160ms ease;
 }
-.reel-applicant[open] .reel-applicant__chevron {
+.reel-applicant__fold[open] .reel-applicant__chevron {
   transform: rotate(45deg);
   background: rgba(122, 46, 98, 0.14);
 }
-.reel-applicant__body {
-  padding: 0 16px 16px;
-  border-top: 1px solid rgba(43, 38, 34, 0.08);
-}
-.reel-applicant__body .stack-form { margin-top: 14px; }
+.reel-applicant__body { padding: 0 16px 16px; }
+.reel-applicant__body .stack-form { margin-top: 4px; }
 .reel-applicant--winner {
   border-color: var(--gold);
   box-shadow: 0 0 0 2px rgba(239, 167, 51, 0.28), var(--shadow-card);
@@ -926,19 +919,6 @@ details.faq-item > form { padding: 0 20px 20px; }
   border-radius: 999px; font-size: 12px; font-weight: 700;
   letter-spacing: 0.02em; text-transform: uppercase;
   background: var(--gold); color: var(--plum-deep);
-}
-.reel-raw-callout {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 14px; flex-wrap: wrap;
-  margin-top: 14px; padding: 14px 16px;
-  border-radius: 12px;
-  background: rgba(122, 46, 98, 0.06);
-  border: 1px solid rgba(122, 46, 98, 0.12);
-}
-.reel-raw-callout strong { display: block; color: var(--plum-deep); }
-.reel-raw-callout--winner {
-  background: rgba(239, 167, 51, 0.16);
-  border-color: rgba(239, 167, 51, 0.45);
 }
 
 /* ------------------------------- badges --------------------------------- */

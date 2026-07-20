@@ -14,7 +14,7 @@ from datetime import date, datetime, timedelta
 from functools import wraps
 
 from flask import (Response, abort, current_app, flash, redirect,
-                   render_template, request, send_file, session,
+                   render_template, request, send_from_directory, session,
                    stream_with_context, url_for)
 from flask_login import current_user
 from sqlalchemy import func
@@ -1103,17 +1103,26 @@ def reel_reviews_pick():
 def reel_reviews_raw_download(app_id):
     """Download the applicant's raw unedited video (Studio only)."""
     application = db.session.get(ReelReviewApplication, app_id) or abort(404)
-    if not application.disk_name:
-        abort(404)
-    path = os.path.join(current_app.config["VIDEO_STORAGE_DIR"],
-                        application.disk_name)
-    if not os.path.exists(path):
+    disk_name = os.path.basename(application.disk_name or "")
+    if not disk_name:
+        flash("That entry has no raw video upload.", "error")
+        return redirect(url_for("admin.reel_reviews"))
+    directory = os.path.abspath(current_app.config["VIDEO_STORAGE_DIR"])
+    path = os.path.join(directory, disk_name)
+    if not os.path.isfile(path):
         log.error("Reel raw video missing for application %s: %s", app_id, path)
-        abort(404)
+        flash("That raw video isn't on the server anymore. "
+              "Make sure VIDEO_STORAGE_DIR points at a persistent disk, "
+              "then ask them to re-enter the draw with a fresh upload.", "error")
+        return redirect(url_for("admin.reel_reviews"))
     name = application.filename or "raw-reel.mp4"
-    resp = send_file(path, mimetype=application.mime or "video/mp4",
-                     as_attachment=True, download_name=name,
-                     conditional=True)
+    resp = send_from_directory(
+        directory, disk_name,
+        mimetype=application.mime or "application/octet-stream",
+        as_attachment=True,
+        download_name=name,
+        max_age=0,
+    )
     resp.headers["Cache-Control"] = "private, no-store"
     return resp
 
