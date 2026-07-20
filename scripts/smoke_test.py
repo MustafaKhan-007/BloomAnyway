@@ -1114,9 +1114,15 @@ ok("Owner can pick a random reel-review applicant",
    "Selected" in body)
 ok("Picked winner is highlighted at the top of the draw",
    "reel-applicant--winner" in body and "This week's winner" in body)
+ok("Winner card offers a raw-video download",
+   "Download raw" in body and f"/admin/reel-reviews/" in body)
 with app.app_context():
     app_row = ReelReviewApplication.query.filter_by(selected=True).first()
     app_id = app_row.id
+r = admin.get(f"/admin/reel-reviews/{app_id}/raw")
+ok("Owner can download the winner's raw video",
+   r.status_code == 200
+   and "attachment" in (r.headers.get("Content-Disposition") or "").lower())
 r = admin.post(f"/admin/reel-reviews/{app_id}/publish", data={
     "title": "Loved your pacing", "body": "Keep the hook under 2 seconds.",
 }, follow_redirects=True)

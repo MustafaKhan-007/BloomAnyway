@@ -36,12 +36,33 @@
              onclick="event.stopPropagation()">Open reel</a>
           <span>{{ a.filename or 'No raw file' }}
             {% if a.size %}&middot; {{ (a.size / 1024 / 1024)|round(1) }} MB{% endif %}</span>
+          {% if a.disk_name %}
+          <a class="btn btn--{{ 'gold' if a.selected else 'secondary' }} btn--sm"
+             href="{{ url_for('admin.reel_reviews_raw_download', app_id=a.id) }}"
+             onclick="event.stopPropagation()">Download raw</a>
+          {% endif %}
           {% if a.review and a.review.published %}
           <span>Review live</span>
           {% endif %}
         </div>
       </summary>
       <div class="reel-applicant__body">
+        {% if a.disk_name %}
+        <div class="reel-raw-callout{% if a.selected %} reel-raw-callout--winner{% endif %}">
+          <div>
+            <strong>{% if a.selected %}Winner's raw video{% else %}Raw unedited video{% endif %}</strong>
+            <p class="field-help" style="margin: 4px 0 0;">
+              {{ a.filename or 'raw video' }}
+              {% if a.size %}&middot; {{ (a.size / 1024 / 1024)|round(1) }} MB{% endif %}
+              &mdash; download this to review offline before publishing feedback.
+            </p>
+          </div>
+          <a class="btn btn--{{ 'gold' if a.selected else 'primary' }} btn--sm"
+             href="{{ url_for('admin.reel_reviews_raw_download', app_id=a.id) }}">Download raw video</a>
+        </div>
+        {% else %}
+        <p class="field-help" style="margin-top: 14px;">No raw video was uploaded with this entry.</p>
+        {% endif %}
         <form method="post" action="{{ url_for('admin.reel_reviews_publish', app_id=a.id) }}"
               enctype="multipart/form-data" class="stack-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

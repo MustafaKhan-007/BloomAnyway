@@ -8,13 +8,14 @@ import csv
 import io
 import json
 import logging
+import os
 import re
 from datetime import date, datetime, timedelta
 from functools import wraps
 
 from flask import (Response, abort, current_app, flash, redirect,
-                   render_template, request, session, stream_with_context,
-                   url_for)
+                   render_template, request, send_file, session,
+                   stream_with_context, url_for)
 from flask_login import current_user
 from sqlalchemy import func
 from sqlalchemy.orm import joinedload
@@ -1095,6 +1096,26 @@ def reel_reviews_pick():
         flash(f"Selected {chosen.author.public_name()} for this week's review.",
               "success")
     return redirect(url_for("admin.reel_reviews"))
+
+
+@bp.route("/reel-reviews/<int:app_id>/raw")
+@admin_required
+def reel_reviews_raw_download(app_id):
+    """Download the applicant's raw unedited video (Studio only)."""
+    application = db.session.get(ReelReviewApplication, app_id) or abort(404)
+    if not application.disk_name:
+        abort(404)
+    path = os.path.join(current_app.config["VIDEO_STORAGE_DIR"],
+                        application.disk_name)
+    if not os.path.exists(path):
+        log.error("Reel raw video missing for application %s: %s", app_id, path)
+        abort(404)
+    name = application.filename or "raw-reel.mp4"
+    resp = send_file(path, mimetype=application.mime or "video/mp4",
+                     as_attachment=True, download_name=name,
+                     conditional=True)
+    resp.headers["Cache-Control"] = "private, no-store"
+    return resp
 
 
 @bp.route("/reel-reviews/<int:app_id>/publish", methods=["POST"])

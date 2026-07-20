@@ -927,6 +927,19 @@ details.faq-item > form { padding: 0 20px 20px; }
   letter-spacing: 0.02em; text-transform: uppercase;
   background: var(--gold); color: var(--plum-deep);
 }
+.reel-raw-callout {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 14px; flex-wrap: wrap;
+  margin-top: 14px; padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(122, 46, 98, 0.06);
+  border: 1px solid rgba(122, 46, 98, 0.12);
+}
+.reel-raw-callout strong { display: block; color: var(--plum-deep); }
+.reel-raw-callout--winner {
+  background: rgba(239, 167, 51, 0.16);
+  border-color: rgba(239, 167, 51, 0.45);
+}
 
 /* ------------------------------- badges --------------------------------- */
 .badge {
