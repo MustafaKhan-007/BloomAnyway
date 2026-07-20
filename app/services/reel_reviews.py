@@ -23,9 +23,11 @@ def application_for(user_id: int, week: date | None = None) -> ReelReviewApplica
 
 def week_applicants(week: date | None = None):
     week = week or current_week_key()
+    # Selected winner first, then by entry time
     return (ReelReviewApplication.query
             .filter_by(week_key=week)
-            .order_by(ReelReviewApplication.created_at.asc())
+            .order_by(ReelReviewApplication.selected.desc(),
+                      ReelReviewApplication.created_at.asc())
             .all())
 
 

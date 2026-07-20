@@ -148,9 +148,12 @@
       <li class="asset-list__row">
         <span class="asset-list__name">{{ a.display_title() }}
           <small>{{ a.kind|upper }} &middot; {{ a.size_mb() }} MB</small></span>
-        <label class="checkline">
-          <input type="checkbox" name="remove_asset" value="{{ a.id }}"> Remove
-        </label>
+        <button type="button" class="btn btn--secondary btn--sm asset-remove-toggle"
+                aria-pressed="false"
+                data-label-remove="Remove"
+                data-label-keep="Keep file">Remove</button>
+        <input type="hidden" name="remove_asset" value="{{ a.id }}" disabled
+               class="asset-remove-input">
       </li>
       {% endfor %}
     </ul>

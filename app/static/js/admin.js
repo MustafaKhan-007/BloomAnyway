@@ -38,6 +38,23 @@
     update();
   }
 
+  /* ---- mark course files for removal (toggles hidden remove_asset input) ---- */
+  document.querySelectorAll(".asset-remove-toggle").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var row = btn.closest(".asset-list__row");
+      var input = row && row.querySelector(".asset-remove-input");
+      if (!row || !input) return;
+      var pending = btn.getAttribute("aria-pressed") === "true";
+      var next = !pending;
+      btn.setAttribute("aria-pressed", next ? "true" : "false");
+      btn.textContent = next
+        ? (btn.dataset.labelKeep || "Keep file")
+        : (btn.dataset.labelRemove || "Remove");
+      input.disabled = !next;
+      row.classList.toggle("asset-list__row--pending-remove", next);
+    });
+  });
+
   /* ---- curriculum repeatable rows ---- */
   var addModule = document.getElementById("add-module");
   var moduleList = document.getElementById("module-list");

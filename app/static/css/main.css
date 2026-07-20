@@ -169,6 +169,7 @@ input[type="text"], input[type="email"], input[type="password"], input[type="url
 input[type="number"], input[type="date"], input[type="datetime-local"],
 select, textarea {
   width: 100%;
+  max-width: 100%;
   padding: 12px 16px;
   border-radius: var(--radius-input);
   border: 1.5px solid var(--ink-soft);
@@ -177,6 +178,7 @@ select, textarea {
   font-size: 16px;
   color: var(--ink);
 }
+textarea { resize: vertical; }
 input:focus, select:focus, textarea:focus {
   outline: 2px solid var(--gold);
   outline-offset: 2px;
@@ -851,8 +853,80 @@ details.faq-item > form { padding: 0 20px 20px; }
 .asset-list__row {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 10px 0; border-bottom: 1px solid rgba(43, 38, 34, 0.1);
+  transition: opacity 160ms ease, background 160ms ease;
 }
+.asset-list__name { flex: 1; min-width: 0; }
 .asset-list__name small { color: var(--ink-soft); font-weight: 400; }
+.asset-list__row--pending-remove {
+  opacity: 0.55;
+  background: rgba(166, 75, 63, 0.06);
+  border-radius: 10px;
+  padding-left: 10px;
+  padding-right: 10px;
+  margin: 0 -10px;
+}
+.asset-list__row--pending-remove .asset-list__name {
+  text-decoration: line-through;
+  text-decoration-color: rgba(166, 75, 63, 0.55);
+}
+
+/* admin: reel review draw cards */
+.reel-applicant-list { display: grid; gap: 12px; margin-top: 18px; }
+.reel-applicant {
+  background: var(--dawn-ivory);
+  border: 1.5px solid rgba(43, 38, 34, 0.1);
+  border-radius: 14px;
+  overflow: hidden;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+.reel-applicant__summary {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 16px;
+  align-items: center;
+  padding: 14px 16px;
+  cursor: pointer;
+  list-style: none;
+}
+.reel-applicant__summary::-webkit-details-marker { display: none; }
+.reel-applicant__who { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.reel-applicant__who strong { font-size: 16px; color: var(--ink); }
+.reel-applicant__meta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px;
+  grid-column: 1 / -1;
+  font-size: 14px; color: var(--ink-soft);
+}
+.reel-applicant__meta a { font-weight: 600; }
+.reel-applicant__chevron {
+  grid-column: 2; grid-row: 1;
+  width: 28px; height: 28px; border-radius: 999px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(122, 46, 98, 0.08); color: var(--plum);
+  font-size: 18px; line-height: 1; font-weight: 700;
+  transition: transform 160ms ease, background 160ms ease;
+}
+.reel-applicant[open] .reel-applicant__chevron {
+  transform: rotate(45deg);
+  background: rgba(122, 46, 98, 0.14);
+}
+.reel-applicant__body {
+  padding: 0 16px 16px;
+  border-top: 1px solid rgba(43, 38, 34, 0.08);
+}
+.reel-applicant__body .stack-form { margin-top: 14px; }
+.reel-applicant--winner {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px rgba(239, 167, 51, 0.28), var(--shadow-card);
+  background: linear-gradient(180deg, var(--gold-soft) 0%, #fff 48%);
+  order: -1;
+}
+.reel-winner-badge {
+  display: inline-block; align-self: flex-start;
+  margin-bottom: 4px; padding: 3px 10px;
+  border-radius: 999px; font-size: 12px; font-weight: 700;
+  letter-spacing: 0.02em; text-transform: uppercase;
+  background: var(--gold); color: var(--plum-deep);
+}
 
 /* ------------------------------- badges --------------------------------- */
 .badge {

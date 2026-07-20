@@ -1109,10 +1109,13 @@ ok("Second reel-review request in the same week is blocked",
    "already entered" in r.get_data(as_text=True))
 
 r = admin.post("/admin/reel-reviews/pick", follow_redirects=True)
+body = r.get_data(as_text=True)
 ok("Owner can pick a random reel-review applicant",
-   "Selected" in r.get_data(as_text=True))
+   "Selected" in body)
+ok("Picked winner is highlighted at the top of the draw",
+   "reel-applicant--winner" in body and "This week's winner" in body)
 with app.app_context():
-    app_row = ReelReviewApplication.query.first()
+    app_row = ReelReviewApplication.query.filter_by(selected=True).first()
     app_id = app_row.id
 r = admin.post(f"/admin/reel-reviews/{app_id}/publish", data={
     "title": "Loved your pacing", "body": "Keep the hook under 2 seconds.",
@@ -1122,6 +1125,9 @@ ok("Owner can publish a reel review",
 r = app.test_client().get("/watch")
 ok("Published reel reviews are public on Content Hub",
    "Loved your pacing" in r.get_data(as_text=True))
+r = app.test_client().get("/")
+ok("Sunflower favicon is linked in the tab",
+   "favicon.svg" in r.get_data(as_text=True))
 
 # coaching request (Creator only)
 admin.post("/admin/settings", data={
