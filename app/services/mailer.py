@@ -1,11 +1,14 @@
 """Mailer with two transports.
 
-1. Brevo HTTP API (``BREVO_API_KEY``) — preferred on hosts that block outbound
-   SMTP ports, such as Render's free tier.
-2. Plain SMTP (``SMTP_HOST`` etc.) — Gmail, Resend, Postmark, any relay.
+1. SMTP (``SMTP_HOST`` / ``SMTP_USER`` / ``SMTP_PASSWORD``) — preferred when
+   configured. Use this for Brevo's SMTP wizard (``smtp-relay.brevo.com``).
+2. Brevo HTTP API (``BREVO_API_KEY`` starting with ``xkeysib-``) — used when
+   SMTP is not configured. Works on hosts that block outbound SMTP ports.
 
-When neither is configured (local dev) emails are printed to the console so the
-auth flows are testable without a mail account.
+If ``BREVO_API_KEY`` is a Brevo *SMTP* key (``xsmtpsib-…``), it is treated as
+SMTP credentials for ``smtp-relay.brevo.com`` (not the HTTP API).
+
+When neither is configured (local dev) emails are printed to the console.
 """
 import logging
 import re
@@ -17,6 +20,8 @@ import requests
 from flask import current_app
 
 log = logging.getLogger(__name__)
+
+BREVO_SMTP_HOST = "smtp-relay.brevo.com"
 
 # Most recent send failure (human-readable). Cleared on success.
 _last_error = ""
@@ -60,14 +65,53 @@ def _parse_from(mail_from: str) -> dict:
     return {"name": "Bloom Anyway", "email": mail_from}
 
 
+def _resolve_smtp() -> dict | None:
+    """Return SMTP settings if ready, else None.
+
+    Sources (first match wins):
+    1. Explicit SMTP_HOST + SMTP_USER + SMTP_PASSWORD
+    2. Brevo SMTP key in BREVO_API_KEY (xsmtpsib-…) → smtp-relay.brevo.com
+    """
+    cfg = current_app.config
+    host = _strip_env_quotes(cfg.get("SMTP_HOST") or "")
+    user = _strip_env_quotes(cfg.get("SMTP_USER") or "")
+    password = _strip_env_quotes(cfg.get("SMTP_PASSWORD") or "")
+    try:
+        port = int(cfg.get("SMTP_PORT") or 587)
+    except (TypeError, ValueError):
+        port = 587
+    key = _brevo_api_key()
+
+    if host and user and password:
+        return {"host": host, "port": port, "user": user, "password": password}
+
+    if key.lower().startswith("xsmtpsib-"):
+        sender = _parse_from(cfg.get("MAIL_FROM") or "")
+        login = user or sender.get("email") or ""
+        if not login or "@" not in login:
+            _set_error(
+                "Brevo SMTP key detected, but SMTP_USER is missing. "
+                "Set SMTP_USER to the login shown in Brevo → SMTP & API "
+                "(usually your Brevo account email)."
+            )
+            return None
+        return {
+            "host": host or BREVO_SMTP_HOST,
+            "port": port,
+            "user": login,
+            "password": key,
+        }
+    return None
+
+
 def _brevo_error_hint(status: int, body: str) -> str:
     """Turn a Brevo HTTP failure into a short owner-facing hint."""
     text = (body or "").lower()
     if status == 401:
         return (
-            "Brevo rejected the API key (401). Use an API key (not an SMTP key), "
-            "and in Brevo → Security authorize Render's outbound IP — or turn off "
-            "IP restriction for that key. Your home IP is not the same as Render's."
+            "Brevo rejected the API key (401). Use an API key (xkeysib-…), "
+            "not an SMTP key, and authorize Render's outbound IP in Brevo "
+            "Security — or turn off IP restriction for that key."
         )
     if status == 403:
         return (
@@ -85,18 +129,18 @@ def _brevo_error_hint(status: int, body: str) -> str:
 
 
 def _send_via_brevo(to: str, subject: str, text_body: str) -> bool:
-    """Send through Brevo. Prefer plain text; also include a tiny HTML part."""
+    """Send through Brevo HTTP API. Prefer plain text; also include tiny HTML."""
     key = _brevo_api_key()
     if not key:
         _set_error("BREVO_API_KEY is empty.")
         return False
     if key.lower().startswith("xsmtpsib-"):
-        # Brevo SMTP keys look like this; the HTTP API needs an API key (xkeysib-…).
-        log.error("Brevo: BREVO_API_KEY looks like an SMTP key (xsmtpsib-…), "
-                  "not an API key (xkeysib-…).")
+        # Should have been routed to SMTP by send_email; keep as safety net.
+        log.error("Brevo: BREVO_API_KEY is an SMTP key — use SMTP transport.")
         _set_error(
-            "BREVO_API_KEY looks like an SMTP key. Create an API key in Brevo "
-            "(SMTP & API → API keys) and paste that instead."
+            "BREVO_API_KEY is an SMTP key (xsmtpsib-…). Set SMTP_HOST="
+            f"{BREVO_SMTP_HOST}, SMTP_USER=your Brevo login, and put this key "
+            "in SMTP_PASSWORD (or leave it in BREVO_API_KEY with SMTP_USER set)."
         )
         return False
 
@@ -113,7 +157,6 @@ def _send_via_brevo(to: str, subject: str, text_body: str) -> bool:
         _set_error("MAIL_FROM still uses @localhost — set a verified Brevo sender.")
         return False
 
-    # htmlContent helps some providers; keep it a plain mirror of the text.
     html_body = (
         "<pre style=\"font-family:ui-monospace,monospace;white-space:pre-wrap;"
         "font-size:15px;line-height:1.5;\">"
@@ -139,14 +182,13 @@ def _send_via_brevo(to: str, subject: str, text_body: str) -> bool:
             timeout=20,
         )
         if resp.status_code in (200, 201, 202):
-            log.info("Brevo: sent to %s (status %s)", to, resp.status_code)
+            log.info("Brevo API: sent to %s (status %s)", to, resp.status_code)
             _set_error("")
             return True
 
         hint = _brevo_error_hint(resp.status_code, resp.text)
-        log.error("Brevo rejected email to %s: %s %s", to, resp.status_code, resp.text)
+        log.error("Brevo API rejected email to %s: %s %s", to, resp.status_code, resp.text)
 
-        # Retry once with email-only sender (some accounts dislike custom names).
         if resp.status_code == 400 and "name" in payload["sender"]:
             payload["sender"] = {"email": sender["email"]}
             resp2 = requests.post(
@@ -156,11 +198,11 @@ def _send_via_brevo(to: str, subject: str, text_body: str) -> bool:
                 timeout=20,
             )
             if resp2.status_code in (200, 201, 202):
-                log.info("Brevo: sent to %s on retry (status %s)", to, resp2.status_code)
+                log.info("Brevo API: sent to %s on retry (status %s)", to, resp2.status_code)
                 _set_error("")
                 return True
             hint = _brevo_error_hint(resp2.status_code, resp2.text)
-            log.error("Brevo retry failed for %s: %s %s", to, resp2.status_code, resp2.text)
+            log.error("Brevo API retry failed for %s: %s %s", to, resp2.status_code, resp2.text)
 
         _set_error(hint)
         return False
@@ -170,53 +212,90 @@ def _send_via_brevo(to: str, subject: str, text_body: str) -> bool:
         return False
 
 
-def _send_via_smtp(to: str, msg: EmailMessage) -> bool:
+def _send_via_smtp(to: str, subject: str, text_body: str,
+                   html_body: str | None = None,
+                   smtp: dict | None = None) -> bool:
     cfg = current_app.config
+    smtp = smtp or _resolve_smtp()
+    if not smtp:
+        return False
+
+    mail_from = _strip_env_quotes(cfg.get("MAIL_FROM") or "")
+    if not mail_from or "@localhost" in mail_from.lower():
+        _set_error("MAIL_FROM must be a verified Brevo sender before SMTP can send.")
+        return False
+
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = mail_from
+    msg["To"] = to
+    msg.set_content(text_body)
+    if html_body:
+        msg.add_alternative(html_body, subtype="html")
+    else:
+        msg.add_alternative(
+            "<pre style=\"font-family:ui-monospace,monospace;white-space:pre-wrap;"
+            f"font-size:15px;line-height:1.5;\">{escape(text_body)}</pre>",
+            subtype="html",
+        )
+
+    host, port = smtp["host"], int(smtp["port"])
     try:
-        if int(cfg["SMTP_PORT"]) == 465:
-            server = smtplib.SMTP_SSL(cfg["SMTP_HOST"], cfg["SMTP_PORT"], timeout=15)
+        if port == 465:
+            server = smtplib.SMTP_SSL(host, port, timeout=20)
         else:
-            server = smtplib.SMTP(cfg["SMTP_HOST"], cfg["SMTP_PORT"], timeout=15)
+            server = smtplib.SMTP(host, port, timeout=20)
+            server.ehlo()
             server.starttls()
+            server.ehlo()
         with server:
-            if cfg["SMTP_USER"]:
-                server.login(cfg["SMTP_USER"], cfg["SMTP_PASSWORD"])
+            server.login(smtp["user"], smtp["password"])
             server.send_message(msg)
+        log.info("SMTP: sent to %s via %s:%s", to, host, port)
         _set_error("")
         return True
-    except Exception as exc:
-        log.exception("Failed to send email to %s via SMTP", to)
-        _set_error(f"SMTP send failed ({exc.__class__.__name__}).")
+    except smtplib.SMTPAuthenticationError:
+        log.exception("SMTP auth failed for %s via %s", to, host)
+        _set_error(
+            "SMTP login failed. Check SMTP_USER (Brevo SMTP login) and "
+            "SMTP_PASSWORD (Brevo SMTP key, xsmtpsib-…)."
+        )
+        return False
+    except (smtplib.SMTPException, OSError, TimeoutError) as exc:
+        log.exception("Failed to send email to %s via SMTP %s:%s", to, host, port)
+        _set_error(
+            f"SMTP send failed ({exc.__class__.__name__}). On Render free tier, "
+            "outbound SMTP is often blocked — use a paid instance or the Brevo "
+            "HTTP API key (xkeysib-…) instead."
+        )
         return False
 
 
 def send_email(to: str, subject: str, text_body: str, html_body: str | None = None) -> bool:
-    """Send email. Verification codes use text (+ tiny HTML mirror) via Brevo."""
-    cfg = current_app.config
+    """Send email. Prefers SMTP when configured; else Brevo HTTP API; else console."""
     to = (to or "").strip()
     if not to:
         _set_error("Missing recipient email.")
         return False
 
-    if _brevo_api_key():
+    _set_error("")
+    smtp = _resolve_smtp()
+    if smtp is None and last_send_error():
+        # _resolve_smtp already set a specific error (e.g. missing SMTP_USER).
+        return False
+    if smtp:
+        return _send_via_smtp(to, subject, text_body, html_body, smtp=smtp)
+
+    key = _brevo_api_key()
+    if key:
         return _send_via_brevo(to, subject, text_body)
 
-    if not cfg["SMTP_HOST"]:
-        log.warning("No email transport configured; printing email to console.")
-        print("\n===== EMAIL (console fallback) =====")
-        print(f"To: {to}\nSubject: {subject}\n\n{text_body}")
-        print("====================================\n")
-        _set_error("")
-        return True
-
-    msg = EmailMessage()
-    msg["Subject"] = subject
-    msg["From"] = _strip_env_quotes(cfg.get("MAIL_FROM") or "")
-    msg["To"] = to
-    msg.set_content(text_body)
-    if html_body:
-        msg.add_alternative(html_body, subtype="html")
-    return _send_via_smtp(to, msg)
+    log.warning("No email transport configured; printing email to console.")
+    print("\n===== EMAIL (console fallback) =====")
+    print(f"To: {to}\nSubject: {subject}\n\n{text_body}")
+    print("====================================\n")
+    _set_error("")
+    return True
 
 
 def send_verification_code(to: str, code: str, purpose: str) -> bool:
