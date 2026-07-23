@@ -20,7 +20,7 @@ from flask_login import current_user, login_required, login_user, logout_user
 
 from ..extensions import db, limiter
 from ..models import User, VerificationCode, utcnow
-from ..services.mailer import send_verification_code
+from ..services.mailer import last_send_error, send_verification_code
 from ..services.recommend import INTENTS, valid_intent_keys
 from . import bp
 
@@ -28,6 +28,15 @@ log = logging.getLogger(__name__)
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 MIN_PASSWORD_LEN = 8
+
+
+def _email_trouble_flash() -> None:
+    """Flash a send failure, including the last Brevo/SMTP hint when available."""
+    hint = last_send_error()
+    if hint:
+        flash(f"We couldn't send the email just now. {hint}", "error")
+    else:
+        flash(EMAIL_TROUBLE, "error")
 
 
 def _normalize(email: str) -> str:
@@ -227,7 +236,7 @@ def register():
     if sent:
         flash("One more step \u2014 we've emailed you a 6-digit code.", "success")
     else:
-        flash(EMAIL_TROUBLE, "error")
+        _email_trouble_flash()
     return redirect(url_for("auth.verify_email"))
 
 
@@ -247,7 +256,7 @@ def verify_email():
         if _issue_code(user, "confirm"):
             flash("A fresh code is on its way. It works for 15 minutes.", "success")
         else:
-            flash(EMAIL_TROUBLE, "error")
+            _email_trouble_flash()
         return render_template("auth/verify_email.html", email=email)
 
     if user.is_verified:
@@ -308,7 +317,7 @@ def login():
                 flash("Almost there \u2014 confirm your email first. "
                       "We've sent you a 6-digit code.", "info")
             else:
-                flash(EMAIL_TROUBLE, "error")
+                _email_trouble_flash()
         return redirect(url_for("auth.verify_email"))
 
     _log_in(user)

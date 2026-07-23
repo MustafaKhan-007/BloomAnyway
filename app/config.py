@@ -81,6 +81,18 @@ class Config:
     RATELIMIT_STORAGE_URI = "memory://"
 
 
+def _strip_config_quotes(value: str) -> str:
+    v = (value or "").strip()
+    if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+        v = v[1:-1].strip()
+    return v
+
+
+# Normalize env pastes once at import (Render/dashboard often wrap in quotes).
+Config.BREVO_API_KEY = _strip_config_quotes(Config.BREVO_API_KEY)
+Config.MAIL_FROM = _strip_config_quotes(Config.MAIL_FROM)
+
+
 class DevConfig(Config):
     DEBUG = True
     SESSION_COOKIE_SECURE = False
