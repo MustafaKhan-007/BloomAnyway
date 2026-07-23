@@ -31,16 +31,7 @@ services:
         fromDatabase:
           name: first-light-db
           property: connectionString
-      # Email (required): Brevo SMTP and/or HTTP API + verified sender.
-      # Prefer SMTP when SMTP_* are set (Brevo wizard: smtp-relay.brevo.com).
-      - key: SMTP_HOST
-        sync: false
-      - key: SMTP_PORT
-        value: "587"
-      - key: SMTP_USER
-        sync: false
-      - key: SMTP_PASSWORD
-        sync: false
+      # Email (required): Brevo HTTP API + the verified sender address.
       - key: BREVO_API_KEY
         sync: false
       - key: MAIL_FROM

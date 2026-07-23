@@ -83,11 +83,8 @@ In production only these are **required** (the app refuses to boot otherwise):
 
 - `DATABASE_URL` — the managed Postgres connection string.
 - `MAIL_FROM` — the verified "From" address for emails.
-- **one email transport** — either Brevo SMTP
-  (`SMTP_HOST`/`SMTP_PORT`/`SMTP_USER`/`SMTP_PASSWORD`, e.g.
-  `smtp-relay.brevo.com`) **or** `BREVO_API_KEY` (HTTP API key `xkeysib-…`).
-  If SMTP is configured it is preferred. A Brevo SMTP key (`xsmtpsib-…`)
-  placed in `BREVO_API_KEY` is also routed over SMTP when `SMTP_USER` is set.
+- **one email transport** — either `BREVO_API_KEY` (HTTP API, works everywhere)
+  or all four of `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER`/`SMTP_PASSWORD`.
 
 Everything else is optional or auto-managed:
 
@@ -99,10 +96,10 @@ Everything else is optional or auto-managed:
 - Contact-form messages go to whoever owns the admin account (claimed at
   `/setup`) — there's no separate admin-email variable.
 
-> **Render note:** outbound SMTP (ports 25/465/587) is blocked on **free**
-> web services. Starter/paid plans can use Brevo SMTP
-> (`smtp-relay.brevo.com`). On free tier, use a Brevo HTTP **API** key
-> (`xkeysib-…`) in `BREVO_API_KEY` instead.
+> **Render free tier note:** Render blocks outbound SMTP ports (25/465/587)
+> on free web services, so Gmail/any SMTP relay will time out there. Use
+> `BREVO_API_KEY` instead (free Brevo account, ~300 emails/day), or upgrade
+> the Render service to a paid instance to unblock SMTP.
 
 ---
 

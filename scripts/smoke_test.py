@@ -1198,23 +1198,13 @@ with app.app_context():
     sender = mailer_mod._parse_from('"Bloom Anyway <hello@example.com>"')
     app.config["BREVO_API_KEY"] = "xsmtpsib-fake-smtp-key"
     app.config["MAIL_FROM"] = "Bloom Anyway <hello@example.com>"
-    app.config["SMTP_HOST"] = ""
-    app.config["SMTP_USER"] = ""
-    app.config["SMTP_PASSWORD"] = ""
     smtp_key_blocked = mailer_mod._send_via_brevo("a@b.com", "t", "body") is False
     smtp_hint = mailer_mod.last_send_error()
-    app.config["SMTP_USER"] = "hello@example.com"
-    resolved = mailer_mod._resolve_smtp()
 ok("Brevo API key is normalized", cleaned == "abc123" and quoted == "xyz-key")
 ok("MAIL_FROM wrapping quotes are stripped",
    sender.get("email") == "hello@example.com")
 ok("SMTP keys are rejected for the Brevo HTTP API",
    smtp_key_blocked and "SMTP key" in smtp_hint)
-ok("Brevo SMTP keys resolve to smtp-relay.brevo.com",
-   resolved is not None
-   and resolved["host"] == "smtp-relay.brevo.com"
-   and resolved["password"].startswith("xsmtpsib-")
-   and resolved["user"] == "hello@example.com")
 
 # brand rename: leftover "First Light" becomes Bloom Anyway on boot
 from app.services.settings import ensure_brand_title, get_setting, invalidate_cache, set_setting
