@@ -200,7 +200,10 @@
             Page <span id="reader-chip-page">{{ start_page }}</span> of <span id="reader-chip-total">—</span>
           </p>
 
-          <div class="reader__viewer" id="reader-viewer">
+          {# A page, a player or an interactive piece takes the pane it is
+             given; anything that flows keeps its notes right beneath it. #}
+          <div class="reader__viewer{{ ' reader__viewer--fill' if asset.kind in ('pdf', 'h5p', 'video') }}"
+               id="reader-viewer">
           {% if asset.kind == 'pdf' %}
           <div class="course-reader__pdf-wrap">
             <canvas id="reader-pdf-canvas"></canvas>

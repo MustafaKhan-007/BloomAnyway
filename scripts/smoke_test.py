@@ -4347,8 +4347,8 @@ ok("The reader shows the file and everything written for it together",
    and "Have a pen <strong>ready</strong>." in _rbody
    and "Sit with it for a day." in _rbody)
 ok("The stage splits so the notes get their own scrolling pane",
-   'class="reader__viewer"' in _rbody and "reader__notes" in _rbody
-   and "reader__stage--split" in _rbody)
+   "reader__notes" in _rbody and "reader__stage--split" in _rbody
+   and "reader__viewer--fill" in _rbody)
 ok("A chip marks the file that carries writing",
    "reader-pieces__notes" in _rbody)
 ok("But an extract is never a chip of its own",
