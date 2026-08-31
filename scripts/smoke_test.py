@@ -4040,6 +4040,52 @@ with app.app_context():
        after is not None and (after.buyer_email or "").startswith("closed+"),
        f"got {after.buyer_email if after else None}")
 
+# People come back. Signing up again with the same address makes the
+# subscription theirs once more, and writing it off then cancels a membership
+# they are paying for — which is what started happening in production.
+with app.app_context():
+    returner = User(email="leaver@example.com", display_name="Back again",
+                    membership="none", email_verified_at=utcnow())
+    returner.set_password(USER_PW)
+    db.session.add(returner)
+    db.session.commit()
+    returner_id = returner.id
+_alerts_before = len(_billing_alerts)
+
+# a) the old subscription, the one whose orders were scrubbed, renews
+_invoice_webhook("WEL-R1", "leaver@example.com", _mem_price,
+                 "sub_leaver", "subscription_cycle")
+ok("A returning member's renewal is not written off as a deleted account",
+   len(_billing_alerts) == _alerts_before, f"got {_billing_alerts}")
+with app.app_context():
+    back = Order.query.filter_by(ls_order_id="WEL-R1").first()
+    ok("Their payment stays attached to the account paying it",
+       back is not None and back.buyer_email == "leaver@example.com",
+       f"got {back.buyer_email if back else None}")
+    ok("And the tier they are paying for actually reaches them",
+       db.session.get(User, returner_id).membership == "healing",
+       f"got {db.session.get(User, returner_id).membership}")
+    ok("The scrubbed order from before is handed back too, not left stranded",
+       Order.query.filter_by(ls_order_id="WEL-3").first().buyer_email
+       == "leaver@example.com")
+
+# b) a brand new subscription for the same returning address
+_invoice_webhook("WEL-R2", "leaver@example.com", _mem_price,
+                 "sub_leaver_two", "subscription_create")
+ok("A fresh subscription for a returning address is left alone",
+   len(_billing_alerts) == _alerts_before, f"got {_billing_alerts}")
+with app.app_context():
+    ok("They keep the membership they just paid for",
+       db.session.get(User, returner_id).membership == "healing")
+
+# c) deleting again puts the protection back
+with app.app_context():
+    close_account(db.session.get(User, returner_id))
+_invoice_webhook("WEL-R3", "leaver@example.com", _mem_price,
+                 "sub_leaver_two", "subscription_cycle")
+ok("Deleting again restores the write-off, so a ghost keeps being caught",
+   len(_billing_alerts) > _alerts_before, f"got {_billing_alerts}")
+
 # Re-running fulfillment (late webhook, dashboard sync) keeps the scrub.
 _invoice_webhook("WEL-1", "leaver@example.com", _mem_price,
                  "sub_leaver", "subscription_create")
