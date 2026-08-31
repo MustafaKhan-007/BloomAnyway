@@ -2589,6 +2589,38 @@ with app.app_context():
     pub = ReelReview.query.order_by(ReelReview.id.desc()).first()
     ok("A published review is stamped with the Atlanta day it went out",
        pub.review_date == reel_svc.atlanta_today())
+    pub_id = pub.id
+
+# Two things landing in the hub on one day both belong on the home page, and
+# each keeps its own day rather than sharing the newest one's.
+_hub_html = client.get("/").get_data(as_text=True)
+ok("A tip and a reel review from the same day stack on the home page",
+   "New in the Content Hub: <strong>Batch a week of hooks</strong>" in _hub_html
+   and "New reel review: <strong>Loved your pacing</strong>" in _hub_html)
+ok("Each card goes to its own piece",
+   f'href="/watch/{text_tip_id}"' in _hub_html
+   and f'href="/watch/reviews/{pub_id}"' in _hub_html)
+with app.app_context():
+    _aged = db.session.get(Video, text_tip_id)
+    _was = _aged.created_at
+    _aged.created_at = utcnow() - timedelta(hours=25)
+    db.session.commit()
+_hub_html = client.get("/").get_data(as_text=True)
+ok("A tip past its own 24 hours drops off on its own",
+   "New in the Content Hub: <strong>Batch a week of hooks</strong>" not in _hub_html)
+ok("And takes nothing else with it",
+   "New reel review: <strong>Loved your pacing</strong>" in _hub_html)
+with app.app_context():
+    db.session.get(Video, text_tip_id).created_at = _was
+    db.session.commit()
+with app.test_request_context("/"):
+    from app.services import homepage as _home_svc
+    ok("A busy day can't bury the hero — the strip is capped",
+       len(_home_svc.content_hub_drops(limit=1)) == 1
+       and _home_svc.MAX_DROPS >= 2)
+ok("Someone with no account isn't told about a hub they can't read",
+   "New in the Content Hub"
+   not in app.test_client().get("/").get_data(as_text=True))
 r = admin.get("/admin/reel-reviews")
 abody = r.get_data(as_text=True)
 ok("Studio closes the publish UI once today's review is out",

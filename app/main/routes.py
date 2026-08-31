@@ -117,32 +117,15 @@ def _spotlight_context():
     return {"creator_of_month": creator, "reel_of_week": reel}
 
 
-def _video_notice():
-    """Newest published tip, only for the first day after it goes live.
-
-    Ordering here is by date alone. Sorting by ``sort_order`` first (the hub's
-    own order) meant one pinned older tip became "the latest" and swallowed the
-    notice for everything published after it.
-    """
-    if not getattr(current_user, "is_authenticated", False):
-        return None
-    video = (Video.query.filter_by(published=True)
-             .order_by(Video.created_at.desc()).first())
-    if video is None or not video.created_at:
-        return None
-    # hide after ~24 hours
-    age = utcnow() - video.created_at
-    if age.total_seconds() > 24 * 3600:
-        return None
-    return video
-
-
 @bp.route("/")
 def index():
     from ..services import homepage as home_svc
+    # Only members hear about the hub, since only members can read it.
+    hub_drops = (home_svc.content_hub_drops()
+                 if getattr(current_user, "is_authenticated", False) else [])
     return render_template(
         "main/index.html",
-        latest_video=_video_notice(),
+        hub_drops=hub_drops,
         product_of_the_day=home_svc.product_of_the_day(),
         top_products=home_svc.top_products(6),
         **_spotlight_context(),
