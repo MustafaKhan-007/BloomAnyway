@@ -388,3 +388,49 @@ def clear_manual_tier(email: str, paid_at=None) -> bool:
     user.membership_manual_at = None
     log.info("membership: cleared studio tier for user %s after payment", user.id)
     return True
+
+
+# --- what the tiers look like before there is an account ----------------------
+# Sign-up and sign-in show the plans so someone can see what they are joining,
+# but nothing there is buyable: Stripe tells us who paid by email address, so a
+# membership bought before the account exists has nowhere to land.
+
+PREVIEW_SUMMARIES = {
+    "none": "Quotes, badges, courses & guides, and Content Hub free picks.",
+    "healing": ("Healing community, healing support and Ayesha 1:1, "
+                "one Showcase listing, healing Content Tips."),
+    "creator": ("Building community, Content Hub, reels & spotlight, "
+                "five Showcase listings, creator support and Saman 1:1."),
+    "full_bloom": "Everything in both Healing and Creator.",
+}
+
+_PREVIEW_FALLBACK_NAMES = {
+    "healing": "Healing membership",
+    "creator": "Creator membership",
+    "full_bloom": "Full Bloom membership",
+}
+
+
+def plan_preview() -> list[dict]:
+    """The tiers as something to read rather than something to buy.
+
+    Never raises: this goes on the sign-in page, and a plan lookup that fails
+    should cost a teaser, not the way back into the site.
+    """
+    try:
+        plans = {p.tier: p for p in MembershipPlan.query.all()}
+    except Exception:
+        log.exception("membership: could not load plans for the sign-in preview")
+        return []
+    rows = [{"tier": "none", "name": "Free", "price": "$0 / forever",
+             "summary": PREVIEW_SUMMARIES["none"]}]
+    for tier, fallback in _PREVIEW_FALLBACK_NAMES.items():
+        plan = plans.get(tier)
+        price = plan.price_display() if plan and plan.price_cents is not None else ""
+        rows.append({
+            "tier": tier,
+            "name": (plan.name if plan else "") or fallback,
+            "price": f"{price} / month" if price else "Coming soon",
+            "summary": PREVIEW_SUMMARIES[tier],
+        })
+    return rows

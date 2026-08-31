@@ -315,6 +315,13 @@ def checkout_product(slug):
 def checkout_membership(tier):
     if tier not in ("healing", "creator", "full_bloom"):
         abort(404)
+    # Stripe tells us who paid by email address, so a membership bought with
+    # no account open has nowhere to land — and lands on a stranger's account
+    # if they later sign up with that address. Make the account first.
+    if not current_user.is_authenticated:
+        flash("Make your account first, then join — a membership is tied to "
+              "the account it's bought from.", "info")
+        return redirect(url_for("auth.login", next=url_for("main.membership")))
     billing = (request.args.get("billing") or request.form.get("billing")
                or "monthly").strip().lower()
     if billing in ("year", "yearly", "annual"):
