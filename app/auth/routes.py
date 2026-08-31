@@ -21,6 +21,7 @@ from flask_login import current_user, login_required, login_user, logout_user
 from ..extensions import db, limiter
 from ..models import User, VerificationCode, utcnow
 from ..services.mailer import last_send_error, send_verification_code, send_welcome_email
+from ..services.memberships import plan_preview
 from ..services.recommend import INTENTS, valid_intent_keys
 from . import bp
 
@@ -221,6 +222,7 @@ def register():
     if request.method == "GET":
         return render_template("auth/register.html", next=request.args.get("next", ""),
                                intents=INTENTS, selected_goals=set(),
+                               plan_preview=plan_preview(),
                                captcha=captcha_challenge())
 
     email = _normalize(request.form.get("email"))
@@ -243,6 +245,7 @@ def register():
         return render_template("auth/register.html", next=next_path,
                                email=request.form.get("email", ""),
                                intents=INTENTS, selected_goals=set(goals),
+                               plan_preview=plan_preview(),
                                captcha=captcha_challenge()), 400
 
     existing = User.query.filter_by(email=email).first()
@@ -330,6 +333,7 @@ def login():
         if current_user.is_authenticated:
             return redirect(url_for("main.account"))
         return render_template("auth/login.html", next=request.args.get("next", ""),
+                               plan_preview=plan_preview(),
                                setup_available=_setup_available())
 
     email = _normalize(request.form.get("email"))
@@ -347,6 +351,7 @@ def login():
         flash("That email and password don't match. Take a breath and try again \u2014 or reset your password below.", "error")
         return render_template("auth/login.html", next=next_path,
                                email=request.form.get("email", ""),
+                               plan_preview=plan_preview(),
                                setup_available=_setup_available()), 401
 
     if not user.is_verified:

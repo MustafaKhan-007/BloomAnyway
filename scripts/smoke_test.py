@@ -1474,17 +1474,55 @@ for tier, feats in DEFAULT_FEATURES.items():
             plan_form[field] = "1"
 r = admin.post("/admin/memberships", data=plan_form, follow_redirects=True)
 ok("Owner can configure a membership plan", "Membership plans saved" in r.get_data(as_text=True))
-r = app.test_client().get("/membership")  # anonymous visitor sees the buy buttons
+# A membership follows the email that paid for it, so a visitor with no
+# account yet can read the plans but has nothing to buy.
+r = app.test_client().get("/membership")
 mbody = r.get_data(as_text=True)
+ok("Membership page shows the comparison to anyone",
+   "Compare every perk" in mbody and "Creator" in mbody)
+ok("Signed out there is nothing to buy, only a way in",
+   "/checkout/membership/" not in mbody and "Sign in to join" in mbody)
+ok("And it says why, before they reach for a card",
+   "Make your account first" in mbody and "same address at Stripe" in mbody)
+r = app.test_client().get("/checkout/membership/creator", follow_redirects=False)
+ok("Membership checkout itself turns a signed-out visitor around",
+   r.status_code in (302, 303)
+   and "/login" in (r.headers.get("Location") or ""))
+
+with app.app_context():
+    _plain = User(email="plainmember@example.com", email_verified_at=utcnow())
+    _plain.set_password(USER_PW)
+    db.session.add(_plain)
+    db.session.commit()
+plain_client = app.test_client()
+plain_client.post("/login", data={"email": "plainmember@example.com", "password": USER_PW})
+mbody = plain_client.get("/membership").get_data(as_text=True)
 ok("Membership page shows comparison + Creator buy button",
    "Compare every perk" in mbody and "/checkout/membership/creator" in mbody
-   and "Become a Creator" in mbody)
+   and "Become a Creator" in mbody and "Sign in to join" not in mbody)
+ok("A signed-in member is told which address to pay with",
+   "plainmember@example.com" in mbody)
 ok("Membership page wires annual Creator checkout",
    "billing=annual" in mbody and "Get Creator annually" in mbody)
 ok("Membership page has Monthly/Annual billing toggle",
    'data-billing="monthly"' in mbody and 'data-billing="annual"' in mbody
    and "membership-billing.js" in mbody
    and "Annual (best value)" in mbody)
+
+# Sign-up and sign-in show the tiers, priced, with nothing pressable.
+for _path, _where in (("/register", "sign-up"), ("/login", "sign-in")):
+    _abody = app.test_client().get(_path).get_data(as_text=True)
+    ok(f"The {_where} page lists the membership tiers",
+       "Choose how you bloom" in _abody and "Full Bloom membership" in _abody
+       and "Everything in both Healing and Creator." in _abody)
+    ok(f"The {_where} page prices them from the real plans",
+       "$19 / month" in _abody)
+    ok(f"The {_where} page has nothing to press yet",
+       "Sign in to join" in _abody and "/checkout/membership/" not in _abody
+       and 'aria-disabled="true"' in _abody)
+    ok(f"The {_where} page warns to use one email in both places",
+       "Use the same email in both places" in _abody
+       and "same email address as your Bloom Anyway account" in _abody)
 
 with app.app_context():
     from datetime import date as _date, timedelta as _td

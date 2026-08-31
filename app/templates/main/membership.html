@@ -12,6 +12,20 @@
   {% endif %}
 {% endmacro %}
 
+{# A membership follows the email address that paid for it, so there has to be
+   an account for it to reach. Signed out, the button goes to sign-in rather
+   than to Stripe. #}
+{% macro plan_cta(url, style, label, soon_label) %}
+  {% if not url %}
+  <span class="btn btn--secondary btn--block is-disabled">{{ soon_label }}</span>
+  {% elif current_user.is_authenticated %}
+  <a class="btn {{ style }} btn--block" href="{{ url }}">{{ label }} &rarr;</a>
+  {% else %}
+  <a class="btn {{ style }} btn--block"
+     href="{{ url_for('auth.login', next=url_for('main.membership')) }}">Sign in to join &rarr;</a>
+  {% endif %}
+{% endmacro %}
+
 {% block content %}
 {% set facilitator_checkout = url_for('main.checkout_addon', kind='facilitator') if site.facilitator_stripe_price_id else none %}
 {% set ayesha_checkout = url_for('main.checkout_addon', kind='ayesha') if site.ayesha_stripe_price_id else none %}
@@ -89,6 +103,16 @@
 
   <section class="mem-page__plans">
     <div class="container">
+      <p class="mem-page__email-note">
+        {% if current_user.is_authenticated %}
+        <strong>Pay with {{ current_user.email }}.</strong> Stripe tells us who paid by
+        email address, so a different one at checkout leaves the membership off your account.
+        {% else %}
+        <strong>Make your account first.</strong> A membership follows the email address it
+        was bought with, so there needs to be an account here for it to reach — and it has to
+        be the same address at Stripe checkout.
+        {% endif %}
+      </p>
       <div class="mem-page__plan-grid">
         <!-- Free -->
         <article class="mem-card mem-card--free {{ 'is-current' if current == 'none' or not current }}">
@@ -189,18 +213,14 @@
           {% endif %}
           {% else %}
           <span class="mem-cta mem-cta--month">
-            {% if healing_checkout_m %}
-            <a class="btn btn--primary btn--block" href="{{ healing_checkout_m }}">{{ 'Switch to Healing' if current and current != 'none' else 'Join Healing' }} &rarr;</a>
-            {% else %}
-            <span class="btn btn--secondary btn--block is-disabled">Coming soon</span>
-            {% endif %}
+            {{ plan_cta(healing_checkout_m, 'btn--primary',
+                        'Switch to Healing' if current and current != 'none' else 'Join Healing',
+                        'Coming soon') }}
           </span>
           <span class="mem-cta mem-cta--year">
-            {% if healing_checkout_y %}
-            <a class="btn btn--primary btn--block" href="{{ healing_checkout_y }}">{{ 'Switch to Healing annually' if current and current != 'none' else 'Get Healing annually' }} &rarr;</a>
-            {% else %}
-            <span class="btn btn--secondary btn--block is-disabled">Annual coming soon</span>
-            {% endif %}
+            {{ plan_cta(healing_checkout_y, 'btn--primary',
+                        'Switch to Healing annually' if current and current != 'none' else 'Get Healing annually',
+                        'Annual coming soon') }}
           </span>
           {% endif %}
         </article>
@@ -285,18 +305,14 @@
           {% endif %}
           {% else %}
           <span class="mem-cta mem-cta--month">
-            {% if creator_checkout_m %}
-            <a class="btn btn--gold btn--block" href="{{ creator_checkout_m }}">{{ 'Switch to Creator' if current and current != 'none' else 'Become a Creator' }} &rarr;</a>
-            {% else %}
-            <span class="btn btn--secondary btn--block is-disabled">Coming soon</span>
-            {% endif %}
+            {{ plan_cta(creator_checkout_m, 'btn--gold',
+                        'Switch to Creator' if current and current != 'none' else 'Become a Creator',
+                        'Coming soon') }}
           </span>
           <span class="mem-cta mem-cta--year">
-            {% if creator_checkout_y %}
-            <a class="btn btn--gold btn--block" href="{{ creator_checkout_y }}">{{ 'Switch to Creator annually' if current and current != 'none' else 'Get Creator annually' }} &rarr;</a>
-            {% else %}
-            <span class="btn btn--secondary btn--block is-disabled">Annual coming soon</span>
-            {% endif %}
+            {{ plan_cta(creator_checkout_y, 'btn--gold',
+                        'Switch to Creator annually' if current and current != 'none' else 'Get Creator annually',
+                        'Annual coming soon') }}
           </span>
           {% endif %}
         </article>
@@ -384,18 +400,14 @@
           {% endif %}
           {% else %}
           <span class="mem-cta mem-cta--month">
-            {% if full_checkout_m %}
-            <a class="btn btn--bloom btn--block" href="{{ full_checkout_m }}">{{ 'Switch to Full Bloom' if current and current != 'none' else 'Go Full Bloom' }} &rarr;</a>
-            {% else %}
-            <span class="btn btn--secondary btn--block is-disabled">Coming soon</span>
-            {% endif %}
+            {{ plan_cta(full_checkout_m, 'btn--bloom',
+                        'Switch to Full Bloom' if current and current != 'none' else 'Go Full Bloom',
+                        'Coming soon') }}
           </span>
           <span class="mem-cta mem-cta--year">
-            {% if full_checkout_y %}
-            <a class="btn btn--bloom btn--block" href="{{ full_checkout_y }}">{{ 'Switch to Full Bloom annually' if current and current != 'none' else 'Get Full Bloom annually' }} &rarr;</a>
-            {% else %}
-            <span class="btn btn--secondary btn--block is-disabled">Annual coming soon</span>
-            {% endif %}
+            {{ plan_cta(full_checkout_y, 'btn--bloom',
+                        'Switch to Full Bloom annually' if current and current != 'none' else 'Get Full Bloom annually',
+                        'Annual coming soon') }}
           </span>
           {% endif %}
         </article>

@@ -1,0 +1,40 @@
+{# The membership tiers, to read rather than to buy.
+
+   Stripe tells us who paid by email address, so a membership bought before
+   there is an account has nowhere to land. Sign-up and sign-in therefore show
+   the plans with their prices but nothing pressable. #}
+{% if plan_preview %}
+<div class="signup-plans">
+  <p class="eyebrow">Choose how you bloom</p>
+  <p class="field-help">
+    Start free. Memberships open up once your account is made and you're signed in.
+  </p>
+  <ul class="plan-preview">
+    {% for row in plan_preview %}
+    <li class="plan-preview__row">
+      <p class="plan-preview__head">
+        <strong>{{ row.name }}</strong>
+        <span class="plan-preview__price">{{ row.price }}</span>
+      </p>
+      <p class="plan-preview__perks">{{ row.summary }}</p>
+      {% if row.tier == 'none' %}
+      <span class="btn btn--quiet btn--sm btn--block is-disabled" aria-disabled="true">
+        Yours the moment you join
+      </span>
+      {% else %}
+      <span class="btn btn--secondary btn--sm btn--block is-disabled" aria-disabled="true">
+        Sign in to join
+      </span>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  <p class="plan-preview__note">
+    <strong>Use the same email in both places.</strong> When you do subscribe,
+    pay with the same email address as your Bloom Anyway account. Stripe tells
+    us who paid by email, so a different one leaves the membership sitting on
+    an account that isn't yours.
+  </p>
+  <a class="btn btn--secondary btn--sm" href="{{ url_for('main.membership') }}">Compare memberships &rarr;</a>
+</div>
+{% endif %}
