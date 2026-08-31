@@ -1,11 +1,56 @@
-"""Homepage marketplace features: Product of the Day + top products."""
+"""Homepage features: new Content Hub items, Product of the Day, top products."""
 from __future__ import annotations
 
 from datetime import timedelta
 
+from flask import url_for
 from sqlalchemy.orm import joinedload
 
-from ..models import MarketplaceListing, utcnow
+from ..models import MarketplaceListing, ReelReview, Video, utcnow
+
+#: How long something new stays on the home page. Each item runs its own clock,
+#: so an afternoon reel review doesn't cut a morning tip's day short.
+DROP_HOURS = 24
+
+#: Most cards the hero strip will carry at once, newest first. Reel reviews are
+#: capped at one a day and tips are published by hand, so this is headroom
+#: rather than a limit anyone should meet.
+MAX_DROPS = 4
+
+
+def content_hub_drops(limit: int = MAX_DROPS) -> list[dict]:
+    """Everything that landed in the Content Hub in the last day, newest first.
+
+    A written tip and a reel review published the same day both show, and each
+    leaves 24 hours after it went up rather than when the newest one does.
+    """
+    since = utcnow() - timedelta(hours=DROP_HOURS)
+    drops = []
+    for tip in (Video.query
+                .filter(Video.published.is_(True), Video.created_at >= since)
+                .order_by(Video.created_at.desc())
+                .limit(limit).all()):
+        drops.append({
+            "kind": "tip",
+            "label": "New in the Content Hub",
+            "title": tip.title,
+            "at": tip.created_at,
+            "url": url_for("main.watch", video_id=tip.id),
+        })
+    for review in (ReelReview.query
+                   .filter(ReelReview.published.is_(True),
+                           ReelReview.created_at >= since)
+                   .order_by(ReelReview.created_at.desc())
+                   .limit(limit).all()):
+        drops.append({
+            "kind": "reel",
+            "label": "New reel review",
+            "title": review.title,
+            "at": review.created_at,
+            "url": url_for("main.reel_review", review_id=review.id),
+        })
+    drops.sort(key=lambda drop: drop["at"], reverse=True)
+    return drops[:limit]
 
 
 def _active_product_listings():
