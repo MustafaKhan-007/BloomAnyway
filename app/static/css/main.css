@@ -31,6 +31,10 @@
 
 /* --------------------------------- reset --------------------------------- */
 *, *::before, *::after { box-sizing: border-box; }
+/* The browser hides [hidden] with a plain `display: none`, which any class
+   that sets a display of its own then outranks. Everything here toggles
+   visibility through the attribute, so it has to win. */
+[hidden] { display: none !important; }
 html { scroll-behavior: smooth; }
 body {
   margin: 0;
@@ -343,7 +347,6 @@ input[type="file"]:not(.sr-only):not(.file-pick__input):hover::-webkit-file-uplo
   background: var(--rose-soft);
   color: var(--plum);
 }
-.file-pick__clear[hidden] { display: none !important; }
 
 /* auth forms */
 .auth-card { background: #fff; border-radius: var(--radius-card); box-shadow: var(--shadow-card); padding: 40px 32px; }
@@ -1043,7 +1046,6 @@ img.avatar.avatar--photo {
   backdrop-filter: blur(2px);
   pointer-events: all;
 }
-.page-loader[hidden] { display: none !important; }
 .page-loader__bloom {
   width: 64px; height: 64px;
   animation: page-loader-float 2.2s ease-in-out infinite;
@@ -3333,7 +3335,6 @@ a.studio-member-filter.is-active span { color: #fff; }
   margin: 8px 0 22px; padding: 18px 20px; border-radius: 14px;
   background: var(--gold-soft); border: 2px solid var(--gold);
 }
-.location-box[hidden] { display: none !important; }
 .location-box label { display: block; font-weight: 800; font-size: 17px;
   color: var(--plum-deep); margin-bottom: 4px; }
 .location-box .field-help { margin: 0 0 10px; }
@@ -3472,7 +3473,6 @@ a.at-handle:hover { text-decoration: underline; }
   max-height: 240px;
   overflow: auto;
 }
-.mention-menu[hidden] { display: none !important; }
 .mention-menu__item {
   display: flex; flex-direction: column; align-items: flex-start;
   width: 100%; gap: 2px;
@@ -5205,7 +5205,6 @@ a.at-handle:hover { text-decoration: underline; }
   will-change: transform, opacity;
 }
 .jn-book__stage > .jn-page.is-current { z-index: 2; }
-.jn-book__stage > .jn-page[hidden] { display: none; }
 .jn-page.is-leave-back {
   animation: jn-leave-back 0.58s cubic-bezier(0.4, 0.05, 0.2, 1) forwards;
   z-index: 3;
@@ -5535,9 +5534,6 @@ a.at-handle:hover { text-decoration: underline; }
 .jn-prompt-list__btn.is-active {
   background: rgba(255, 255, 255, 0.35);
   outline: none;
-}
-.jn-page__prompt[hidden] {
-  display: none !important;
 }
 
 @media (max-width: 640px) {
