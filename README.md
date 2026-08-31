@@ -186,6 +186,17 @@ Everything else is optional or auto-managed:
   Everything is a `ProductAsset` row pinned to its module by `module_index`, in
   `sort_order`. Files not pinned to a module are open from day one, even on a
   drip schedule.
+- **Extracts written for one file.** An extract can also hang off a single
+  upload rather than the module, via `ProductAsset.parent_asset_id` — the video
+  gets its "before you press play" and the worksheet gets its "how to use
+  this". A note is an ordinary `kind="text"` row that copies its parent's
+  `module_index`, so drip gating gates it with no special case, and it sorts
+  among its siblings rather than among the module. `Product.top_level_assets()`
+  is what every listing walks; `product.assets` stays the complete set so
+  deletion and disk cleanup still see everything. In the reader the stage
+  splits into the file on top and its extracts in a scrolling pane below;
+  chips mark a file that carries writing rather than listing it separately.
+  The store page shows counts only, via `Product.module_summaries()`.
 - **Where the bytes live.** Uploads stream in 1 MB chunks to `COURSE_FILES_DIR`
   on the media disk (`/var/media/course_files` on Render) and are referenced by
   `disk_name` — *not* stored in Postgres. They're served with HTTP **Range** via

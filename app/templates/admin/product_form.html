@@ -5,6 +5,45 @@
 {% set accent_default = '#5A3158' if product.track == 'healing' else '#B58A3F' %}
 {% set has_custom_accent = product.accent_hex() is not none %}
 {% set file_accept = '.pdf,.h5p,.zip,.png,.jpg,.jpeg,.webp,.gif,.mp4,.webm,.mp3,.wav,.txt,.md,.html,.doc,.docx' %}
+
+{# A written extract, editable where it sits. Used for the ones hanging off a
+   file and for the module-level ones, which until now could only be retyped. #}
+{% macro extract_fields(item) %}
+<div class="module-notes__block" data-note-block>
+  <label class="sr-only" for="note{{ item.id }}_title">Extract heading</label>
+  <input type="text" id="note{{ item.id }}_title" name="note_{{ item.id }}_title"
+         form="product-form" maxlength="160" value="{{ item.title or '' }}"
+         placeholder="What this extract is called">
+  <label class="sr-only" for="note{{ item.id }}_body">Extract text</label>
+  <textarea id="note{{ item.id }}_body" name="note_{{ item.id }}_body" rows="5"
+            form="product-form"
+            placeholder="Write it here. Buyers read this beside the file — no upload needed."
+            >{{ item.body or '' }}</textarea>
+  <button class="btn btn--quiet btn--sm" type="submit" form="del-asset-{{ item.id }}">Remove extract</button>
+</div>
+{% endmacro %}
+
+{% macro asset_row(item) %}
+<li class="module-items__item">
+  <div class="module-items__row">
+    <span class="module-items__kind module-items__kind--{{ item.kind }}">{{ item.kind_label() }}</span>
+    <span class="module-items__name">{{ item.display_title() }}</span>
+    <span class="module-items__size">{{ item.size_display() }}</span>
+    <button class="btn btn--quiet btn--sm" type="submit" form="del-asset-{{ item.id }}">Remove</button>
+  </div>
+  {% if item.is_text() %}
+  <div class="module-notes">{{ extract_fields(item) }}</div>
+  {% else %}
+  <div class="module-notes" data-note-holder data-parent="{{ item.id }}">
+    {% for note in item.notes %}{{ extract_fields(note) }}{% endfor %}
+  </div>
+  <button type="button" class="btn btn--quiet btn--sm module-items__add"
+          data-note-add data-parent="{{ item.id }}">
+    Add an extract to this file
+  </button>
+  {% endif %}
+</li>
+{% endmacro %}
 <div class="studio-page studio-product-form">
   <div class="page-head">
     <div>
@@ -30,7 +69,7 @@
   </div>
   {% endif %}
 
-  <form method="post" enctype="multipart/form-data" class="studio-product-form__main">
+  <form id="product-form" method="post" enctype="multipart/form-data" class="studio-product-form__main">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
     <section class="admin-panel studio-card studio-section">
@@ -247,12 +286,7 @@
             {% if not is_new %}
             <ul class="module-items" data-module-items{% if not row['contents'] %} hidden{% endif %}>
               {% for item in row['contents'] %}
-              <li class="module-items__row">
-                <span class="module-items__kind module-items__kind--{{ item.kind }}">{{ item.kind_label() }}</span>
-                <span class="module-items__name">{{ item.display_title() }}</span>
-                <span class="module-items__size">{{ item.size_display() }}</span>
-                <button class="btn btn--quiet btn--sm" type="submit" form="del-asset-{{ item.id }}">Remove</button>
-              </li>
+              {{ asset_row(item) }}
               {% endfor %}
             </ul>
             {% endif %}
@@ -266,7 +300,8 @@
                 <p class="field-help">
                   Pick as many as you like, up to {{ inline_max_mb }} MB each. Save the
                   product first if you have a long video — the uploader on this page
-                  after saving takes files up to {{ course_max_mb }} MB.
+                  after saving takes files up to {{ course_max_mb }} MB. Extracts written
+                  for one particular file can be added once it has been saved.
                 </p>
               </div>
               {% else %}
@@ -389,7 +424,7 @@
   </form>
 
   {% if not is_new %}
-  {% set loose = product.assets | rejectattr('module_index') | list %}
+  {% set loose = product.top_level_assets() | rejectattr('module_index') | list %}
   <section class="admin-panel studio-card studio-section">
     <h2>5. Files outside the modules</h2>
     <p class="field-help studio-section__lede">
@@ -397,17 +432,12 @@
       a welcome PDF, say. Module contents live with their module above.
     </p>
     {% if loose %}
-    <ul class="asset-list">
+    <ul class="module-items">
       {% for a in loose %}
-      <li class="asset-list__row">
-        <div class="asset-list__name">
-          <strong>{{ a.display_title() }}</strong>
-          <small>{{ a.kind_label() }} · {{ a.size_display() }}</small>
-        </div>
-        <button class="btn btn--danger btn--sm" type="submit" form="del-asset-{{ a.id }}">Remove</button>
-      </li>
+      {{ asset_row(a) }}
       {% endfor %}
     </ul>
+    <p class="field-help">Extracts written here are saved with <strong>Save changes</strong> above.</p>
     {% endif %}
     <div class="field chunk-up" data-chunk-upload data-module="" style="margin-top:10px;">
       <label for="asset_add">Add a file</label>

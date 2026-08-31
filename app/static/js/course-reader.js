@@ -420,20 +420,23 @@
       if (statusEl) statusEl.textContent = "Loading page " + num + "…";
       return state.pdf.getPage(num).then(function (page) {
         if (token !== state.renderToken) return;
-        var stage = document.getElementById("reader-stage");
+        // The stage is shared with any written extracts attached to this
+        // file, so measure the pane the page actually renders into.
+        var pane = document.getElementById("reader-viewer")
+          || document.getElementById("reader-stage");
         var zoom = prefs.zoom || "md";
         // Fit / Smaller: contain the full page in the pane (no scroll).
         // Larger: fill the pane width so text is readable; scroll vertically if needed.
         var availW = 800;
         var availH = 700;
-        if (stage) {
-          var cs = window.getComputedStyle(stage);
+        if (pane) {
+          var cs = window.getComputedStyle(pane);
           var padX = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
           var padY = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
           var chip = document.getElementById("reader-page-chip");
           var chipH = (chip && !chip.hidden) ? (chip.offsetHeight + 10) : 0;
-          availW = Math.max(280, stage.clientWidth - padX);
-          availH = Math.max(280, stage.clientHeight - padY - chipH);
+          availW = Math.max(280, pane.clientWidth - padX);
+          availH = Math.max(280, pane.clientHeight - padY - chipH);
         }
         var unscaled = page.getViewport({ scale: 1 });
         var contain = Math.min(availW / unscaled.width, availH / unscaled.height);

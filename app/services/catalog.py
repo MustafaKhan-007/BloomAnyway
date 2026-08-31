@@ -37,8 +37,8 @@ def _purge_product(product: Product) -> str:
      .update({CourseProgress.product_id: None}, synchronize_session=False))
     clear_cover(product.id)
     clear_all_gallery(product.id)
-    for asset in list(product.assets):
-        db.session.delete(asset)
+    # The product's own cascade clears its assets, extracts included. Naming
+    # them here as well would delete each one down two paths at once.
     db.session.delete(product)
     return "deleted"
 

@@ -36,16 +36,17 @@ def catalog_product_for_purchase(purchase: ShopPurchase) -> Product | None:
 
 
 def primary_asset(product: Product | None) -> ProductAsset | None:
-    if product is None or not product.assets:
+    if product is None:
         return None
-    return product.assets[0]
+    top = product.top_level_assets()
+    return top[0] if top else None
 
 
 def general_asset(product: Product | None) -> ProductAsset | None:
     """First file that isn't tied to a module, so it's always readable."""
     if product is None:
         return None
-    for asset in product.assets:
+    for asset in product.top_level_assets():
         if not asset.module_index:
             return asset
     return None

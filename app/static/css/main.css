@@ -1709,6 +1709,12 @@ html.is-page-loading { cursor: progress; }
     display: flex; flex-wrap: wrap; gap: 6px;
   }
   .reader__toc-item { flex: 0 0 auto; }
+  /* On a phone a split stage grows to what it holds instead of halving a
+     short viewport; each half then scrolls on its own. A file with nothing
+     written about it keeps the full-height stage it always had. */
+  .reader__stage--split { height: auto; max-height: none; }
+  .reader__stage--split .reader__viewer { max-height: 42vh; overflow-y: auto; }
+  .reader__stage--split .reader__notes { max-height: 46vh; }
 }
 .reader__sidebar-label {
   margin: 0 0 8px;
@@ -1761,6 +1767,33 @@ html.is-page-loading { cursor: progress; }
   display: flex;
   flex-direction: column;
 }
+/* The stage is shared: the file on top, anything written about it below. */
+.reader__viewer {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+.reader__viewer--fill { flex: 1 1 auto; overflow: hidden; }
+.reader__notes {
+  flex: 0 1 auto;
+  max-height: 45%;
+  overflow-y: auto;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(61, 20, 49, 0.12);
+}
+.reader-doc--note { padding-top: 0; }
+.reader-doc--note h2 {
+  margin: 0 0 6px; font-size: 1.15rem; color: var(--plum-deep);
+}
+.reader-doc--note + .reader-doc--note {
+  margin-top: 14px; padding-top: 14px;
+  border-top: 1px dashed rgba(61, 20, 49, 0.14);
+}
+.reader-pieces__notes { font-size: 12px; color: var(--gold, #B58A3F); }
+.reader-pieces__item.is-active .reader-pieces__notes { color: rgba(255, 248, 243, 0.85); }
 .course-reader__pdf-wrap {
   display: flex;
   align-items: center;
@@ -1786,10 +1819,13 @@ html.is-page-loading { cursor: progress; }
   overflow-x: hidden;
   overflow-y: auto;
 }
+.course-reader-page[data-zoom="lg"] .reader__viewer,
 .course-reader-page[data-zoom="lg"] .course-reader__pdf-wrap {
-  align-items: flex-start;
   overflow: visible;
   min-height: min-content;
+}
+.course-reader-page[data-zoom="lg"] .course-reader__pdf-wrap {
+  align-items: flex-start;
 }
 .reader__page-chip {
   position: absolute; top: 14px; right: 18px; margin: 0;
@@ -1914,7 +1950,9 @@ html.is-page-loading { cursor: progress; }
   border-radius: 12px;
 }
 .course-reader__video {
-  display: block; width: 100%; max-height: 70vh; border-radius: 12px;
+  /* Fills the pane it is in rather than the viewport, so a written extract
+     underneath it doesn't push the controls off the bottom of the stage. */
+  display: block; width: 100%; max-height: 100%; border-radius: 12px;
   background: #1a0f16;
 }
 .course-reader__audio {
@@ -8876,6 +8914,11 @@ a.at-handle:hover { text-decoration: underline; }
   font-size: 11.5px; font-weight: 700; letter-spacing: 0.02em;
   color: var(--plum-deep);
 }
+/* How much is in a module, never what it is called. */
+.pd-curriculum__inside {
+  display: block; margin-top: 5px;
+  font-size: 12px; color: var(--ink-soft);
+}
 @media (max-width: 860px) {
   .pd-layout { grid-template-columns: 1fr; }
   .pd-layout__aside {
@@ -8929,6 +8972,9 @@ a.at-handle:hover { text-decoration: underline; }
 
 /* What a module holds: any number of videos, documents and written extracts. */
 .module-items { list-style: none; margin: 4px 0 12px; padding: 0; display: grid; gap: 6px; }
+.module-items__item { display: grid; gap: 8px; justify-items: start; }
+.module-items__item > * { width: 100%; }
+.module-items__add { width: auto; }
 .module-items__row {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   padding: 8px 12px; border-radius: 10px; background: var(--ivory-deep);
@@ -8952,6 +8998,18 @@ a.at-handle:hover { text-decoration: underline; }
 }
 .module-texts__block input,
 .module-texts__block textarea { width: 100%; }
+
+/* Extracts written for one particular file, shown indented under it. */
+.module-notes { display: grid; gap: 8px; padding-left: 14px; }
+.module-notes:empty { display: none; }
+.module-notes__block {
+  display: grid; gap: 6px; justify-items: start;
+  padding: 12px; border-radius: 10px;
+  border: 1px dashed rgba(61, 20, 49, 0.22);
+  border-left: 3px solid rgba(90, 49, 88, 0.35);
+}
+.module-notes__block input,
+.module-notes__block textarea { width: 100%; }
 
 /* Progress for a file going up in slices. */
 .chunk-up__list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }

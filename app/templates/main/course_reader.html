@@ -128,6 +128,15 @@
           <a href="{{ url_for('main.course_reader', purchase_id=purchase.id, module=module or None, item=piece.id) }}">
             <span class="reader-pieces__kind reader-pieces__kind--{{ piece.kind }}">{{ piece.kind_label() }}</span>
             <span class="reader-pieces__name">{{ piece.display_title() }}</span>
+            {% if piece.notes %}
+            <span class="reader-pieces__notes"
+                  title="{{ piece.notes|length }} written extract{{ '' if piece.notes|length == 1 else 's' }} come with this">
+              <span aria-hidden="true">&#9998;</span>
+              <span class="sr-only">
+                {{ piece.notes|length }} written extract{{ '' if piece.notes|length == 1 else 's' }}
+              </span>
+            </span>
+            {% endif %}
           </a>
         </li>
         {% endfor %}
@@ -186,11 +195,15 @@
       </aside>
 
       <div class="reader__main">
-        <div class="reader__stage" id="reader-stage">
+        <div class="reader__stage{{ ' reader__stage--split' if asset.notes }}" id="reader-stage">
           <p class="reader__page-chip" id="reader-page-chip" {% if asset.kind != 'pdf' %}hidden{% endif %}>
             Page <span id="reader-chip-page">{{ start_page }}</span> of <span id="reader-chip-total">—</span>
           </p>
 
+          {# A page, a player or an interactive piece takes the pane it is
+             given; anything that flows keeps its notes right beneath it. #}
+          <div class="reader__viewer{{ ' reader__viewer--fill' if asset.kind in ('pdf', 'h5p', 'video') }}"
+               id="reader-viewer">
           {% if asset.kind == 'pdf' %}
           <div class="course-reader__pdf-wrap">
             <canvas id="reader-pdf-canvas"></canvas>
@@ -231,6 +244,18 @@
             <a class="btn btn--primary" href="{{ download_url }}">Download {{ asset.filename }}</a>
             {% endif %}
           </div>
+          {% endif %}
+          </div>
+
+          {% if asset.notes %}
+          <aside class="reader__notes" aria-label="Written extracts for this piece">
+            {% for note in asset.notes %}
+            <article class="reader-doc reader-doc--written reader-doc--note">
+              {% if note.title %}<h2>{{ note.title }}</h2>{% endif %}
+              {{ note.body | markdown }}
+            </article>
+            {% endfor %}
+          </aside>
           {% endif %}
         </div>
 

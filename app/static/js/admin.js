@@ -207,6 +207,43 @@
     renumber();
   })();
 
+  /* ---- extracts written for one particular file ----
+     These hang off a saved file rather than a module, so they also appear
+     among the loose files outside the module list. Wired from the document
+     rather than from one container for that reason. */
+  (function () {
+    if (!document.querySelector("[data-note-add]")) return;
+    document.addEventListener("click", function (e) {
+      var add = e.target.closest("[data-note-add]");
+      if (add) {
+        var parent = add.getAttribute("data-parent");
+        var holder = document.querySelector(
+          '[data-note-holder][data-parent="' + parent + '"]');
+        if (!holder) return;
+        var block = document.createElement("div");
+        block.className = "module-notes__block";
+        block.setAttribute("data-note-block", "");
+        block.innerHTML =
+          '<input type="text" form="product-form" maxlength="160" name="newnote_' +
+          parent + '_title" placeholder="What this extract is called">' +
+          '<textarea form="product-form" rows="5" name="newnote_' + parent +
+          '_body" placeholder="Write it here. Buyers read this beside the file — ' +
+          'no upload needed."></textarea>' +
+          '<button type="button" class="btn btn--quiet btn--sm" data-note-drop>' +
+          "Remove</button>";
+        holder.appendChild(block);
+        var field = block.querySelector("input");
+        if (field) field.focus();
+        return;
+      }
+      var drop = e.target.closest("[data-note-drop]");
+      if (drop) {
+        var blk = drop.closest("[data-note-block]");
+        if (blk) blk.remove();
+      }
+    });
+  })();
+
   /* ---- course files uploaded a slice at a time ----
      Cloudflare rejects a request body over ~100 MB, so a lesson video cannot
      arrive in one piece. The file is cut up here and reassembled on the disk. */

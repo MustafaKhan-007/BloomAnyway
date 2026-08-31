@@ -133,6 +133,7 @@
             one every {{ product.drip_days() }} day{{ '' if product.drip_days() == 1 else 's' }}.
           </p>
           {% endif %}
+          {% set summaries = product.module_summaries() %}
           <ol class="pd-curriculum">
             {% for row in curriculum %}
             <li>
@@ -142,6 +143,10 @@
                 {%- if loop.first %}Available right away
                 {%- else %}Day {{ loop.index0 * product.drip_days() + 1 }}{% endif -%}
               </span>
+              {% endif %}
+              {% set inside = summaries[loop.index0] if loop.index0 < summaries|length else '' %}
+              {% if inside %}
+              <span class="pd-curriculum__inside">{{ inside }}</span>
               {% endif %}
               {% if row.description %}<p>{{ row.description }}</p>{% endif %}
             </li>

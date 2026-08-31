@@ -435,7 +435,8 @@
         {% set pct = prog.percent if prog else 0 %}
         {% set catalog = purchase_catalog.get(item.id) if purchase_catalog else none %}
         {% set lane = (catalog.track if catalog and catalog.track in ('healing', 'building') else 'building') %}
-        {% set asset = (catalog.assets[0] if catalog and catalog.assets else none) %}
+        {% set top_assets = (catalog.top_level_assets() if catalog else []) %}
+        {% set asset = (top_assets[0] if top_assets else none) %}
         {% set kind = (asset.kind if asset else '') %}
         {% set ptype = ((catalog.type if catalog else '') or 'guide')|lower %}
         {% if ptype in ('course', 'template', 'guide', 'workbook', 'audio', 'bundle') %}
