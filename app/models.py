@@ -391,6 +391,15 @@ class Product(db.Model):
     def has_assets(self) -> bool:
         return len(self.assets) > 0
 
+    def top_level_assets(self) -> list["ProductAsset"]:
+        """Everything a buyer picks from directly.
+
+        ``assets`` is the complete set, notes included, which is what deletion
+        and disk cleanup want. Anywhere a list is shown, the notes belong with
+        the file they were written for rather than beside it.
+        """
+        return [a for a in self.assets if a.parent_asset_id is None]
+
     def accent_hex(self) -> str | None:
         raw = (self.accent_color or "").strip()
         if len(raw) == 7 and raw.startswith("#"):
@@ -504,7 +513,7 @@ class Product(db.Model):
         extracts.
         """
         out: dict[int, list[ProductAsset]] = {}
-        for asset in self.assets:
+        for asset in self.top_level_assets():
             number = asset.module_index
             if number:
                 out.setdefault(number, []).append(asset)
@@ -533,6 +542,35 @@ class Product(db.Model):
                 "asset": contents[0] if contents else None,
             })
         return rows
+
+    def module_summaries(self) -> list[str]:
+        """One phrase per curriculum row: "1 video, 2 documents, written notes".
+
+        Counts only, never a file or extract title — the store page says how
+        much is inside without giving the inside away.
+        """
+        groups = (
+            ("video", ("video",)),
+            ("audio track", ("audio",)),
+            ("document", ("pdf", "doc", "docx", "html", "other")),
+            ("interactive piece", ("h5p",)),
+            ("image", ("image",)),
+        )
+        # Worked out from the loaded collection rather than by asking each
+        # file for its notes, which would be a query per row of the page.
+        noted = {a.parent_asset_id for a in self.assets if a.parent_asset_id}
+        out = []
+        for row in self.modules():
+            contents = row["contents"]
+            parts = []
+            for label, kinds in groups:
+                n = sum(1 for a in contents if a.kind in kinds)
+                if n:
+                    parts.append(f"{n} {label}" + ("" if n == 1 else "s"))
+            if any(a.kind == "text" or a.id in noted for a in contents):
+                parts.append("written notes")
+            out.append(", ".join(parts))
+        return out
 
     def is_dripped(self) -> bool:
         """Drip-feed only kicks in once there is more than one module."""
@@ -614,7 +652,8 @@ class Product(db.Model):
         return "#C4A574"
 
     def kind_short(self) -> str:
-        asset = self.assets[0] if self.assets else None
+        first = self.top_level_assets()
+        asset = first[0] if first else None
         kind = (asset.kind if asset else "") or ""
         if kind == "pdf":
             return "PDF"
@@ -671,7 +710,20 @@ class ProductAsset(db.Model):
     # Curriculum module this file belongs to (1-based). None = general file,
     # always available to buyers even when the product is drip-fed.
     module_index = db.Column(db.Integer, index=True)
+    #: Set on a written extract that belongs to one file rather than to the
+    #: module as a whole. It carries its parent's ``module_index`` too, so drip
+    #: gating needs to know nothing about the nesting.
+    parent_asset_id = db.Column(
+        db.Integer, db.ForeignKey("product_assets.id", ondelete="CASCADE"),
+        index=True)
     created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+
+    notes = db.relationship(
+        "ProductAsset",
+        cascade="all, delete-orphan",
+        order_by="ProductAsset.sort_order, ProductAsset.id",
+        backref=db.backref("parent", remote_side=[id]),
+    )
 
     def display_title(self):
         return self.title or self.filename

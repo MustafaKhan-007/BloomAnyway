@@ -199,10 +199,21 @@ def _safe_remove(path: str) -> None:
         pass
 
 
-def _next_order(product: Product, module_index: int | None) -> int:
-    """Append to the end of the module it belongs to."""
-    same = [a for a in product.assets if a.module_index == module_index]
-    return max((a.sort_order or 0) for a in same) + 1 if same else len(product.assets)
+def _next_order(product: Product, module_index: int | None,
+                parent: ProductAsset | None = None) -> int:
+    """Append to the end of whatever list this belongs to.
+
+    A note is ordered among its file's other notes, not among the module —
+    otherwise the first extract written for module 3's video would sort ahead
+    of the video itself.
+    """
+    if parent is not None:
+        same = list(parent.notes)
+        return max((a.sort_order or 0) for a in same) + 1 if same else 1
+    same = [a for a in product.top_level_assets() if a.module_index == module_index]
+    if same:
+        return max((a.sort_order or 0) for a in same) + 1
+    return len(product.top_level_assets())
 
 
 def add_asset(
@@ -244,11 +255,7 @@ def add_text(
     module_index: int | None = None,
 ) -> ProductAsset:
     """Attach a written extract typed into Studio. No file involved."""
-    text = (body or "").strip()
-    if not text:
-        raise AssetError("Write something first.")
-    if len(text) > 200_000:
-        raise AssetError("That extract is very long — split it into two.")
+    text = _clean_body(body)
     name = (title or "").strip()[:160] or "Extract"
     return _attach(
         product, title=name,
@@ -258,8 +265,49 @@ def add_text(
         module_index=module_index)
 
 
+def add_note(parent: ProductAsset, body: str, *,
+             title: str | None = None) -> ProductAsset:
+    """Attach a written extract to one file rather than to the whole module.
+
+    It takes its parent's ``module_index`` so drip gating, which only looks at
+    that number, keeps a locked module's notes locked with no special case.
+    """
+    if parent is None or parent.parent_asset_id is not None:
+        raise AssetError("An extract can't have extracts of its own.")
+    text = _clean_body(body)
+    name = (title or "").strip()[:160] or "Extract"
+    return _attach(
+        parent.product, title=name,
+        filename=(secure_filename(name) or "extract")[:240] + ".md",
+        mime="text/markdown", kind="text",
+        size=len(text.encode("utf-8")), body=text,
+        module_index=parent.module_index, parent=parent)
+
+
+def edit_text(asset: ProductAsset, body: str, *,
+              title: str | None = None) -> ProductAsset:
+    """Rewrite an extract in place, so a typo doesn't cost a delete and retype."""
+    if asset is None or not asset.is_text():
+        raise AssetError("That isn't a written extract.")
+    text = _clean_body(body)
+    asset.title = (title or "").strip()[:160] or asset.title or "Extract"
+    asset.body = text
+    asset.size = len(text.encode("utf-8"))
+    return asset
+
+
+def _clean_body(body: str) -> str:
+    text = (body or "").strip()
+    if not text:
+        raise AssetError("Write something first.")
+    if len(text) > 200_000:
+        raise AssetError("That extract is very long — split it into two.")
+    return text
+
+
 def _attach(product: Product, *, title, filename, mime, kind, size,
-            disk_name=None, body=None, module_index=None) -> ProductAsset:
+            disk_name=None, body=None, module_index=None,
+            parent: ProductAsset | None = None) -> ProductAsset:
     asset = ProductAsset(
         product_id=product.id,
         title=(title or "").strip()[:160] or None,
@@ -269,8 +317,9 @@ def _attach(product: Product, *, title, filename, mime, kind, size,
         size=size,
         disk_name=disk_name,
         body=body,
-        sort_order=_next_order(product, module_index),
+        sort_order=_next_order(product, module_index, parent),
         module_index=module_index,
+        parent=parent,
     )
     db.session.add(asset)
     return asset

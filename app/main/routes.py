@@ -1012,7 +1012,8 @@ def course_reader(purchase_id):
     modules = drip_svc.module_rows(product, purchase.purchased_at)
     wanted_item = request.args.get("item", type=int)
     # Files with no module are open from day one, even on a drip schedule.
-    extras = [a for a in (product.assets if product else []) if not a.module_index]
+    extras = [a for a in (product.top_level_assets() if product else [])
+              if not a.module_index]
     chosen = reader_svc.open_module(modules, request.args.get("module", type=int))
     module_items = []
     picked_extra = next((a for a in extras if a.id == wanted_item), None)

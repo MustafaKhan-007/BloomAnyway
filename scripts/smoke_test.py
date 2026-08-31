@@ -4285,6 +4285,182 @@ with app.app_context():
     ok("The rest of the module survives",
        len(db.session.get(Product, drip_prod_id).modules()[1]["contents"]) == 1)
 
+# --- extracts written for one particular file --------------------------------
+# A note hangs off the upload it was written about, so it arrives with the
+# video rather than sitting beside it as another thing to click.
+_drip_modules = {
+    "slug": "drip-course",
+    "mod1_title": "Week one", "mod1_desc": "Start here",
+    "mod2_title": "Week two", "mod2_desc": "Keep going",
+    "mod3_title": "Week three", "mod3_desc": "Look back",
+}
+r = admin.post(
+    f"/admin/products/{drip_prod_id}/edit",
+    data=_MultiDict([
+        *dict(_drip_fields, **_drip_modules).items(),
+        (f"newnote_{video_item_id}_title", "Before you press play"),
+        (f"newnote_{video_item_id}_body", "Have a pen **ready**."),
+        (f"newnote_{video_item_id}_title", "After the video"),
+        (f"newnote_{video_item_id}_body", "Sit with it for a day."),
+    ]),
+    content_type="multipart/form-data",
+    follow_redirects=True,
+)
+ok("Studio attaches written extracts to one file", r.status_code == 200)
+with app.app_context():
+    _prod = db.session.get(Product, drip_prod_id)
+    _video = db.session.get(ProductAsset, video_item_id)
+    _notes = list(_video.notes)
+    _note_ids = [n.id for n in _notes]
+    ok("Both extracts hang off the video, in the order they were written",
+       [n.title for n in _notes] == ["Before you press play", "After the video"]
+       and all(n.parent_asset_id == video_item_id for n in _notes),
+       f"titles={[n.title for n in _notes]}")
+    ok("They sort among themselves, not among the module",
+       [n.sort_order for n in _notes] == [1, 2])
+    ok("A note copies its file's module, so drip gating needs no special case",
+       all(n.module_index == _video.module_index for n in _notes))
+    ok("An extract still reads as text with words and a size",
+       all(n.is_text() and n.size > 0 and n.disk_name is None for n in _notes))
+    _m1 = _prod.modules()[0]["contents"]
+    ok("Notes are not pieces of the module in their own right",
+       len(_m1) == 5 and not any(a.id in _note_ids for a in _m1))
+    _loose = [a for a in _prod.top_level_assets() if not a.module_index]
+    ok("Nor among the files that are open from day one",
+       [a.display_title() for a in _loose] == ["Read me first"])
+    ok("And the cover takes its kind from a file, not from a note",
+       _prod.top_level_assets()[0].id not in _note_ids)
+
+_edit = admin.get(f"/admin/products/{drip_prod_id}/edit").get_data(as_text=True)
+ok("Studio offers to write another extract for a file",
+   f'data-note-add data-parent="{video_item_id}"' in _edit)
+ok("And to rewrite an existing one where it sits",
+   f'name="note_{_note_ids[0]}_body"' in _edit
+   and "Have a pen **ready**." in _edit)
+
+r = drip_client.get(
+    f"/account/courses/{drip_purchase_id}?module=1&item={video_item_id}")
+_rbody = r.get_data(as_text=True)
+ok("The reader shows the file and everything written for it together",
+   r.status_code == 200 and "course-reader__video" in _rbody
+   and "Before you press play" in _rbody
+   and "Have a pen <strong>ready</strong>." in _rbody
+   and "Sit with it for a day." in _rbody)
+ok("The stage splits so the notes get their own scrolling pane",
+   'class="reader__viewer"' in _rbody and "reader__notes" in _rbody
+   and "reader__stage--split" in _rbody)
+ok("A chip marks the file that carries writing",
+   "reader-pieces__notes" in _rbody)
+ok("But an extract is never a chip of its own",
+   f"item={_note_ids[0]}" not in _rbody)
+
+r = drip_client.get(
+    f"/account/courses/{drip_purchase_id}?module=1&item={_note_ids[0]}")
+_rbody = r.get_data(as_text=True)
+ok("Asking for an extract alone falls back to the module's first piece",
+   r.status_code == 200 and f"/file/{mod1_asset_id}" in _rbody
+   and "Have a pen" not in _rbody)
+
+r = client.get("/courses/drip-course")
+_dbody = r.get_data(as_text=True)
+ok("The store page says how much is inside each module",
+   "1 video, 2 documents, written notes" in _dbody and "1 document" in _dbody)
+ok("But gives away nothing that is in it",
+   "Before you press play" not in _dbody and "worksheet" not in _dbody
+   and "Have a pen" not in _dbody)
+
+r = admin.post(
+    f"/admin/products/{drip_prod_id}/edit",
+    data=_MultiDict([
+        *dict(_drip_fields, **_drip_modules).items(),
+        (f"note_{_note_ids[0]}_title", "Before you press play"),
+        (f"note_{_note_ids[0]}_body", "Have a pen and water ready."),
+    ]),
+    content_type="multipart/form-data",
+    follow_redirects=True,
+)
+with app.app_context():
+    _n = db.session.get(ProductAsset, _note_ids[0])
+    ok("An extract can be rewritten in place instead of retyped",
+       _n.body == "Have a pen and water ready."
+       and _n.size == len(_n.body.encode("utf-8")))
+    ok("Rewriting one leaves the other alone",
+       db.session.get(ProductAsset, _note_ids[1]).title == "After the video")
+
+# a locked module keeps its notes locked, because they carry its number
+r = admin.post(
+    f"/admin/products/{drip_prod_id}/edit",
+    data=_MultiDict([
+        *dict(_drip_fields, **_drip_modules).items(),
+        (f"newnote_{mod3_asset_id}_title", "Looking back"),
+        (f"newnote_{mod3_asset_id}_body", "What has shifted since week one?"),
+    ]),
+    content_type="multipart/form-data",
+    follow_redirects=True,
+)
+with app.app_context():
+    _late_note_id = db.session.get(ProductAsset, mod3_asset_id).notes[0].id
+_backdate_drip(0)
+r = drip_client.get(f"/account/courses/{drip_purchase_id}?module=3")
+ok("A locked module's extracts are out of reach with the rest of it",
+   r.status_code == 200 and "What has shifted" not in r.get_data(as_text=True))
+r = drip_client.get(f"/account/courses/{drip_purchase_id}/file/{_late_note_id}")
+ok("Not even by asking for the extract directly", r.status_code == 404)
+_backdate_drip(20)
+r = drip_client.get(f"/account/courses/{drip_purchase_id}?module=3")
+ok("It arrives with its module once that opens",
+   "What has shifted since week one?" in r.get_data(as_text=True))
+
+r = admin.post(f"/admin/products/{drip_prod_id}/assets/{video_item_id}/delete",
+               follow_redirects=True)
+with app.app_context():
+    ok("Removing a file takes the extracts written for it with it",
+       db.session.get(ProductAsset, video_item_id) is None
+       and all(db.session.get(ProductAsset, i) is None for i in _note_ids))
+    ok("The rest of the module is untouched",
+       len(db.session.get(Product, drip_prod_id).modules()[0]["contents"]) == 4)
+
+# an extract can be reached two ways — through its file and through the
+# product — so deleting the product must not try to delete it twice
+import warnings as _warnings  # noqa: E402
+
+admin.post(
+    "/admin/products/new",
+    data=_MultiDict([
+        ("title", "Doomed Course"), ("track", "building"), ("type", "guide"),
+        ("mod1_title", "Only module"), ("mod1_desc", "one"),
+        ("mod1_file", (BytesIO(b"%PDF-1.4 doomed"), "doomed.pdf")),
+    ]),
+    content_type="multipart/form-data", follow_redirects=True)
+with app.app_context():
+    _doomed = Product.query.filter_by(title="Doomed Course").first()
+    _doomed_id, _doomed_slug = _doomed.id, _doomed.slug
+    _doomed_file_id = _doomed.modules()[0]["asset"].id
+admin.post(
+    f"/admin/products/{_doomed_id}/edit",
+    data=_MultiDict([
+        ("title", "Doomed Course"), ("track", "building"), ("type", "guide"),
+        ("slug", _doomed_slug),
+        ("mod1_title", "Only module"), ("mod1_desc", "one"),
+        (f"newnote_{_doomed_file_id}_title", "A word first"),
+        (f"newnote_{_doomed_file_id}_body", "Nothing here lasts."),
+    ]),
+    content_type="multipart/form-data", follow_redirects=True)
+with app.app_context():
+    _doomed_note_id = db.session.get(ProductAsset, _doomed_file_id).notes[0].id
+with _warnings.catch_warnings(record=True) as _caught:
+    _warnings.simplefilter("always")
+    r = admin.post(f"/admin/products/{_doomed_id}/delete", follow_redirects=True)
+ok("Deleting a product clears its files and their extracts", r.status_code == 200)
+with app.app_context():
+    ok("Nothing of it is left behind",
+       db.session.get(Product, _doomed_id) is None
+       and db.session.get(ProductAsset, _doomed_file_id) is None
+       and db.session.get(ProductAsset, _doomed_note_id) is None)
+ok("And each row is deleted once, not down two paths at the same time",
+   not [w for w in _caught if "expected to delete" in str(w.message)],
+   f"warnings={[str(w.message)[:60] for w in _caught]}")
+
 # --- test mode: a real, buyable product only the owners can see --------------
 _test_fields = {
     "title": "Dress Rehearsal",

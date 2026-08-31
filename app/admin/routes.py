@@ -478,6 +478,45 @@ def _save_module_files(product: Product, form, files,
     return saved
 
 
+def _save_asset_notes(product: Product, form) -> int:
+    """Written extracts belonging to one file, plus edits to existing ones.
+
+    ``note_<id>_*`` rewrites an extract where it sits — module-level ones
+    included, which until now could only be removed and retyped.
+    ``newnote_<parentId>_*`` repeats, one per extract being added to a file.
+    """
+    from ..services.assets import AssetError, add_note, edit_text
+
+    touched = 0
+    for asset in product.assets:
+        if asset.is_text() and f"note_{asset.id}_body" in form:
+            body = form.get(f"note_{asset.id}_body") or ""
+            title = (form.get(f"note_{asset.id}_title") or "").strip()[:160]
+            try:
+                edit_text(asset, body, title=title)
+            except AssetError as exc:
+                flash(f"“{asset.display_title()}”: {exc}", "error")
+                continue
+            touched += 1
+
+    for asset in product.top_level_assets():
+        if asset.is_text():
+            continue
+        bodies = form.getlist(f"newnote_{asset.id}_body")
+        headings = form.getlist(f"newnote_{asset.id}_title")
+        for i, body in enumerate(bodies):
+            if not (body or "").strip():
+                continue
+            heading = (headings[i] if i < len(headings) else "").strip()
+            try:
+                add_note(asset, body, title=heading or f"Extract {i + 1}")
+            except AssetError as exc:
+                flash(f"“{asset.display_title()}”: {exc}", "error")
+                continue
+            touched += 1
+    return touched
+
+
 @bp.route("/products")
 @admin_required
 def products():
@@ -590,6 +629,7 @@ def product_edit(product_id):
         prev_public = product.status == "published" and not product.test_mode
         module_numbers = _apply_product_fields(product, request.form)
         _remap_module_files(product, module_numbers)
+        _save_asset_notes(product, request.form)
         _save_module_files(product, request.form, request.files, module_numbers)
         cover = request.files.get("cover")
         if cover and getattr(cover, "filename", None):
@@ -859,9 +899,11 @@ def _delete_product(product: Product) -> int:
     clear_cover(product.id)
     clear_all_gallery(product.id)
     from ..services import assets as asset_svc
-    for asset in list(product.assets):
+    for asset in product.assets:
         asset_svc.delete_file(asset)
-        db.session.delete(asset)
+    # Rows go with the product's own cascade. Naming each asset here as well
+    # would delete an extract down two paths at once — once for its file and
+    # once for the product — and the second DELETE would find nothing.
     db.session.delete(product)
     return order_n
 
