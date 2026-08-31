@@ -762,12 +762,18 @@ def upsert_order_from_payment(
     if product_id and str(product_id).strip():
         order.ls_variant_id = str(product_id).strip()
     email_norm = (buyer_email or "").strip().lower()
-    if is_closed_account_email(order.buyer_email):
+    usable = (email_norm and "@" in email_norm
+              and not email_norm.endswith("@invalid")
+              and not is_closed_account_email(email_norm))
+    if is_closed_account_email(order.buyer_email) and not (
+            usable and _user_for_email(email_norm)):
         # This row was scrubbed when the buyer deleted their account. Re-running
         # fulfillment (a late webhook, a dashboard sync) must not put their
-        # address back.
+        # address back — unless they have since signed up again, in which case
+        # the row is theirs once more and leaving it detached hides a
+        # membership they are paying for.
         pass
-    elif email_norm and "@" in email_norm and not email_norm.endswith("@invalid"):
+    elif usable:
         order.buyer_email = email_norm
     elif not order.buyer_email:
         order.buyer_email = email_norm or "unknown@invalid"
@@ -803,13 +809,25 @@ def upsert_order_from_payment(
     return order
 
 
-def _membership_is_orphaned(order: Order, sub_id: str | None) -> bool:
-    """True when this payment belongs to someone who deleted their account.
+def _membership_is_orphaned(order: Order, sub_id: str | None,
+                            payer_email: str | None = None) -> bool:
+    """True only when nobody holds the account this payment is paying for.
 
     Closing an account scrubs the buyer email off their orders, so a charge that
-    keeps arriving afterwards is billing for an account that no longer exists.
+    keeps arriving afterwards is usually billing for an account that no longer
+    exists. Usually — people come back. Someone who deletes their account and
+    signs up again with the same address owns that subscription again, and
+    cancelling it then cancels a membership they are using and paying for.
+
+    So a live account always wins. Being unsure counts as not orphaned: the
+    worst case here is a charge the owner has to refund, against cancelling a
+    paying member by mistake and scrubbing their order off their account.
     """
     from .privacy import is_closed_account_email
+
+    payer = (payer_email or "").strip().lower()
+    if payer and not is_closed_account_email(payer) and _user_for_email(payer):
+        return False
 
     if is_closed_account_email(getattr(order, "buyer_email", None)):
         return True
@@ -817,14 +835,86 @@ def _membership_is_orphaned(order: Order, sub_id: str | None) -> bool:
     if not key:
         return False
     rows = Order.query.filter(Order.stripe_subscription_id == key).all()
-    return any(is_closed_account_email(row.buyer_email) for row in rows)
+    if not any(is_closed_account_email(row.buyer_email) for row in rows):
+        return False
+    # The subscription was once a deleted account's. Ask Stripe who is paying
+    # now before writing anyone off — a returning member re-uses the address.
+    live = _subscription_payer_email(key)
+    if live and _user_for_email(live):
+        log.info(
+            "stripe: subscription %s was a closed account's but %s holds an "
+            "account again — not orphaned", key, live,
+        )
+        return False
+    return True
 
 
-def _handle_orphan_membership_payment(order: Order, sub_id: str | None) -> None:
+def _subscription_payer_email(sub_id: str) -> str:
+    """Who Stripe currently bills for this subscription (empty when unknown)."""
+    sid = (sub_id or "").strip()
+    if not sid.startswith("sub_") or not configured():
+        return ""
+    if current_app.config.get("TESTING"):
+        return ""
+    try:
+        _configure_stripe()
+        sub = _as_dict(stripe.Subscription.retrieve(sid, expand=["customer"]))
+    except Exception:
+        log.exception("stripe: could not read subscription %s to find its payer", sid)
+        return ""
+    return _email_from_subscription(sub)
+
+
+def _reclaim_subscription_orders(email_norm: str, sub_id: str | None) -> int:
+    """Give a subscription's scrubbed paid orders back to a live account.
+
+    Once a payment has been written off as orphaned its row is detached from
+    every account, and it stays detached — so the tier it pays for never lands
+    and the member looks unpaid forever. Finding a live owner undoes that.
+    """
+    from .privacy import is_closed_account_email
+
+    key = (sub_id or "").strip()
+    email = (email_norm or "").strip().lower()
+    if not key or not email or is_closed_account_email(email):
+        return 0
+    rows = (Order.query
+            .filter(Order.stripe_subscription_id == key,
+                    Order.status == "paid")
+            .all())
+    fixed = 0
+    for row in rows:
+        if is_closed_account_email(row.buyer_email):
+            row.buyer_email = email
+            fixed += 1
+    if fixed:
+        log.warning(
+            "stripe: reattached %s paid order(s) on subscription %s to %s — "
+            "they had been written off as a deleted account's",
+            fixed, key, email,
+        )
+    return fixed
+
+
+def _handle_orphan_membership_payment(order: Order, sub_id: str | None,
+                                      payer_email: str | None = None) -> None:
     """Stop billing a deleted account, and tell the owner it happened."""
     from .privacy import CLOSED_ACCOUNT_EMAIL, is_closed_account_email
 
     key = (sub_id or getattr(order, "stripe_subscription_id", None) or "").strip()
+    # Last line of defence before we cancel someone's billing. Cancelling a
+    # paying member is far worse than leaving a deleted account's charge for
+    # the owner to refund by hand, so anything that looks alive stops us.
+    payer = (payer_email or getattr(order, "buyer_email", None) or "").strip().lower()
+    if not (payer and not is_closed_account_email(payer)):
+        # The event didn't name a payer, so ask Stripe rather than act blind.
+        payer = _subscription_payer_email(key)
+    if payer and not is_closed_account_email(payer) and _user_for_email(payer):
+        log.error(
+            "stripe: refused to write off payment %s — %s holds a live account "
+            "(subscription %s)", order.ls_order_id, payer, key or "unknown",
+        )
+        return
     # A renewal arrives as a brand new order row, which would otherwise carry the
     # address we deleted for them.
     if not is_closed_account_email(order.buyer_email):
@@ -951,13 +1041,23 @@ def handle_payment_event(event_type: str, data: dict) -> Order | None:
     is_membership = bool(plan and plan.tier in ("healing", "creator", "full_bloom"))
     orphaned = False
     if status == "paid" and is_membership:
-        orphaned = _membership_is_orphaned(order, (meta or {}).get("subscription_id"))
+        sub_ref = (meta or {}).get("subscription_id")
+        orphaned = _membership_is_orphaned(order, sub_ref, payer_email=email)
         # send_receipt marks a payment we haven't fulfilled before, so replaying
         # old payments through a sync can't spam the owner with the same alert.
         if orphaned and send_receipt:
-            _handle_orphan_membership_payment(
-                order, (meta or {}).get("subscription_id"),
+            _handle_orphan_membership_payment(order, sub_ref, payer_email=email)
+        elif not orphaned and buyer is not None:
+            # Someone who deleted their account and came back owns whatever was
+            # written off while they were gone. Hand it back, or the tier they
+            # are paying for never reaches them.
+            reclaimed = _reclaim_subscription_orders(
+                (email or "").strip().lower(),
+                sub_ref or getattr(order, "stripe_subscription_id", None),
             )
+            if reclaimed:
+                from .memberships import reconcile_email
+                reconcile_email((email or "").strip().lower())
         elif renewal and buyer is None:
             # Subscriptions predating the subscription_id column can't be tied
             # back to a closed account, so leave a trail rather than guessing.
