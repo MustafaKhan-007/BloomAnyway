@@ -3619,6 +3619,19 @@ ok("Auth pages keep the sun accent styles",
    ".sun-disc" in css and "sun-breathe" in css)
 ok("Quote mini archive cards are centered",
    ".quote-mini" in css and "align-items: center" in css)
+# A class that sets a display of its own outranks the browser's rule for the
+# attribute, so without this one anything marked hidden stays on screen.
+ok("The hidden attribute beats whatever else sets a display",
+   "[hidden] { display: none !important; }" in css)
+_hidden_rules = [
+    " ".join(sel.split())
+    for sel, decls in re.findall(r"([^{}]+)\{([^{}]*)\}",
+                                 re.sub(r"/\*.*?\*/", "", css, flags=re.S))
+    if "[hidden]" in " ".join(sel.split()).replace(":not([hidden])", "")
+    and "display" in decls
+]
+ok("And is the only place that has to say so",
+   _hidden_rules == ["[hidden]"], f"rules={_hidden_rules}")
 
 for path, needle in (("/privacy", "What we collect"),
                      ("/terms", "Full Bloom"),
