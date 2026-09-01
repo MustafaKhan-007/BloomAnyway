@@ -5113,6 +5113,19 @@ r = drip_client.get(
 ok("A lesson video can be scrubbed instead of downloaded whole",
    r.status_code == 206 and r.headers.get("Accept-Ranges") == "bytes"
    and len(r.data) == 8)
+# A slice is not the file. Letting a browser keep one meant it could answer a
+# later whole-file request from the fragment, which a PDF reader reads as a
+# truncated document and refuses to open.
+ok("A ranged read is never cacheable",
+   "no-store" in (r.headers.get("Cache-Control") or ""),
+   f"got {r.headers.get('Cache-Control')!r}")
+_whole = drip_client.get(
+    f"/account/courses/{drip_purchase_id}/file/{video_item_id}")
+ok("And the whole file still comes back whole",
+   _whole.status_code == 200
+   and "no-store" in (_whole.headers.get("Cache-Control") or "")
+   and len(_whole.data) > 8,
+   f"got {_whole.status_code} {_whole.headers.get('Cache-Control')!r}")
 r = app.test_client().get(f"/account/courses/{drip_purchase_id}/file/{video_item_id}")
 ok("A stranger still can't reach a course video", r.status_code in (302, 404))
 

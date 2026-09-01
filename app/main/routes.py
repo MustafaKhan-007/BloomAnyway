@@ -1103,7 +1103,12 @@ def course_file(purchase_id, asset_id):
         resp = Response(bytes(asset.data or b""), mimetype=mime)
         resp.headers["Accept-Ranges"] = "none"
     resp.headers["Content-Disposition"] = f'{disposition}; filename="{raw_name}"'
-    resp.headers["Cache-Control"] = "private, max-age=300"
+    # A ranged read answers with a slice of the file, not the file. Telling the
+    # browser to keep that slice for five minutes let it serve the fragment back
+    # for a later whole-file request, which a PDF reader sees as a truncated,
+    # unopenable document — the bigger the file, the likelier PDF.js reads it in
+    # ranges and hits it. Every other media route here is already no-store.
+    resp.headers["Cache-Control"] = "private, no-store"
     return resp
 
 
