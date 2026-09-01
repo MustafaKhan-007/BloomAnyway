@@ -473,10 +473,23 @@ def recent_meetings(limit: int = 20):
             .all())
 
 
-def meeting_seats(meeting: SupportGroupMeeting):
+#: A seat that was in the room. ``selected`` while the session is still to come
+#: or running; ``attended`` once it has been completed.
+SEATED_STATUSES = ("selected", "attended")
+
+
+def meeting_seats(meeting: SupportGroupMeeting, *, include_attended: bool = False):
+    """Seats on a meeting. Live seats by default; completing flips them.
+
+    ``include_attended`` is for anything looking back at a session that has
+    already finished — completing a meeting turns every seat into ``attended``,
+    so a caller after the fact that only asks for ``selected`` finds nobody.
+    """
+    statuses = SEATED_STATUSES if include_attended else ("selected",)
     return (SupportGroupApplication.query
             .options(joinedload(SupportGroupApplication.author))
-            .filter_by(meeting_id=meeting.id, status="selected")
+            .filter(SupportGroupApplication.meeting_id == meeting.id,
+                    SupportGroupApplication.status.in_(statuses))
             .order_by(SupportGroupApplication.created_at.asc())
             .all())
 
@@ -499,9 +512,13 @@ def seats_for_meetings(meetings) -> dict[int, list]:
 
 
 def wrap_peers(meeting: SupportGroupMeeting, viewer: User) -> list[User]:
-    """Other seated members shown on the post-session wrap page."""
+    """Other seated members shown on the post-session wrap page.
+
+    Attended seats count: the wrap page is only ever reached after the session
+    is over, and by then completing it has moved every seat off ``selected``.
+    """
     peers = []
-    for seat in meeting_seats(meeting):
+    for seat in meeting_seats(meeting, include_attended=True):
         user = seat.author
         if not user or user.deleted_at or user.id == viewer.id:
             continue

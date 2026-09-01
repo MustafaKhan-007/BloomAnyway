@@ -62,7 +62,14 @@
 
     <div class="sg-wrap__actions">
       <a class="btn btn--primary" href="{{ url_for('main.support_groups_page') }}">Skip &amp; continue</a>
+      {# Same widget as everywhere else, opened on its feedback tab. Reporting
+         someone is for when it went wrong; this is for everything else. #}
+      <button type="button" class="btn btn--secondary" data-feedback-open
+              data-feedback-pref="feedback">How was the session?</button>
     </div>
+    <p class="field-help sg-wrap__feedback-note">
+      Feedback goes to the team, not to the circle. Nobody in the session sees it.
+    </p>
   </div>
 </div>
 {% endblock %}

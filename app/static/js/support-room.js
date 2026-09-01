@@ -85,6 +85,40 @@
     callFrame.on("left-meeting", function () {
       if (wrapUrl) window.location.href = wrapUrl;
     });
+
+    startEndingNotice(cfg);
+  }
+
+  /* A quiet "5 minutes left" down the side of the room, so the end doesn't
+     arrive out of nowhere. Timed against the server's clock rather than the
+     browser's, which can be minutes out. */
+  function startEndingNotice(cfg) {
+    var WARN_MS = 5 * 60 * 1000;
+    var endsMs = parseInt(cfg.getAttribute("data-ends-ms") || "0", 10);
+    var serverMs = parseInt(cfg.getAttribute("data-server-ms") || "0", 10);
+    var box = document.getElementById("sg-room-ending");
+    var label = document.getElementById("sg-room-ending-time");
+    if (!endsMs || !serverMs || !box || !label) return;
+    var skew = serverMs - Date.now();
+
+    function tick() {
+      var left = endsMs - (Date.now() + skew);
+      if (left <= 0) {
+        label.textContent = "Time's up";
+        box.hidden = false;
+        return;
+      }
+      if (left > WARN_MS) {
+        box.hidden = true;
+        return;
+      }
+      var mins = Math.ceil(left / 60000);
+      label.textContent = mins === 1 ? "1 minute left" : mins + " minutes left";
+      box.hidden = false;
+    }
+
+    tick();
+    window.setInterval(tick, 15000);
   }
 
   if (document.readyState === "loading") {

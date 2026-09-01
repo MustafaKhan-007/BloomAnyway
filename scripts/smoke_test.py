@@ -3111,11 +3111,27 @@ with app.app_context():
     live.scheduled_at = utcnow() - timedelta(minutes=1)
     db.session.commit()
 r = client.get(f"/support-groups/meetings/{mid}/room")
+_room_html = r.get_data(as_text=True)
 ok("Seated member can open the embedded Daily room once live",
    r.status_code == 200
-   and "daily-js" in r.get_data(as_text=True)
-   and "sg-daily-root" in r.get_data(as_text=True)
-   and "support-room.js" in r.get_data(as_text=True))
+   and "daily-js" in _room_html
+   and "sg-daily-root" in _room_html
+   and "support-room.js" in _room_html)
+# The room counts itself down, so the end doesn't arrive out of nowhere.
+ok("The room carries when it ends and what the server clock says",
+   "data-ends-ms=" in _room_html and "data-server-ms=" in _room_html
+   and "sg-room-ending" in _room_html)
+with app.app_context():
+    from datetime import timezone as _dt_tz
+    _live = db.session.get(SupportGroupMeeting, mid)
+    _expect_end = int((_live.scheduled_at
+                       + timedelta(minutes=sg_svc.meeting_duration_minutes(_live))
+                       ).replace(tzinfo=_dt_tz.utc).timestamp() * 1000)
+ok("And it counts down to this session's own end, not a default one",
+   f'data-ends-ms="{_expect_end}"' in _room_html,
+   f"expected {_expect_end}")
+ok("The notice starts hidden — it is for the last five minutes only",
+   'id="sg-room-ending"' in _room_html and "hidden" in _room_html)
 
 # --- add-on prices, read from their Stripe price ids --------------------------
 ok("Money is formatted the way the rest of the catalogue writes it",
@@ -3463,6 +3479,31 @@ with app.app_context():
     notes_to_flagged = Notification.query.filter_by(
         user_id=flagged.id, kind="moderation").count()
     ok("Reported member is not notified about the flag", notes_to_flagged == 0)
+
+# The wrap page is only ever reached after a session is over, and completing
+# one moves every seat off "selected". Looking for selected seats there found
+# nobody, which emptied the peers list and made reporting unreachable.
+with app.app_context():
+    _done = db.session.get(SupportGroupMeeting, wrap_mid)
+    sg_svc.complete_meeting(_done)
+    ok("Completing a session moves the seats to attended",
+       all(s.status == "attended"
+           for s in sg_svc.meeting_seats(_done, include_attended=True)))
+_wbody = wrap_client.get(f"/support-groups/meetings/{wrap_mid}/wrap").get_data(as_text=True)
+ok("The wrap page still names who was in the room after it completes",
+   "sgwraphost" in _wbody, "peers list came back empty")
+ok("So there is still someone to report", "Submit report" in _wbody)
+r = wrap_client.post(
+    f"/support-groups/meetings/{wrap_mid}/report/{wrap_host_id}",
+    data={"reason": "harassment", "note": "after the session ended"},
+    follow_redirects=True,
+)
+ok("And reporting them still goes through once the session is over",
+   "thank you" in r.get_data(as_text=True).lower())
+# Feedback about the session itself, next to reporting a person in it.
+ok("The wrap page offers feedback as well as reporting someone",
+   'data-feedback-open' in _wbody and 'data-feedback-pref="feedback"' in _wbody
+   and "How was the session?" in _wbody)
 
 
 # site image uploads (hero / story teaser)
@@ -3912,6 +3953,63 @@ r = admin.get("/admin/inbox?filter=complaint")
 ok("Studio inbox complaint filter", r.status_code == 200 and b"Checkout felt" in r.data)
 r = admin.get("/admin/inbox?filter=error")
 ok("Studio inbox error filter", r.status_code == 200 and b"huge video" in r.data)
+
+# A complaint is someone waiting on an answer just as much as a contact form
+# message is, so it gets the same composer, senders and templates.
+with app.app_context():
+    _cx = (SiteFeedback.query.filter_by(kind="complaint")
+           .order_by(SiteFeedback.id.desc()).first())
+    _cx_id = _cx.id
+    _cx_to = (_cx.contact_email or (_cx.author.email if _cx.author else ""))
+ok("The inbox offers Reply on a complaint there's an address for",
+   f"/inbox/feedback/{_cx_id}/reply"
+   in admin.get("/admin/inbox?filter=complaint").get_data(as_text=True))
+_crbody = admin.get(f"/admin/inbox/feedback/{_cx_id}/reply").get_data(as_text=True)
+ok("A complaint opens the same reply composer, quoting them",
+   "Checkout felt confusing on mobile." in _crbody
+   and "data-reply-preview" in _crbody)
+ok("With the same senders to choose between",
+   all(a in _crbody for a in ("bloomsupport@bloomanyway.online",
+                              "ayesha@bloomanyway.online",
+                              "saman@bloomanyway.online")))
+_cx_calls = []
+_cx_real_send = _mailer.send_email
+_mailer.send_email = (
+    lambda to, subject, text, **kw: _cx_calls.append(
+        dict(kw, to=to, subject=subject, text=text)) or True
+)
+try:
+    r = admin.post(f"/admin/inbox/feedback/{_cx_id}/reply",
+                   data={"sender": "saman", "subject": "Re: checkout",
+                         "preview": "Sorry about that.", "header": "Bloom Anyway",
+                         "title": "Hi there,", "body": "We have made it clearer."},
+                   follow_redirects=True)
+finally:
+    _mailer.send_email = _cx_real_send
+_call = _cx_calls[-1] if _cx_calls else {}
+ok("Replying to a complaint reaches whoever left it",
+   _call.get("to") == _cx_to, f"got {_call.get('to')} want {_cx_to}")
+ok("On the same per-address template as any other reply",
+   _call.get("template_id") == 21, f"got {_call.get('template_id')}")
+ok("Carrying the same five params",
+   (_call.get("params") or {}).get("PREVIEW") == "Sorry about that."
+   and (_call.get("params") or {}).get("TITLE") == "Hi there,")
+with app.app_context():
+    ok("And the complaint is marked handled once answered",
+       db.session.get(SiteFeedback, _cx_id).status == "reviewed")
+
+with app.app_context():
+    _anon_cx = SiteFeedback(kind="complaint", body="No way to reach me.",
+                            page_path="/", status="new")
+    db.session.add(_anon_cx)
+    db.session.commit()
+    _anon_cx_id = _anon_cx.id
+ok("One left without an address offers no Reply button",
+   f"/inbox/feedback/{_anon_cx_id}/reply"
+   not in admin.get("/admin/inbox?filter=complaint").get_data(as_text=True))
+r = admin.get(f"/admin/inbox/feedback/{_anon_cx_id}/reply", follow_redirects=True)
+ok("And says so rather than failing if you reach for it anyway",
+   r.status_code == 200 and "nowhere to reply" in r.get_data(as_text=True).lower())
 r = admin.get("/admin/inbox?filter=open")
 ok("Studio inbox open content reports", r.status_code == 200 and b"Soft morning" in r.data)
 r = admin.get("/admin/inbox?filter=resolved")

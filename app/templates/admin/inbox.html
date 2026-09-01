@@ -83,6 +83,10 @@
             {% if row.author %}{{ row.author.public_name() }}{% elif row.contact_email %}{{ row.contact_email }}{% else %}Guest{% endif %}
           </td>
           <td class="inbox-cell--actions">
+            {% if reply_to.get(row.id) %}
+            <a class="btn btn--primary btn--sm"
+               href="{{ url_for('admin.inbox_feedback_reply', item_id=row.id) }}">Reply</a>
+            {% endif %}
             {% if row.status != 'reviewed' %}
             <form method="post" action="{{ url_for('admin.inbox_feedback_reviewed', item_id=row.id) }}" class="inline-form">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

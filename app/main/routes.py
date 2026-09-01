@@ -2451,13 +2451,22 @@ def support_session_room(meeting_id):
         flash(str(exc), "error")
         return redirect(url_for("main.support_groups_page"))
 
+    # The room counts down to its own end, so the client needs when that is and
+    # what the server thinks the time is — a wrong clock shouldn't move it.
+    from datetime import timedelta as _td
+    from datetime import timezone as _tz
+
+    minutes = sg_svc.meeting_duration_minutes(meeting)
+    ends_at = meeting.scheduled_at + _td(minutes=minutes)
     return render_template(
         "main/support_session_room.html",
         meeting=meeting,
         daily_room_url=meeting.room_url,
         daily_token=token,
         is_host=is_host,
-        duration_min=sg_svc.peer_meeting_minutes(),
+        duration_min=minutes,
+        ends_ms=int(ends_at.replace(tzinfo=_tz.utc).timestamp() * 1000),
+        server_ms=int(utcnow().replace(tzinfo=_tz.utc).timestamp() * 1000),
         wrap_url=url_for("main.support_session_wrap", meeting_id=meeting.id),
     )
 
@@ -2503,7 +2512,7 @@ def support_session_status(meeting_id):
         "seats": len(members),
         "capacity": int(meeting.capacity or sg_svc.PEER_MEETING_CAP),
         "members": members,
-        "duration_min": sg_svc.peer_meeting_minutes(),
+        "duration_min": sg_svc.meeting_duration_minutes(meeting),
         "room_url": (
             url_for("main.support_session_room", meeting_id=meeting.id)
             if phase == "live" else None

@@ -2510,19 +2510,24 @@ def inbox():
     return render_template(
         "admin/inbox.html", filter=filt, feedback_rows=feedback_rows,
         report_rows=enriched, message_rows=message_rows, counts=counts,
+        reply_to={row.id: feedback_reply_to(row) for row in feedback_rows},
     )
 
 
-@bp.route("/inbox/messages/<int:message_id>/reply", methods=["GET", "POST"])
-@admin_required
-def inbox_message_reply(message_id):
-    """Write and send a reply to a contact message from inside Studio."""
-    msg = db.session.get(ContactMessage, message_id) or abort(404)
-    quoted = "\n".join(f"> {line}" for line in (msg.body or "").splitlines())
-    first_name = (msg.name or "").strip().split(" ")[0] or "there"
+def _reply_flow(*, who, email, body, when, subject, back_filter, mark_reviewed):
+    """Compose-and-send for a Studio reply, shared by messages and complaints.
+
+    Same sender picker and the same Brevo template per address either way — a
+    complaint is a person waiting on an answer just as much as a contact form
+    message is, and there is no reason for two of these.
+    """
+    from types import SimpleNamespace
+
+    quoted = "\n".join(f"> {line}" for line in (body or "").splitlines())
+    first_name = (who or "").strip().split(" ")[0] or "there"
     draft = {
         "sender": mailer.DEFAULT_SENDER_KEY,
-        "subject": "Re: your message to Bloom Anyway",
+        "subject": subject,
         "preview": "",
         "header": "Bloom Anyway",
         "title": f"Hi {first_name},",
@@ -2541,7 +2546,7 @@ def inbox_message_reply(message_id):
         elif not sender:
             flash("Pick which address the reply should come from.", "error")
         elif mailer.send_customer_support_email(
-            msg.email,
+            email,
             subject=draft["subject"],
             preview=draft["preview"] or draft["subject"],
             header=draft["header"] or "Bloom Anyway",
@@ -2550,19 +2555,80 @@ def inbox_message_reply(message_id):
             sender=sender,
             sender_key=draft["sender"],
         ):
-            msg.status = "reviewed"
+            mark_reviewed()
             db.session.commit()
             template_id = mailer.reply_template_for(draft["sender"])
-            flash(f"Reply sent to {msg.email} from {sender}"
+            flash(f"Reply sent to {email} from {sender}"
                   + (f" on template #{template_id}." if template_id else "."),
                   "success")
-            return redirect(url_for("admin.inbox", filter="messages"))
+            return redirect(url_for("admin.inbox", filter=back_filter))
         else:
             hint = last_send_error() or "Check the Render logs for Brevo."
             flash(f"The reply didn't send. {hint}", "error")
 
-    return render_template("admin/inbox_reply.html", msg=msg, draft=draft,
-                           senders=mailer.sender_choices())
+    return render_template(
+        "admin/inbox_reply.html",
+        msg=SimpleNamespace(name=who, email=email, body=body, created_at=when),
+        draft=draft, senders=mailer.sender_choices())
+
+
+@bp.route("/inbox/messages/<int:message_id>/reply", methods=["GET", "POST"])
+@admin_required
+def inbox_message_reply(message_id):
+    """Write and send a reply to a contact message from inside Studio."""
+    msg = db.session.get(ContactMessage, message_id) or abort(404)
+
+    def _reviewed():
+        msg.status = "reviewed"
+
+    return _reply_flow(
+        who=msg.name, email=msg.email, body=msg.body, when=msg.created_at,
+        subject="Re: your message to Bloom Anyway",
+        back_filter="messages", mark_reviewed=_reviewed)
+
+
+#: What the reply is answering, per kind of note left through the site widget.
+_FEEDBACK_REPLY_SUBJECTS = {
+    "complaint": "Re: your complaint to Bloom Anyway",
+    "error": "Re: the problem you reported",
+    "feedback": "Re: your feedback for Bloom Anyway",
+}
+
+
+def feedback_reply_to(row) -> str:
+    """Where a reply to this note would go, or empty if there's nowhere."""
+    direct = (getattr(row, "contact_email", None) or "").strip()
+    if direct:
+        return direct
+    author = getattr(row, "author", None)
+    if author is not None and not author.deleted_at:
+        return (author.email or "").strip()
+    return ""
+
+
+@bp.route("/inbox/feedback/<int:item_id>/reply", methods=["GET", "POST"])
+@admin_required
+def inbox_feedback_reply(item_id):
+    """Reply to a complaint, an error report, or a note left on the site."""
+    row = db.session.get(SiteFeedback, item_id) or abort(404)
+    email = feedback_reply_to(row)
+    if not email:
+        flash("That one was left without an address, so there's nowhere to "
+              "reply to.", "info")
+        return redirect(url_for("admin.inbox", filter=row.kind))
+
+    author = row.author
+    who = author.public_name() if author else email.split("@")[0]
+
+    def _reviewed():
+        from ..services.feedback import mark_reviewed
+        mark_reviewed(row)
+
+    return _reply_flow(
+        who=who, email=email, body=row.body, when=row.created_at,
+        subject=_FEEDBACK_REPLY_SUBJECTS.get(row.kind,
+                                             "Re: your note to Bloom Anyway"),
+        back_filter=row.kind, mark_reviewed=_reviewed)
 
 
 @bp.route("/inbox/messages/<int:message_id>/reviewed", methods=["POST"])

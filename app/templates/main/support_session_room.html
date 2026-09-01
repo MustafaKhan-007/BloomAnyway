@@ -26,13 +26,19 @@
 
   <div class="sg-room__stage">
     <div class="sg-room__frame" id="sg-daily-root" aria-label="Video session"></div>
+    {# Quiet heads-up down the side, so the end doesn't arrive out of nowhere. #}
+    <aside class="sg-room__ending" id="sg-room-ending" role="status" hidden>
+      <p class="sg-room__ending-time" id="sg-room-ending-time">5 minutes left</p>
+      <p class="sg-room__ending-note">Start finding a place to stop.</p>
+    </aside>
     <p class="sg-room__hint" id="sg-daily-status">Connecting to your circle…</p>
   </div>
 </div>
 <div id="sg-daily-config" hidden
      data-room-url="{{ daily_room_url }}"
      data-token="{{ daily_token }}"
-     data-wrap-url="{{ wrap_url }}"></div>
+     data-wrap-url="{{ wrap_url }}"
+     {% if ends_ms %}data-ends-ms="{{ ends_ms }}" data-server-ms="{{ server_ms }}"{% endif %}></div>
 {% endblock %}
 
 {% block scripts %}
