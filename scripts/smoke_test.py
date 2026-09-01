@@ -3979,25 +3979,64 @@ _mailer_mod.send_billing_alert = (
     lambda title, body: _billing_alerts.append(title) or True)
 
 
-def _invoice_webhook(invoice_id, email, price_id, sub_id, reason):
+def _invoice_object(invoice_id, email, price_id, sub_id, reason, *, basil=False):
+    """One invoice payload. ``basil`` uses Stripe's 2025-03-31 shape, where
+    ``subscription`` moved under ``parent.subscription_details``."""
+    obj = {
+        "id": f"in_{invoice_id}",
+        "object": "invoice",
+        "amount_paid": 900,
+        "currency": "usd",
+        "customer_email": email,
+        "payment_intent": str(invoice_id),
+        "billing_reason": reason,
+        "metadata": {"tier": "healing"},
+        "lines": {"data": [{"price": {"id": price_id}}]},
+    }
+    if basil:
+        obj["parent"] = {
+            "type": "subscription_details",
+            "subscription_details": {"subscription": sub_id, "metadata": {}},
+        }
+        obj["lines"] = {"data": [{
+            "pricing": {"price_details": {"price": price_id}},
+            "parent": {
+                "type": "subscription_item_details",
+                "subscription_item_details": {"subscription": sub_id},
+            },
+        }]}
+    else:
+        obj["subscription"] = sub_id
+    return obj
+
+
+def _invoice_webhook(invoice_id, email, price_id, sub_id, reason, *, basil=False):
     body = json.dumps({
         "id": f"evt_{invoice_id}",
         "object": "event",
         "type": "invoice.paid",
-        "data": {"object": {
-            "id": f"in_{invoice_id}",
-            "object": "invoice",
-            "amount_paid": 900,
-            "currency": "usd",
-            "customer_email": email,
-            "payment_intent": str(invoice_id),
-            "subscription": sub_id,
-            "billing_reason": reason,
-            "metadata": {"tier": "healing"},
-            "lines": {"data": [{"price": {"id": price_id}}]},
-        }},
+        "data": {"object": _invoice_object(invoice_id, email, price_id, sub_id,
+                                           reason, basil=basil)},
     }).encode()
     return client.post("/webhooks/stripe", data=body, headers=_stripe_headers(body))
+
+
+# Stripe's Basil API version (2025-03-31) removed invoice.subscription. Reading
+# only the old field left a renewal looking unattached to any subscription, and
+# "cancel every membership sub except the new one" then cancelled the new one.
+_basil = _invoice_object("BASIL-0", "x@example.com", "price_x", "sub_basil",
+                         "subscription_cycle", basil=True)
+ok("The subscription is found in Stripe's current invoice shape",
+   pay.invoice_subscription_id(_basil) == "sub_basil")
+ok("And still in the old one",
+   pay.invoice_subscription_id(
+       _invoice_object("OLD-0", "x@example.com", "price_x", "sub_old",
+                       "subscription_cycle")) == "sub_old")
+_evt, _data = pay.stripe_event_to_internal("invoice.paid", _basil)
+ok("So a Basil renewal reaches fulfillment carrying its subscription",
+   _evt == "payment.succeeded"
+   and (_data.get("metadata") or {}).get("subscription_id") == "sub_basil",
+   f"got {_data.get('metadata')}")
 
 
 with app.app_context():
@@ -4015,6 +4054,36 @@ _invoice_webhook("WEL-1", "leaver@example.com", _mem_price,
                  "sub_leaver", "subscription_create")
 ok("First membership payment sends the welcome",
    _welcomes.count("leaver@example.com") == 1, f"got {_welcomes}")
+with app.app_context():
+    ok("A Basil-shaped payment keeps the membership it just paid for",
+       db.session.get(User, leaver_id).membership == "healing",
+       f"got {db.session.get(User, leaver_id).membership}")
+
+# The net under that: a payment we still can't place against a subscription
+# must cancel nothing, because "every subscription but this one" would include
+# the one being paid for.
+with app.app_context():
+    def _stray(order_id, email, sub_id):
+        db.session.add(Order(
+            ls_order_id=order_id, buyer_email=email, ls_variant_id=_mem_price,
+            status="paid", membership_tier="healing", total_cents=900,
+            currency="USD", stripe_subscription_id=sub_id))
+        db.session.commit()
+
+    _stray("BLIND-OLD", "placeable@example.com", "sub_placeable_old")
+    placed = pay.replace_other_memberships(
+        "placeable@example.com", keep_order_id="BLIND-NEW",
+        keep_subscription_id="sub_placeable_new")
+    ok("A payment we can place still replaces the subscription it replaces",
+       placed["cancelled"] == ["sub_placeable_old"], f"got {placed}")
+
+    _stray("BLIND-LIVE", "unplaceable@example.com", "sub_unplaceable_live")
+    blind = pay.replace_other_memberships(
+        "unplaceable@example.com", keep_order_id="BLIND-NOWHERE",
+        keep_subscription_id=None)
+    ok("A payment we cannot place cancels nothing at all",
+       blind["cancelled"] == [] and "unknown_subscription" in blind["errors"],
+       f"got {blind}")
 
 _invoice_webhook("WEL-2", "leaver@example.com", _mem_price,
                  "sub_leaver", "subscription_cycle")

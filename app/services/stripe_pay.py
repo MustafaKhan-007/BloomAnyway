@@ -401,6 +401,66 @@ def enrich_checkout_session(obj: dict) -> dict:
         return obj
 
 
+def invoice_subscription_id(invoice) -> str:
+    """The subscription an invoice was raised for, across API versions.
+
+    Stripe's 2025-03-31 "Basil" version removed ``invoice.subscription`` and
+    moved it under ``parent.subscription_details``. Reading only the old field
+    leaves us not knowing which subscription a renewal belongs to, which is far
+    from harmless: a payment we can't tie to a subscription looks like it
+    belongs to some *other* one, and the new-membership path then cancels the
+    subscription that was just paid for.
+    """
+    inv = _as_dict(invoice)
+    direct = _stripe_id(inv.get("subscription"))
+    if direct:
+        return direct
+    parent = inv.get("parent")
+    if isinstance(parent, dict):
+        details = parent.get("subscription_details")
+        if isinstance(details, dict):
+            found = _stripe_id(details.get("subscription"))
+            if found:
+                return found
+    details = inv.get("subscription_details")
+    if isinstance(details, dict):
+        found = _stripe_id(details.get("subscription"))
+        if found:
+            return found
+    # Last resort: the line items carry it too, under their own parent.
+    for line in ((inv.get("lines") or {}).get("data") or []):
+        line_d = _as_dict(line)
+        found = _stripe_id(line_d.get("subscription"))
+        if found:
+            return found
+        line_parent = line_d.get("parent")
+        if isinstance(line_parent, dict):
+            item = line_parent.get("subscription_item_details")
+            if isinstance(item, dict):
+                found = _stripe_id(item.get("subscription"))
+                if found:
+                    return found
+    return ""
+
+
+def _invoice_subscription_metadata(invoice) -> dict:
+    """Subscription metadata carried on an invoice (Basil moved this too).
+
+    This is where ``tier`` lives on a renewal, so losing it means falling back
+    to a price-id lookup for something we were told outright.
+    """
+    inv = _as_dict(invoice)
+    parent = inv.get("parent")
+    if isinstance(parent, dict):
+        details = parent.get("subscription_details")
+        if isinstance(details, dict) and isinstance(details.get("metadata"), dict):
+            return dict(details["metadata"])
+    details = inv.get("subscription_details")
+    if isinstance(details, dict) and isinstance(details.get("metadata"), dict):
+        return dict(details["metadata"])
+    return {}
+
+
 def _session_to_payment_data(session) -> dict:
     """Normalize a Checkout Session into our fulfillment shape."""
     session = _as_dict(session)
@@ -485,16 +545,17 @@ def stripe_event_to_internal(event_type: str, obj: dict) -> tuple[str | None, di
             email = str(cust).strip().lower()
         if not email:
             email = _buyer_email(obj)
+        sub_id = invoice_subscription_id(obj)
         payment_id = (
             _stripe_id(obj.get("payment_intent"))
-            or _stripe_id(obj.get("subscription"))
+            or sub_id
             or _stripe_id(obj.get("id"))
         )
         amount = obj.get("amount_paid")
         if amount is None:
             amount = obj.get("total") or 0
-        sub_id = _stripe_id(obj.get("subscription"))
-        meta_out = dict(meta or {})
+        meta_out = dict(_invoice_subscription_metadata(obj))
+        meta_out.update(meta or {})
         if sub_id:
             meta_out["subscription_id"] = sub_id
         reason = (obj.get("billing_reason") or "").strip()
@@ -520,7 +581,7 @@ def stripe_event_to_internal(event_type: str, obj: dict) -> tuple[str | None, di
         cust = obj.get("customer_email")
         if cust:
             email = str(cust).strip().lower()
-        sub_id = _stripe_id(obj.get("subscription"))
+        sub_id = invoice_subscription_id(obj)
         meta_out = dict(meta or {})
         if sub_id:
             meta_out["subscription_id"] = sub_id
@@ -1294,13 +1355,14 @@ def _subscription_id_from_payment_ref(payment_id: str) -> str | None:
         if key.startswith("cs_"):
             session = _as_dict(stripe.checkout.Session.retrieve(key))
             return _stripe_id(session.get("subscription"))
+        if key.startswith("in_"):
+            return invoice_subscription_id(stripe.Invoice.retrieve(key)) or None
         if key.startswith("pi_"):
             pi = _as_dict(stripe.PaymentIntent.retrieve(key))
             invoice_id = _stripe_id(pi.get("invoice"))
             if not invoice_id:
                 return None
-            inv = _as_dict(stripe.Invoice.retrieve(invoice_id))
-            return _stripe_id(inv.get("subscription"))
+            return invoice_subscription_id(stripe.Invoice.retrieve(invoice_id)) or None
     except Exception:
         log.exception("stripe: could not resolve subscription from %s", key)
     return None
@@ -1472,6 +1534,19 @@ def replace_other_memberships(
     keep_sub = (keep_subscription_id or "").strip()
     if not keep_sub:
         keep_sub = _subscription_id_from_payment_ref(keep_oid) or ""
+    # Without knowing which subscription this payment is for, "every membership
+    # subscription except the new one" is every membership subscription they
+    # have, the one they just bought included. Local orders can still be tidied
+    # — the order being kept goes on granting the tier — but nothing may be
+    # cancelled in Stripe on a guess.
+    blind = not keep_sub
+    if blind:
+        log.error(
+            "stripe: cancelling nothing for %s — could not tell which "
+            "subscription payment %s belongs to", email_norm, keep_oid,
+        )
+        result["ok"] = False
+        result["errors"].append("unknown_subscription")
 
     paid = (
         Order.query
@@ -1490,14 +1565,14 @@ def replace_other_memberships(
         if oid and oid == keep_oid:
             continue
         sid = _order_subscription_id(order)
-        if sid and sid != keep_sub:
+        if sid and not blind and sid != keep_sub:
             cancel_subs.add(sid)
         order.status = "ended"
         ended += 1
 
     # Also cancel any live Stripe membership sub that isn't the new one
     # (covers orphans not linked to a local Order id).
-    if configured() and not current_app.config.get("TESTING"):
+    if not blind and configured() and not current_app.config.get("TESTING"):
         for sid in _membership_subscription_ids_for_email(email_norm, price_ids):
             if sid and sid != keep_sub:
                 cancel_subs.add(sid)
