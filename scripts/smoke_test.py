@@ -1145,6 +1145,76 @@ r = client.get("/courses?h=workbook", follow_redirects=False)
 ok("Filtered /courses stays on-site",
    r.status_code == 200 and "Courses &amp; Guides" in r.get_data(as_text=True))
 
+# --- a product can be more than one thing -------------------------------------
+# A course that comes with templates is both, so the kinds are a select-all and
+# the catalogue filters have to find it under either one.
+r = admin.post("/admin/products/new", data={
+    "title": "Rebuild Your Week", "track": "building",
+    "types": ["course", "template"],
+    "promise": "A course, and the templates to work it.",
+    "price": "24.00", "stripe": "price_rebuild_week", "live": "1",
+}, follow_redirects=True)
+ok("Studio saves a product that is several things", r.status_code == 200)
+with app.app_context():
+    _multi = Product.query.filter_by(slug="rebuild-your-week").first()
+    ok("Both kinds are kept",
+       _multi is not None and _multi.types() == ["course", "template"],
+       f"got {_multi.types() if _multi else None}")
+    ok("The primary is the first in the canonical order, not tick order",
+       _multi.type == "course")
+    ok("It answers to either kind",
+       _multi.has_type("course") and _multi.has_type("template")
+       and not _multi.has_type("guide"))
+    ok("And reads as both where there is room",
+       _multi.types_display() == "Course, Template",
+       f"got {_multi.types_display()}")
+    _multi_id = _multi.id
+
+def _catalogue(path):
+    """The page below the header. The nav's notification bell names new
+    products too, and that isn't the catalogue answering."""
+    return client.get(path).get_data(as_text=True).split("</header>", 1)[-1]
+
+
+ok("The catalogue finds it under its primary kind",
+   "Rebuild Your Week" in _catalogue("/courses?b=course"))
+ok("And under the kind it is also",
+   "Rebuild Your Week" in _catalogue("/courses?b=template"))
+ok("But not under one it isn't",
+   "Rebuild Your Week" not in _catalogue("/courses?b=guide"))
+ok("The product page names both",
+   "Course, Template" in client.get("/courses/rebuild-your-week").get_data(as_text=True))
+
+# Anything still posting one type keeps working, and so does a product that
+# has only ever had one.
+r = admin.post("/admin/products/new", data={
+    "title": "Just One Thing", "track": "healing", "type": "workbook",
+    "promise": "One kind only.", "price": "9.00", "stripe": "price_just_one",
+}, follow_redirects=True)
+with app.app_context():
+    _single = Product.query.filter_by(slug="just-one-thing").first()
+    ok("A single type still saves, from the old field name",
+       _single is not None and _single.type == "workbook"
+       and _single.types() == ["workbook"] and _single.types_json is None,
+       f"got {_single.types() if _single else None}")
+    ok("And a row that predates all this reads as its one kind",
+       Product(type="guide").types() == ["guide"])
+
+# Ticking bundle second still makes it the lane's bundle.
+with app.app_context():
+    _b = db.session.get(Product, _multi_id)
+    _b.set_types(["template", "bundle"])
+    db.session.commit()
+    ok("Ticking bundle anywhere in the list still makes it a bundle",
+       _b.has_type("bundle") and _b.types() == ["template", "bundle"],
+       f"got {_b.types()}")
+ok("And it is lifted out of the lane into the bundle slot either way",
+   "Rebuild Your Week" in _catalogue("/courses"))
+with app.app_context():
+    _b = db.session.get(Product, _multi_id)
+    _b.set_types(["course", "template"])
+    db.session.commit()
+
 # content tips: owner writes one, Creator reads it, free is blocked
 minimal_mp4 = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 64
 r = admin.post("/admin/videos/new", data={

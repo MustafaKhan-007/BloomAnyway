@@ -18,6 +18,20 @@ def utcnow():
 
 # --- constants (kept as plain strings for SQLite/Postgres portability) ------
 PRODUCT_TYPES = ("course", "guide")
+
+#: What a product can be, in the order the pills read best. A product can be
+#: several of these at once — a course that ships templates, say — so the first
+#: one it holds is the "primary", the one a card has room to show.
+PRODUCT_KINDS: tuple[tuple[str, str], ...] = (
+    ("workbook", "WORKBOOK"),
+    ("course", "COURSE"),
+    ("guide", "GUIDE"),
+    ("audio", "AUDIO GUIDE"),
+    ("template", "TEMPLATE"),
+    ("bundle", "BUNDLE"),
+)
+PRODUCT_KIND_KEYS = tuple(key for key, _ in PRODUCT_KINDS)
+PRODUCT_KIND_PILLS = dict(PRODUCT_KINDS)
 PRODUCT_STATUSES = ("draft", "published", "archived")
 QUOTE_CATEGORIES = ("comfort", "determination", "renewal")
 
@@ -324,6 +338,9 @@ class Product(db.Model):
     title = db.Column(db.String(160), nullable=False)
     slug = db.Column(db.String(160), unique=True, nullable=False)
     type = db.Column(db.String(20), nullable=False, default="course")
+    #: JSON list of every kind this is, when it is more than one. ``type`` above
+    #: stays the primary so single-kind callers need to know nothing about this.
+    types_json = db.Column(db.Text)
     subject = db.Column(db.String(60))   # filterable catalogue subject
     status = db.Column(db.String(20), nullable=False, default="draft")
     # Test mode: a real, buyable product that only owners can see, so the
@@ -628,6 +645,52 @@ class Product(db.Model):
         amount = self.compare_at_cents / 100
         return f"{symbol}{amount:,.0f}" if self.compare_at_cents % 100 == 0 else f"{symbol}{amount:,.2f}"
 
+    # --- what this product is ------------------------------------------------
+    # ``type`` holds the primary kind and is what cards, filters and the bundle
+    # lookup read. ``types_json`` holds the whole set for products that are more
+    # than one thing, so nothing that only understands a single type breaks.
+
+    def types(self) -> list[str]:
+        """Every kind this product is, primary first. Never empty."""
+        try:
+            raw = json.loads(self.types_json) if self.types_json else []
+        except ValueError:
+            raw = []
+        out = []
+        for value in raw if isinstance(raw, list) else []:
+            key = str(value or "").strip().lower()
+            if key in PRODUCT_KIND_KEYS and key not in out:
+                out.append(key)
+        primary = (self.type or "").strip().lower()
+        if primary and primary not in out:
+            out.insert(0, primary)
+        return out or [primary or "guide"]
+
+    def set_types(self, values) -> None:
+        """Store the kinds this product is; the first becomes the primary."""
+        cleaned = []
+        for value in values or []:
+            key = str(value or "").strip().lower()
+            if key in PRODUCT_KIND_KEYS and key not in cleaned:
+                cleaned.append(key)
+        if not cleaned:
+            return
+        # Canonical order, so "primary" doesn't depend on tick order.
+        cleaned.sort(key=PRODUCT_KIND_KEYS.index)
+        self.type = cleaned[0]
+        self.types_json = json.dumps(cleaned) if len(cleaned) > 1 else None
+
+    def has_type(self, key: str) -> bool:
+        return (key or "").strip().lower() in self.types()
+
+    def type_pills(self) -> list[str]:
+        """One pill per kind, for the places with room to show all of them."""
+        return [PRODUCT_KIND_PILLS.get(k, k.upper()) for k in self.types()]
+
+    def types_display(self) -> str:
+        """e.g. "Course, Templates" — plain reading order, primary first."""
+        return ", ".join(pill.title() for pill in self.type_pills())
+
     def type_label(self):
         return "Course" if self.type == "course" else "Notebook Guide"
 
@@ -668,14 +731,9 @@ class Product(db.Model):
         return self.type_pill()
 
     def type_pill(self) -> str:
-        return {
-            "course": "COURSE",
-            "workbook": "WORKBOOK",
-            "guide": "GUIDE",
-            "audio": "AUDIO GUIDE",
-            "template": "TEMPLATE",
-            "bundle": "BUNDLE",
-        }.get((self.type or "").lower(), (self.type or "GUIDE").upper())
+        """The primary kind, for the one-badge places."""
+        key = (self.type or "").lower()
+        return PRODUCT_KIND_PILLS.get(key, (self.type or "GUIDE").upper())
 
 
 class ProductAsset(db.Model):

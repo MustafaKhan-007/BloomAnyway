@@ -50,7 +50,7 @@
             <p class="field-help" style="margin:4px 0 0;">/courses/{{ p.slug }}</p>
           </td>
           <td>{{ (p.track or '—')|title }}</td>
-          <td>{{ p.type }}</td>
+          <td>{{ p.types()|join(', ') }}</td>
           <td>{{ p.price_display() or '—' }}</td>
           <td>
             <span class="status-pill status-pill--{{ 'published' if p.status == 'published' else 'draft' }}">

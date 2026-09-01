@@ -63,7 +63,7 @@
       <div class="pd-layout__main">
         <header class="pd-intro">
           <p class="pd-hero__eyebrow">
-            {% if product.category_label %}{{ product.category_label }}{% else %}{{ product.type_pill()|title }}{% endif %}
+            {% if product.category_label %}{{ product.category_label }}{% else %}{{ product.types_display() }}{% endif %}
             {% if product.track %} &middot; {{ product.track|title }} track{% endif %}
           </p>
           {% if product.badge %}

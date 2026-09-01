@@ -97,12 +97,22 @@
           </select>
         </div>
         <div class="field">
-          <label for="type">Type</label>
-          <select id="type" name="type">
-            {% for t in ['workbook','course','guide','audio','template','bundle'] %}
-            <option value="{{ t }}" {{ 'selected' if product.type == t }}>{{ t }}</option>
+          <span class="field__label">What it is</span>
+          <div class="kind-pick">
+            {% set chosen = product.types() %}
+            {% for key, pill in product_kinds %}
+            <label class="checkline checkline--sm">
+              <input type="checkbox" name="types" value="{{ key }}"
+                     {{ 'checked' if key in chosen }}>
+              {{ pill|title }}
+            </label>
             {% endfor %}
-          </select>
+          </div>
+          <p class="field-help">
+            Tick everything that applies — a course that comes with templates is
+            both. The first one in this list that you tick is the one a card has
+            room to show, and the one the Courses filters put it under.
+          </p>
         </div>
         <div class="field">
           <label for="category_label">Category label</label>

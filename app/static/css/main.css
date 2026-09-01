@@ -205,6 +205,11 @@ input:focus, select:focus, textarea:focus {
 }
 label { display: block; font-weight: 600; margin-bottom: 6px; }
 .field { margin-bottom: 20px; }
+/* Stands in for a <label> over a group of checkboxes, which has no one input
+   to point at. */
+.field__label { display: block; font-weight: 600; margin-bottom: 6px; }
+.kind-pick { display: flex; flex-wrap: wrap; gap: 8px; }
+.kind-pick .checkline { margin: 0; }
 .field-help { font-size: 14px; color: var(--ink-soft); margin: 6px 0 0; }
 .field-error { color: var(--error); font-size: 14px; margin: 6px 0 0; }
 .honeypot { position: absolute; left: -9999px; opacity: 0; height: 0; overflow: hidden; }

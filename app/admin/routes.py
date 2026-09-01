@@ -23,6 +23,7 @@ from ..models import (Announcement, ContactMessage, ContentReport, FaqItem,
                       ForumComment,
                       ForumPost, MEMBERSHIPS, MEMBERSHIP_LABELS, MarketplaceListing,
                       MembershipPlan,
+                      PRODUCT_KINDS,
                       Page, Product, ProductAsset, Quote, QuoteFavorite, QuotePin,
                       ReelReview, ReelReviewApplication, ReelSubmission,
                       SiteFeedback, Testimonial,
@@ -305,7 +306,16 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
         product.title = title
     track = (form.get("track") or product.track or "healing").strip()
     product.track = track if track in ("healing", "building") else "healing"
-    product.type = (form.get("type") or product.type or "guide").strip() or "guide"
+    # "What it is" is a select-all-that-apply. ``set_types`` keeps the first as
+    # the primary; a single ``type`` still works for anything posting the old
+    # field. Nothing ticked leaves whatever it already was.
+    kinds = [k for k in form.getlist("types") if (k or "").strip()]
+    if not kinds and (form.get("type") or "").strip():
+        kinds = [form.get("type").strip()]
+    if kinds:
+        product.set_types(kinds)
+    elif not (product.type or "").strip():
+        product.type = "guide"
     product.category_label = (form.get("category_label") or "").strip()[:80] or None
     product.badge = (form.get("badge") or "").strip()[:30] or None
     product.promise = (form.get("promise") or "").strip()[:120] or None
@@ -609,6 +619,7 @@ def product_new():
         is_new=True,
         modules=[_blank_module(1), _blank_module(2)],
         max_modules=MAX_MODULES,
+        product_kinds=PRODUCT_KINDS,
         **_upload_limits(),
     )
 
@@ -669,6 +680,7 @@ def product_edit(product_id):
         is_new=False,
         modules=modules,
         max_modules=MAX_MODULES,
+        product_kinds=PRODUCT_KINDS,
         blockers=product.publish_blockers(),
         **_upload_limits(),
     )

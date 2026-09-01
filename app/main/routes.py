@@ -158,11 +158,13 @@ def _hide_test(query):
 
 
 def _courses_lane(track: str, type_filter: str, sort: str):
-    q = _hide_test(Product.query.filter_by(status="published", track=track)
-                   .filter(Product.type != "bundle"))
+    q = _hide_test(Product.query.filter_by(status="published", track=track))
+    # A product can be several things at once, and the set lives in JSON, so
+    # the matching happens here rather than in SQL. One lane of a small
+    # catalogue — cheaper to read than a LIKE against a JSON string.
+    rows = [p for p in q.all() if not p.has_type("bundle")]
     if type_filter and type_filter != "all":
-        q = q.filter(Product.type == type_filter)
-    rows = q.all()
+        rows = [p for p in rows if p.has_type(type_filter)]
     if sort == "price_asc":
         rows.sort(key=lambda p: (p.price_cents is None, p.price_cents or 0, p.sort_order, p.id))
     elif sort == "price_desc":
@@ -199,12 +201,12 @@ def courses():
     # `lane` is only a mobile focus / scroll hint.
     healing = _courses_lane("healing", h_filter, sort)
     building = _courses_lane("building", b_filter, sort)
-    bundles = {
-        "healing": _hide_test(Product.query.filter_by(
-            status="published", track="healing", type="bundle")).first(),
-        "building": _hide_test(Product.query.filter_by(
-            status="published", track="building", type="bundle")).first(),
-    }
+    def _bundle(track):
+        rows = _hide_test(Product.query.filter_by(
+            status="published", track=track)).all()
+        return next((p for p in rows if p.has_type("bundle")), None)
+
+    bundles = {"healing": _bundle("healing"), "building": _bundle("building")}
     owned_purchases = {}
     if current_user.is_authenticated:
         from ..services import course_reader as reader_svc
