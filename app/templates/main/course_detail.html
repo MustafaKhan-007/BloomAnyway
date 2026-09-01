@@ -50,6 +50,9 @@
             <span>
               <strong>{{ product.promo_saving_display() }} off right now.</strong>
               Enter <code>{{ product.promo_code_display() }}</code> at checkout.
+              {% if product.promo_ends_display() %}
+              <span class="pd-promo__ends">Ends {{ product.promo_ends_display() }}.</span>
+              {% endif %}
             </span>
           </p>
           {% else %}

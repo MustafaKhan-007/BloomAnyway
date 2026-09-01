@@ -398,6 +398,8 @@ class Product(db.Model):
     #: a code with no price is nothing to advertise.
     promo_price_cents = db.Column(db.Integer)
     promo_code = db.Column(db.String(40))
+    #: When the sale stops, stored UTC. None means it runs until taken down.
+    promo_ends_at = db.Column(db.DateTime)
     currency = db.Column(db.String(3), nullable=False, default="USD")
     ls_checkout_url = db.Column(db.String(500))  # legacy; unused
     ls_variant_id = db.Column(db.String(40), index=True)  # legacy; unused
@@ -670,13 +672,25 @@ class Product(db.Model):
 
     # --- a running promo code -------------------------------------------------
     def has_promo(self) -> bool:
-        """A promo needs a code to type and a price that beats the normal one."""
+        """A promo needs a code, a price that beats the normal one, and time left."""
         return bool(
             (self.promo_code or "").strip()
             and self.promo_price_cents is not None
             and self.price_cents is not None
             and 0 <= self.promo_price_cents < self.price_cents
+            and not self.promo_expired()
         )
+
+    def promo_expired(self) -> bool:
+        """Past its deadline. No deadline set means it runs until taken down."""
+        return bool(self.promo_ends_at and self.promo_ends_at <= utcnow())
+
+    def promo_ends_display(self) -> str:
+        """The deadline in the reader's own timezone, empty when open-ended."""
+        if not self.promo_ends_at or not self.has_promo():
+            return ""
+        from .services.timefmt import format_local
+        return format_local(self.promo_ends_at, "%b %d at %I:%M %p")
 
     def promo_display(self) -> str:
         if not self.has_promo():

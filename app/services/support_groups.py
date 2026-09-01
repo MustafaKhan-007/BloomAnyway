@@ -25,7 +25,8 @@ from .mailer import (
     send_support_group_reminder,
 )
 from .social_graph import notify
-from .timefmt import format_local, normalize_timezone, to_local
+from .timefmt import (format_local, normalize_timezone,
+                      parse_owner_parts, to_local)
 from . import daily as daily_svc
 
 log = logging.getLogger(__name__)
@@ -976,34 +977,6 @@ def _notify_joiner(meeting: SupportGroupMeeting, user: User) -> None:
            actor_id=meeting.scheduled_by_user_id, url=room)
     _send_booked_email(meeting, user)
     db.session.commit()
-
-
-def parse_owner_local(dt_local: str, tz_name: str | None) -> datetime | None:
-    """Parse ``YYYY-MM-DDTHH:MM`` from the owner's calendar in their timezone → UTC naive."""
-    raw = (dt_local or "").strip()
-    if not raw:
-        return None
-    try:
-        if len(raw) == 16:
-            local = datetime.strptime(raw, "%Y-%m-%dT%H:%M")
-        else:
-            local = datetime.fromisoformat(raw)
-    except ValueError:
-        return None
-    tz = normalize_timezone(tz_name) or "UTC"
-    from zoneinfo import ZoneInfo
-    aware = local.replace(tzinfo=ZoneInfo(tz))
-    return aware.astimezone(timezone.utc).replace(tzinfo=None)
-
-
-def parse_owner_parts(date_s: str, time_s: str, tz_name: str | None) -> datetime | None:
-    d = (date_s or "").strip()
-    t = (time_s or "").strip()
-    if not d or not t:
-        return None
-    if len(t) == 5:
-        t = t + ":00"
-    return parse_owner_local(f"{d}T{t[:8]}", tz_name)
 
 
 def schedule_meeting(meeting: SupportGroupMeeting, *, scheduled_at: datetime,

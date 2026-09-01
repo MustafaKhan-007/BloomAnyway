@@ -1226,6 +1226,54 @@ for _bad, _why in (({"promo_price": "18.00", "promo_code": ""}, "no code"),
            not db.session.get(Product, _multi_id).has_promo())
 ok("And the card goes back to the ordinary price",
    "lib-card__price--promo" not in _catalogue("/courses?b=course"))
+
+# A sale with a deadline takes itself down when the deadline passes.
+_soon = utcnow() + timedelta(days=3)
+r = admin.post(f"/admin/products/{_multi_id}/edit",
+               data=dict(_promo_fields, promo_price="18.00", promo_code="SPRING25",
+                         promo_ends_date=_soon.strftime("%Y-%m-%d"),
+                         promo_ends_time="17:30"),
+               follow_redirects=True)
+with app.app_context():
+    _p = db.session.get(Product, _multi_id)
+    ok("Studio saves when the sale ends",
+       _p.has_promo() and _p.promo_ends_at is not None
+       and abs((_p.promo_ends_at - _soon.replace(hour=17, minute=30, second=0,
+                                                 microsecond=0)).total_seconds()) < 90,
+       f"got {_p.promo_ends_at}")
+    ok("It isn't expired yet", not _p.promo_expired())
+_pd = client.get("/courses/rebuild-your-week").get_data(as_text=True)
+ok("The product page says when the sale ends",
+   "pd-promo__ends" in _pd and "Ends " in _pd)
+
+with app.app_context():
+    _p = db.session.get(Product, _multi_id)
+    _p.promo_ends_at = utcnow() - timedelta(minutes=1)
+    db.session.commit()
+    ok("A minute past its deadline the sale is over",
+       _p.promo_expired() and not _p.has_promo())
+    ok("And nothing about it is offered up any more",
+       _p.promo_display() == "" and _p.promo_ends_display() == "")
+_pd = client.get("/courses/rebuild-your-week").get_data(as_text=True)
+ok("The product page drops the banner and shows the normal price",
+   "pd-promo" not in _pd and "SPRING25" not in _pd and "$24" in _pd)
+ok("So does the catalogue card",
+   "lib-card__price--promo" not in _catalogue("/courses?b=course")
+   and "SPRING25" not in _catalogue("/courses?b=course"))
+_sbody = admin.get(f"/admin/products/{_multi_id}/edit").get_data(as_text=True)
+ok("Studio says the sale has ended rather than pretending it's running",
+   "This sale has ended" in _sbody)
+
+# Leaving the date blank means it runs until it's taken down.
+admin.post(f"/admin/products/{_multi_id}/edit",
+           data=dict(_promo_fields, promo_price="18.00", promo_code="SPRING25",
+                     promo_ends_date="", promo_ends_time="23:59"),
+           follow_redirects=True)
+with app.app_context():
+    _p = db.session.get(Product, _multi_id)
+    ok("No deadline means the sale just runs",
+       _p.has_promo() and _p.promo_ends_at is None
+       and _p.promo_ends_display() == "")
 with app.app_context():
     db.session.get(Product, _multi_id).set_types(["course", "template"])
     db.session.commit()

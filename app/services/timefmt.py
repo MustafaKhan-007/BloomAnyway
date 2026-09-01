@@ -213,3 +213,32 @@ def timezone_label(name: str | None) -> str:
     """Short display like ``America/New_York (UTC-04:00)``."""
     tz = normalize_timezone(name) or DEFAULT_TZ
     return f"{tz} ({_offset_label(tz)})"
+
+
+# --- reading a date and time the owner typed on their own calendar --------
+
+def parse_owner_local(dt_local: str, tz_name: str | None) -> datetime | None:
+    """Parse ``YYYY-MM-DDTHH:MM`` from the owner's calendar in their timezone → UTC naive."""
+    raw = (dt_local or "").strip()
+    if not raw:
+        return None
+    try:
+        if len(raw) == 16:
+            local = datetime.strptime(raw, "%Y-%m-%dT%H:%M")
+        else:
+            local = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    tz = normalize_timezone(tz_name) or DEFAULT_TZ
+    aware = local.replace(tzinfo=ZoneInfo(tz))
+    return aware.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def parse_owner_parts(date_s: str, time_s: str, tz_name: str | None) -> datetime | None:
+    d = (date_s or "").strip()
+    t = (time_s or "").strip()
+    if not d or not t:
+        return None
+    if len(t) == 5:
+        t = t + ":00"
+    return parse_owner_local(f"{d}T{t[:8]}", tz_name)

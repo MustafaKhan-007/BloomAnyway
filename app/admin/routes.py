@@ -379,9 +379,21 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
     if not promo_code or (form.get("promo_price") or "").strip() == "":
         product.promo_code = None
         product.promo_price_cents = None
+        product.promo_ends_at = None
     else:
         product.promo_code = promo_code
         product.promo_price_cents = promo_price
+        # Read off the owner's own calendar; stored UTC like every other time.
+        from ..services.timefmt import parse_owner_parts
+        ends_date = (form.get("promo_ends_date") or "").strip()
+        product.promo_ends_at = parse_owner_parts(
+            ends_date,
+            (form.get("promo_ends_time") or "").strip() or "23:59",
+            getattr(current_user, "timezone", None),
+        ) if ends_date else None
+        if ends_date and product.promo_ends_at is None:
+            flash("That promo end date didn't look right, so the sale was left "
+                  "running with no deadline.", "info")
     if (product.promo_price_cents is not None and product.price_cents is not None
             and product.promo_price_cents >= product.price_cents):
         flash("The promo price needs to be lower than the normal price, so "
@@ -3373,13 +3385,15 @@ def support_groups_schedule(meeting_id):
         return redirect(url_for("admin.support_groups"))
     tz = (request.form.get("timezone") or current_user.timezone or "UTC").strip()
     # Prefer separate date + time fields; fall back to legacy datetime-local.
-    when = sg_svc.parse_owner_parts(
+    from ..services.timefmt import parse_owner_local, parse_owner_parts
+
+    when = parse_owner_parts(
         request.form.get("meeting_date") or "",
         request.form.get("meeting_time") or "",
         tz,
     )
     if when is None:
-        when = sg_svc.parse_owner_local(request.form.get("scheduled_at") or "", tz)
+        when = parse_owner_local(request.form.get("scheduled_at") or "", tz)
     err = sg_svc.schedule_meeting(
         meeting,
         scheduled_at=when,
