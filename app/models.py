@@ -517,6 +517,22 @@ class Product(db.Model):
             return []
         return [ln.strip() for ln in text.splitlines() if ln.strip()][:40]
 
+    @staticmethod
+    def _clean_lessons(raw) -> list[dict]:
+        """Lesson rows within a module: a title and an optional short note."""
+        out = []
+        for row in raw or []:
+            if not isinstance(row, dict):
+                continue
+            title = str(row.get("title") or "").strip()
+            if not title:
+                continue
+            out.append({
+                "title": title[:160],
+                "description": str(row.get("description") or "").strip()[:500],
+            })
+        return out
+
     def curriculum(self) -> list[dict]:
         try:
             raw = json.loads(self.curriculum_json) if self.curriculum_json else []
@@ -534,6 +550,7 @@ class Product(db.Model):
             out.append({
                 "title": title[:160],
                 "description": str(row.get("description") or "").strip()[:500],
+                "lessons": self._clean_lessons(row.get("lessons")),
             })
         return out
 
@@ -548,6 +565,7 @@ class Product(db.Model):
             cleaned.append({
                 "title": title[:160],
                 "description": str(row.get("description") or "").strip()[:500],
+                "lessons": self._clean_lessons(row.get("lessons")),
             })
         self.curriculum_json = json.dumps(cleaned) if cleaned else None
 
@@ -587,11 +605,26 @@ class Product(db.Model):
         rows = []
         for i, row in enumerate(self.curriculum(), start=1):
             contents = by_number.get(i, [])
+            # Module-level content (no lesson) is the module intro; it shows
+            # before the lessons in both the reader and the store page.
+            intro = [a for a in contents if not getattr(a, "lesson_index", None)]
+            lessons = []
+            for li, meta in enumerate(row.get("lessons") or [], start=1):
+                litems = [a for a in contents
+                          if getattr(a, "lesson_index", None) == li]
+                lessons.append({
+                    "number": li,
+                    "title": meta["title"],
+                    "description": meta["description"],
+                    "contents": litems,
+                })
             rows.append({
                 "number": i,
                 "title": row["title"],
                 "description": row["description"],
                 "contents": contents,
+                "intro": intro,
+                "lessons": lessons,
                 "asset": contents[0] if contents else None,
             })
         return rows
@@ -841,6 +874,10 @@ class ProductAsset(db.Model):
     # Curriculum module this file belongs to (1-based). None = general file,
     # always available to buyers even when the product is drip-fed.
     module_index = db.Column(db.Integer, index=True)
+    #: Lesson within the module (1-based). None = module-level content (a module
+    #: intro), shown before the lessons. The module stays the drip unit, so this
+    #: never affects locking — a lesson opens exactly when its module does.
+    lesson_index = db.Column(db.Integer, index=True)
     #: Set on a written extract that belongs to one file rather than to the
     #: module as a whole. It carries its parent's ``module_index`` too, so drip
     #: gating needs to know nothing about the nesting.

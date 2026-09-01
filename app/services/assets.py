@@ -222,6 +222,7 @@ def add_asset(
     *,
     title: str | None = None,
     module_index: int | None = None,
+    lesson_index: int | None = None,
 ) -> ProductAsset:
     """Store a file arriving in one request and attach it to the product."""
     if upload is None or not getattr(upload, "filename", None):
@@ -244,7 +245,7 @@ def add_asset(
                     filename = os.path.splitext(filename)[0] + ".h5p"
     return _attach(product, title=title, filename=filename, mime=mime,
                    kind=kind, size=size, disk_name=disk_name,
-                   module_index=module_index)
+                   module_index=module_index, lesson_index=lesson_index)
 
 
 def add_text(
@@ -253,6 +254,7 @@ def add_text(
     *,
     title: str | None = None,
     module_index: int | None = None,
+    lesson_index: int | None = None,
 ) -> ProductAsset:
     """Attach a written extract typed into Studio. No file involved."""
     text = _clean_body(body)
@@ -262,7 +264,7 @@ def add_text(
         filename=(secure_filename(name) or "extract")[:240] + ".md",
         mime="text/markdown", kind="text",
         size=len(text.encode("utf-8")), body=text,
-        module_index=module_index)
+        module_index=module_index, lesson_index=lesson_index)
 
 
 def add_note(parent: ProductAsset, body: str, *,
@@ -281,7 +283,8 @@ def add_note(parent: ProductAsset, body: str, *,
         filename=(secure_filename(name) or "extract")[:240] + ".md",
         mime="text/markdown", kind="text",
         size=len(text.encode("utf-8")), body=text,
-        module_index=parent.module_index, parent=parent)
+        module_index=parent.module_index,
+        lesson_index=parent.lesson_index, parent=parent)
 
 
 def edit_text(asset: ProductAsset, body: str, *,
@@ -306,7 +309,7 @@ def _clean_body(body: str) -> str:
 
 
 def _attach(product: Product, *, title, filename, mime, kind, size,
-            disk_name=None, body=None, module_index=None,
+            disk_name=None, body=None, module_index=None, lesson_index=None,
             parent: ProductAsset | None = None) -> ProductAsset:
     asset = ProductAsset(
         product_id=product.id,
@@ -319,6 +322,7 @@ def _attach(product: Product, *, title, filename, mime, kind, size,
         body=body,
         sort_order=_next_order(product, module_index, parent),
         module_index=module_index,
+        lesson_index=lesson_index,
         parent=parent,
     )
     db.session.add(asset)
@@ -374,7 +378,8 @@ def abort_upload(upload_id: str) -> None:
 
 def finish_upload(product: Product, upload_id: str, filename: str, *,
                   title: str | None = None,
-                  module_index: int | None = None) -> ProductAsset:
+                  module_index: int | None = None,
+                  lesson_index: int | None = None) -> ProductAsset:
     """Turn a completed part file into a real asset."""
     path = _part_path(upload_id)
     if not os.path.isfile(path):
@@ -401,4 +406,5 @@ def finish_upload(product: Product, upload_id: str, filename: str, *,
         _safe_remove(path)
         raise AssetError("We couldn't save that upload just now — try again.")
     return _attach(product, title=title, filename=name, mime=mime, kind=kind,
-                   size=size, disk_name=disk_name, module_index=module_index)
+                   size=size, disk_name=disk_name, module_index=module_index,
+                   lesson_index=lesson_index)

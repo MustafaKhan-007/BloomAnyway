@@ -9126,6 +9126,21 @@ a.at-handle:hover { text-decoration: underline; }
   display: block; margin-top: 5px;
   font-size: 12px; color: var(--ink-soft);
 }
+.pd-curriculum__lessons {
+  margin: 8px 0 0; padding: 0; list-style: none;
+  display: grid; gap: 4px;
+}
+.pd-curriculum__lessons li {
+  margin: 0; padding: 0; background: none; border: 0;
+  position: static; font-size: 0.9rem; color: var(--ink);
+}
+.pd-curriculum__lessons li::before { content: none; }
+.pd-curriculum__lesson-num {
+  display: inline-block; margin-right: 6px;
+  font-size: 11px; font-weight: 800; letter-spacing: 0.03em;
+  color: var(--plum-deep); text-transform: uppercase;
+}
+.pd-curriculum__lesson-note { color: var(--ink-soft); }
 @media (max-width: 860px) {
   .pd-layout { grid-template-columns: 1fr; }
   .pd-layout__aside {
@@ -9195,6 +9210,31 @@ a.at-handle:hover { text-decoration: underline; }
 .module-items__name { font-weight: 700; flex: 1; min-width: 140px; word-break: break-word; }
 .module-items__size { color: var(--ink-soft); font-size: 13px; }
 .module-items__row .btn { margin-left: auto; }
+
+/* Lessons: subsections inside a module, in the Studio editor. */
+.module-sub-label {
+  margin: 4px 0 8px; font-size: 12px; font-weight: 800;
+  letter-spacing: 0.04em; text-transform: uppercase; color: var(--plum-deep);
+}
+.studio-lessons {
+  margin: 2px 0 12px; padding: 12px;
+  border-radius: 12px; border: 1px dashed rgba(61, 20, 49, 0.20);
+  background: rgba(122, 46, 98, 0.04);
+}
+.studio-lessons__row {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.studio-lessons__num {
+  flex: 0 0 auto; min-width: 72px;
+  font-size: 12px; font-weight: 800; color: var(--plum-deep);
+}
+.studio-lessons__row input[name$="_lesson_title"] { flex: 1 1 200px; }
+.studio-lessons__row input[name$="_lesson_desc"] { flex: 2 1 240px; }
+.module-items__lesson { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+.module-items__lesson select { max-width: 220px; }
+.chunk-up__lesson { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; margin-bottom: 8px; }
+.chunk-up__lesson select { max-width: 240px; }
 
 .module-add { display: grid; gap: 10px; justify-items: start; }
 .module-add .field { width: 100%; }

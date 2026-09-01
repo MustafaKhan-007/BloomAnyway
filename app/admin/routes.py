@@ -330,9 +330,22 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
         t = (form.get(f"mod{i}_title") or "").strip()
         if not t:
             continue
+        # Lessons are the subsections inside a module; their content and text
+        # extracts are assigned per file below. Titles arrive as repeated
+        # fields so an owner can add as many as they like.
+        lesson_titles = form.getlist(f"mod{i}_lesson_title")
+        lesson_descs = form.getlist(f"mod{i}_lesson_desc")
+        lessons = []
+        for j, raw_title in enumerate(lesson_titles):
+            lt = (raw_title or "").strip()
+            if not lt:
+                continue
+            ld = (lesson_descs[j] if j < len(lesson_descs) else "").strip()
+            lessons.append({"title": lt[:160], "description": ld[:500]})
         curriculum_rows.append({
             "title": t[:160],
             "description": (form.get(f"mod{i}_desc") or "").strip()[:500],
+            "lessons": lessons,
         })
         module_numbers[i] = len(curriculum_rows)
     product.set_curriculum(curriculum_rows)
@@ -556,6 +569,29 @@ def _save_asset_notes(product: Product, form) -> int:
     return touched
 
 
+def _save_asset_lessons(product: Product, form) -> None:
+    """Pin each module file to a lesson from its ``asset_<id>_lesson`` select.
+
+    Content is uploaded to a module, then sorted into that module's lessons
+    here (empty / 0 = module intro). Read after the curriculum is saved so the
+    lesson count is known; a stale number just falls back to the intro.
+    """
+    lesson_counts = {row["number"]: len(row["lessons"])
+                     for row in product.modules()}
+    for asset in product.top_level_assets():
+        key = f"asset_{asset.id}_lesson"
+        if key not in form:
+            continue
+        raw = (form.get(key) or "").strip()
+        wanted = int(raw) if raw.isdigit() else 0
+        count = lesson_counts.get(asset.module_index or 0, 0)
+        asset.lesson_index = wanted if (asset.module_index
+                                        and 1 <= wanted <= count) else None
+        # Extracts hanging off this file ride along with it.
+        for note in asset.notes:
+            note.lesson_index = asset.lesson_index
+
+
 @bp.route("/products")
 @admin_required
 def products():
@@ -671,6 +707,7 @@ def product_edit(product_id):
         _remap_module_files(product, module_numbers)
         _save_asset_notes(product, request.form)
         _save_module_files(product, request.form, request.files, module_numbers)
+        _save_asset_lessons(product, request.form)
         cover = request.files.get("cover")
         if cover and getattr(cover, "filename", None):
             try:
@@ -816,11 +853,18 @@ def product_upload_finish(product_id, upload_id):
         module_index = int(module) if module else None
     except (TypeError, ValueError):
         module_index = None
+    lesson = payload.get("lesson")
+    try:
+        lesson_index = int(lesson) if lesson else None
+    except (TypeError, ValueError):
+        lesson_index = None
+    if not module_index:
+        lesson_index = None  # a loose file has no lesson
     try:
         asset = finish_upload(
             product, upload_id, str(payload.get("filename") or ""),
             title=(str(payload.get("title") or "").strip() or None),
-            module_index=module_index)
+            module_index=module_index, lesson_index=lesson_index)
         db.session.commit()
     except AssetError as exc:
         db.session.rollback()
@@ -836,6 +880,8 @@ def product_upload_finish(product_id, upload_id):
         "kind": asset.kind,
         "kind_label": asset.kind_label(),
         "size": asset.size_display(),
+        "module": asset.module_index or 0,
+        "lesson": asset.lesson_index or 0,
         "delete_url": url_for("admin.product_asset_delete",
                               product_id=product.id, asset_id=asset.id),
     })
