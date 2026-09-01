@@ -23,8 +23,18 @@ HANDLED = {
     "charge.refund.updated",
     "customer.subscription.deleted",
     # Cancel-at-period-end is only ever announced here — without it a member who
-    # cancels in Stripe's portal still reads as a paying member in Studio.
+    # cancels in Stripe's portal still reads as a paying member in Studio. It
+    # also carries the states where dunning gives up (unpaid / paused), which
+    # never produce a delete and so are the only warning we get.
     "customer.subscription.updated",
+    # A chargeback never refunds, so nothing else takes the access back.
+    "charge.dispute.created",
+    "charge.dispute.closed",
+    # Neither paid nor failed: the bank wants the cardholder to confirm.
+    "invoice.payment_action_required",
+    # Memberships are matched by email, so a member editing theirs in Stripe's
+    # billing portal silently detaches their own subscription.
+    "customer.updated",
 }
 
 
@@ -71,15 +81,37 @@ def stripe_webhook():
             log.exception("stripe webhook: failed to process %s", event_type)
             return {"error": "processing failed"}, 500
 
-    # Scheduled cancel (or a resume): record when access actually ends.
+    # Scheduled cancel, a resume, or dunning giving up.
     if event_type == "customer.subscription.updated":
         try:
             result = pay.apply_subscription_cancel_state(obj)
             db.session.commit()
             log.info(
-                "stripe webhook: subscription.updated email=%s canceling=%s changed=%s",
-                result.get("email"), result.get("canceling"), result.get("changed"),
+                "stripe webhook: subscription.updated email=%s canceling=%s "
+                "ended=%s changed=%s",
+                result.get("email"), result.get("canceling"),
+                result.get("ended"), result.get("changed"),
             )
+            return {"status": "ok", "event": event_type}, 200
+        except Exception:
+            db.session.rollback()
+            log.exception("stripe webhook: failed to process %s", event_type)
+            return {"error": "processing failed"}, 500
+
+    # Chargebacks, stalled authentication, and billing-email changes: each one
+    # is a way the money can stop without any payment event ever arriving.
+    if event_type in ("charge.dispute.created", "charge.dispute.closed",
+                      "invoice.payment_action_required", "customer.updated"):
+        try:
+            if event_type == "customer.updated":
+                result = pay.handle_customer_updated(event)
+            elif event_type == "invoice.payment_action_required":
+                result = pay.handle_payment_action_required(obj)
+            else:
+                result = pay.handle_dispute(
+                    obj, opened=event_type.endswith("created"))
+            db.session.commit()
+            log.info("stripe webhook: %s → %s", event_type, result)
             return {"status": "ok", "event": event_type}, 200
         except Exception:
             db.session.rollback()

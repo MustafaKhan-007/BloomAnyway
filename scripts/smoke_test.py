@@ -4085,6 +4085,109 @@ with app.app_context():
        blind["cancelled"] == [] and "unknown_subscription" in blind["errors"],
        f"got {blind}")
 
+
+# --- the other ways the money stops -------------------------------------------
+def _stripe_event(kind, obj, previous=None):
+    payload = {"object": obj}
+    if previous is not None:
+        payload["previous_attributes"] = previous
+    body = json.dumps({"id": f"evt_{kind}_{len(_billing_alerts)}", "object": "event",
+                       "type": kind, "data": payload}).encode()
+    return client.post("/webhooks/stripe", data=body, headers=_stripe_headers(body))
+
+
+with app.app_context():
+    disputer = User(email="disputer@example.com", display_name="Disputer",
+                    membership="none", email_verified_at=utcnow())
+    disputer.set_password(USER_PW)
+    db.session.add(disputer)
+    db.session.add(Order(
+        ls_order_id="pi_disputed", buyer_email="disputer@example.com",
+        ls_variant_id=_mem_price, status="paid", membership_tier="healing",
+        total_cents=900, currency="USD", stripe_subscription_id="sub_disputer"))
+    db.session.commit()
+    from app.services.memberships import reconcile_email as _reconcile
+    _reconcile("disputer@example.com")
+    db.session.commit()
+    disputer_id = disputer.id
+    ok("Setup: the disputer holds the tier they paid for",
+       db.session.get(User, disputer_id).membership == "healing")
+
+_alerts = len(_billing_alerts)
+_stripe_event("charge.dispute.created", {
+    "id": "dp_1", "object": "dispute", "charge": "ch_1",
+    "payment_intent": "pi_disputed", "amount": 900, "reason": "fraudulent",
+    "status": "needs_response",
+})
+with app.app_context():
+    ok("A chargeback takes the membership back straight away",
+       db.session.get(User, disputer_id).membership == "none",
+       f"got {db.session.get(User, disputer_id).membership}")
+ok("And the owner is told, with time to respond",
+   any("disputed" in t.lower() for t in _billing_alerts[_alerts:]),
+   f"got {_billing_alerts[_alerts:]}")
+
+_stripe_event("charge.dispute.closed", {
+    "id": "dp_1", "object": "dispute", "charge": "ch_1",
+    "payment_intent": "pi_disputed", "amount": 900, "status": "won",
+})
+with app.app_context():
+    ok("Winning the dispute puts the membership back",
+       db.session.get(User, disputer_id).membership == "healing",
+       f"got {db.session.get(User, disputer_id).membership}")
+
+# Dunning giving up never deletes the subscription, so this is the only warning.
+with app.app_context():
+    stalled = User(email="stalled@example.com", display_name="Stalled",
+                   membership="none", email_verified_at=utcnow())
+    stalled.set_password(USER_PW)
+    db.session.add(stalled)
+    db.session.add(Order(
+        ls_order_id="pi_stalled", buyer_email="stalled@example.com",
+        ls_variant_id=_mem_price, status="paid", membership_tier="healing",
+        total_cents=900, currency="USD", stripe_subscription_id="sub_stalled"))
+    db.session.commit()
+    _reconcile("stalled@example.com")
+    db.session.commit()
+    stalled_id = stalled.id
+
+_sub_obj = {
+    "id": "sub_stalled", "object": "subscription", "status": "past_due",
+    "customer": {"email": "stalled@example.com"},
+    "items": {"data": [{"price": {"id": _mem_price}}]},
+}
+_stripe_event("customer.subscription.updated", dict(_sub_obj))
+with app.app_context():
+    ok("A card still being retried keeps the membership",
+       db.session.get(User, stalled_id).membership == "healing")
+_stripe_event("customer.subscription.updated", dict(_sub_obj, status="unpaid"))
+with app.app_context():
+    ok("But once Stripe gives up, the membership goes",
+       db.session.get(User, stalled_id).membership == "none",
+       f"got {db.session.get(User, stalled_id).membership}")
+
+_alerts = len(_billing_alerts)
+_stripe_event("invoice.payment_action_required", _invoice_object(
+    "SCA-1", "stalled@example.com", _mem_price, "sub_stalled",
+    "subscription_cycle", basil=True))
+ok("A renewal waiting on the member's bank is not silent",
+   any("bank" in t.lower() for t in _billing_alerts[_alerts:]),
+   f"got {_billing_alerts[_alerts:]}")
+
+_alerts = len(_billing_alerts)
+_stripe_event("customer.updated",
+              {"id": "cus_1", "object": "customer", "email": "brand-new@example.com"},
+              previous={"email": "stalled@example.com"})
+ok("Changing the billing email is caught before the next renewal misses",
+   any("billing email" in t.lower() for t in _billing_alerts[_alerts:]),
+   f"got {_billing_alerts[_alerts:]}")
+_alerts = len(_billing_alerts)
+_stripe_event("customer.updated",
+              {"id": "cus_1", "object": "customer", "email": "stalled@example.com"},
+              previous={"name": "Someone"})
+ok("A customer edit that isn't the email says nothing",
+   len(_billing_alerts) == _alerts, f"got {_billing_alerts[_alerts:]}")
+
 _invoice_webhook("WEL-2", "leaver@example.com", _mem_price,
                  "sub_leaver", "subscription_cycle")
 ok("Renewal does not re-send the welcome",

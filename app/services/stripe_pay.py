@@ -2323,6 +2323,11 @@ def _cancel_end_from_subscription(sub: dict) -> int | None:
         return None
 
 
+#: Subscription states that mean the money has stopped and is not coming back
+#: on its own. ``past_due`` is deliberately absent — Stripe is still retrying.
+DEAD_SUBSCRIPTION_STATUSES = ("canceled", "unpaid", "incomplete_expired", "paused")
+
+
 def apply_subscription_cancel_state(sub: dict) -> dict:
     """Record (or clear) a scheduled cancel from one subscription. Caller commits.
 
@@ -2333,7 +2338,7 @@ def apply_subscription_cancel_state(sub: dict) -> dict:
     finally deletes itself weeks later.
     """
     sub = sub if isinstance(sub, dict) else _as_dict(sub)
-    out = {"email": "", "canceling": False, "changed": False}
+    out = {"email": "", "canceling": False, "changed": False, "ended": 0}
     if not _subscription_is_membership(sub):
         return out
 
@@ -2342,6 +2347,22 @@ def apply_subscription_cancel_state(sub: dict) -> dict:
     out["email"] = email
     user = _user_for_email(email)
     if user is None:
+        return out
+
+    if status in DEAD_SUBSCRIPTION_STATUSES:
+        # Dunning has given up, or billing is paused. Stripe may never delete
+        # the subscription, so nothing else is coming to take the access back:
+        # left alone this is a membership that stopped being paid for and
+        # nobody noticed.
+        sub_id = _stripe_id(sub.get("id")) or ""
+        ended = _end_paid_membership_orders(
+            email, only_subscription_id=sub_id or None)
+        if user.membership_cancel_at is not None:
+            user.membership_cancel_at = None
+        out["ended"] = ended
+        out["changed"] = True
+        log.info("stripe: subscription %s is %s — ended %s membership order(s) "
+                 "for %s", sub_id or "?", status, ended, email)
         return out
 
     ends_unix = _cancel_end_from_subscription(sub)
@@ -2483,6 +2504,162 @@ def handle_subscription_deleted(sub: dict) -> dict:
         ended, email, sub_id or "-",
     )
     return result
+
+
+def _order_behind_charge(dispute: dict) -> Order | None:
+    """The order a disputed charge paid for, by payment intent then charge id."""
+    for key in (_stripe_id(dispute.get("payment_intent")),
+                _stripe_id(dispute.get("charge"))):
+        if key:
+            row = Order.query.filter_by(ls_order_id=str(key)).first()
+            if row is not None:
+                return row
+    # Subscription renewals are stored under the invoice, not the charge.
+    pi = _stripe_id(dispute.get("payment_intent"))
+    if pi and configured() and not current_app.config.get("TESTING"):
+        sub_id = _subscription_id_from_payment_ref(pi)
+        if sub_id:
+            return (Order.query
+                    .filter(Order.stripe_subscription_id == sub_id,
+                            Order.status == "paid")
+                    .order_by(Order.id.desc())
+                    .first())
+    return None
+
+
+def handle_dispute(dispute: dict, *, opened: bool) -> dict:
+    """A chargeback. Take the access back while the money is being pulled.
+
+    Without this someone can subscribe, dispute the charge, and keep the
+    membership: the payment never refunds, so nothing else revokes it. Winning
+    the dispute puts the access back.
+    """
+    d = dispute if isinstance(dispute, dict) else _as_dict(dispute)
+    from .memberships import reconcile_email
+
+    status = (d.get("status") or "").strip().lower()
+    out = {"ok": True, "order_id": None, "changed": False, "status": status}
+    order = _order_behind_charge(d)
+    email = (getattr(order, "buyer_email", None) or "").strip().lower()
+    if order is not None:
+        out["order_id"] = order.ls_order_id
+
+    if opened:
+        if order is not None and order.status == "paid":
+            order.status = "refunded"
+            out["changed"] = True
+            if email:
+                reconcile_email(email, downgrade=True)
+        body = (
+            f"A payment was disputed with Stripe ({d.get('reason') or 'no reason given'}).\n\n"
+            + (f"Order {order.ls_order_id} for {email or 'an unknown buyer'} — "
+               "access has been taken back while it is decided.\n"
+               if order is not None
+               else "We could not match it to an order here, so nothing was "
+                    "changed on the site. Check Stripe.\n")
+            + "\nRespond in Stripe before their deadline or it is lost by default."
+        )
+        title = "Payment disputed"
+    else:
+        won = status == "won"
+        if won and order is not None and order.status == "refunded":
+            order.status = "paid"
+            out["changed"] = True
+            if email:
+                reconcile_email(email)
+        title = "Dispute won" if won else "Dispute lost"
+        body = (
+            f"Stripe closed a dispute as {status or 'closed'}.\n\n"
+            + (f"Order {order.ls_order_id} for {email or 'an unknown buyer'}: "
+               + ("access has been put back." if won else "access stays revoked.")
+               if order is not None else "No matching order here.")
+        )
+
+    log.warning("stripe: dispute %s (%s) order=%s changed=%s",
+                "opened" if opened else "closed", status or "?",
+                out["order_id"] or "-", out["changed"])
+    try:
+        from .mailer import send_billing_alert
+        send_billing_alert(title, body)
+    except Exception:
+        log.exception("stripe: could not alert owner about a dispute")
+    return out
+
+
+def handle_payment_action_required(invoice: dict) -> dict:
+    """A renewal is waiting on the cardholder to authenticate (3-D Secure).
+
+    Neither paid nor failed, so on its own it is silence: the member keeps
+    access, Stripe chases them, and nobody here knows why the money stopped.
+    """
+    inv = invoice if isinstance(invoice, dict) else _as_dict(invoice)
+    email = (inv.get("customer_email") or "").strip().lower() or _buyer_email(inv)
+    sub_id = invoice_subscription_id(inv)
+    out = {"email": email, "subscription": sub_id}
+    log.warning(
+        "stripe: invoice %s needs the cardholder to authenticate "
+        "(subscription %s, %s)", _stripe_id(inv.get("id")) or "?",
+        sub_id or "-", email or "unknown",
+    )
+    try:
+        from .mailer import send_billing_alert
+        send_billing_alert(
+            "A renewal is waiting on the member's bank",
+            f"{email or 'A member'} has a renewal Stripe can't take yet — their "
+            "bank wants them to confirm it.\n\n"
+            f"Subscription: {sub_id or 'unknown'}\n\n"
+            "Stripe emails them about it. If it stays unconfirmed the "
+            "subscription eventually goes unpaid and the site drops their tier.",
+        )
+    except Exception:
+        log.exception("stripe: could not alert owner about a pending authentication")
+    return out
+
+
+def handle_customer_updated(event: dict) -> dict:
+    """Watch for a member changing the email Stripe bills them under.
+
+    Everything here is matched to an account by email address, so a member who
+    edits theirs in Stripe's billing portal quietly detaches their own
+    membership: the next renewal arrives under an address no account holds.
+
+    Deliberately does not move the account: anyone able to edit a Stripe
+    customer could otherwise point it at someone else's membership.
+    """
+    ev = event if isinstance(event, dict) else _as_dict(event)
+    obj = _as_dict((ev.get("data") or {}).get("object") or {})
+    previous = _as_dict((ev.get("data") or {}).get("previous_attributes") or {})
+    out = {"changed": False, "old": "", "new": ""}
+    if "email" not in previous:
+        return out
+    old = (previous.get("email") or "").strip().lower()
+    new = (obj.get("email") or "").strip().lower()
+    if not old or old == new:
+        return out
+    out.update({"old": old, "new": new})
+    if _user_for_email(new) is not None:
+        return out  # the new address already has an account; nothing detaches
+    if _user_for_email(old) is None:
+        return out  # nobody here was using the old one either
+    out["changed"] = True
+    log.warning(
+        "stripe: customer %s changed billing email %s → %s, which no account "
+        "here holds", _stripe_id(obj.get("id")) or "?", old, new,
+    )
+    try:
+        from .mailer import send_billing_alert
+        send_billing_alert(
+            "A member changed their billing email",
+            f"{old} changed the email on their Stripe customer to {new}.\n\n"
+            "Their Bloom Anyway account is still under the old address, and "
+            "memberships are matched by email — so their next renewal will not "
+            "reach their account.\n\n"
+            "Either change it back in Stripe, or change their account email in "
+            "Studio to match.",
+        )
+    except Exception:
+        log.exception("stripe: could not alert owner about a billing email change")
+    return out
 
 
 def format_access_end_date(period_end: int | None) -> str:
