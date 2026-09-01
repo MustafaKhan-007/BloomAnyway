@@ -95,8 +95,8 @@
           {% endif %}
         </header>
 
-        {% if product.description_md or product.audience or contents %}
-        <div class="pd-body-grid{% if not product.description_md %} pd-body-grid--rail-only{% elif not product.audience and not contents %} pd-body-grid--about-only{% endif %}">
+        {% if product.description_md or product.audience %}
+        <div class="pd-body-grid{% if not product.description_md %} pd-body-grid--rail-only{% elif not product.audience %} pd-body-grid--about-only{% endif %}">
           {% if product.description_md %}
           <section class="pd-section pd-body-grid__about" aria-labelledby="pd-about-heading">
             <h2 id="pd-about-heading">About this {{ product.type_pill()|lower }}</h2>
@@ -104,28 +104,28 @@
           </section>
           {% endif %}
 
-          {% if product.audience or contents %}
+          {% if product.audience %}
           <div class="pd-body-grid__rail">
-            {% if product.audience %}
             <section class="pd-section" aria-labelledby="pd-audience-heading">
               <h2 id="pd-audience-heading">Who this is for</h2>
               <div class="pd-prose">{{ product.audience|markdown }}</div>
             </section>
-            {% endif %}
-
-            {% if contents %}
-            <section class="pd-section" aria-labelledby="pd-contents-heading">
-              <h2 id="pd-contents-heading">What’s included</h2>
-              <ul class="pd-checklist">
-                {% for item in contents %}
-                <li>{{ item }}</li>
-                {% endfor %}
-              </ul>
-            </section>
-            {% endif %}
           </div>
           {% endif %}
         </div>
+        {% endif %}
+
+        {% if contents %}
+        {# Full width under the About / Who-this-is-for row, with the items in
+           two balanced columns rather than one long list. #}
+        <section class="pd-section pd-section--wide" aria-labelledby="pd-contents-heading">
+          <h2 id="pd-contents-heading">What’s included</h2>
+          <ul class="pd-checklist pd-checklist--cols">
+            {% for item in contents %}
+            <li>{{ item }}</li>
+            {% endfor %}
+          </ul>
+        </section>
         {% endif %}
 
         {% if gallery %}
