@@ -246,7 +246,9 @@
             {% else %}
             <p>Members can generate a keepsake PDF of their whole journey
               — streaks, check-ins, and favorite lines.</p>
+            {% if memberships_enabled %}
             <a class="btn btn--secondary journey-card__cta" href="{{ url_for('main.membership', next=url_for('main.account')) }}">See memberships</a>
+            {% endif %}
             {% endif %}
           </div>
           <div class="journey-card__mark" aria-hidden="true">&#10022;</div>
@@ -268,10 +270,12 @@
           <h3>{{ plan_perks.label() }}</h3>
           {% if current_user.membership_is_canceling() %}
           <p class="ms-exact__renews">Access ends on {{ current_user.membership_access_end_display() or 'your billing period end' }}.</p>
+          {% if memberships_enabled %}
           <form method="post" action="{{ url_for('main.resume_membership') }}" style="margin-top: 10px;">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button class="btn btn--primary btn--sm" type="submit">Resume subscription</button>
           </form>
+          {% endif %}
           {% else %}
           <ul class="ms-exact__benefits">
             {% for perk in plan_perks.perk_labels()[:6] %}
@@ -285,7 +289,9 @@
           {% else %}
           <p class="ms-exact__renews">Renews with your {{ plan_perks.label() }} plan.</p>
           {% endif %}
+          {% if memberships_enabled %}
           <a class="btn btn--gold btn--sm" href="{{ url_for('main.membership', next=url_for('main.account')) }}">View membership</a>
+          {% endif %}
           {% endif %}
           {% else %}
           <h3>Free</h3>
@@ -293,7 +299,11 @@
             <li>Daily quotes &amp; badges</li>
             <li>Courses, guides &amp; free Hub picks</li>
           </ul>
+          {% if memberships_enabled %}
           <a class="btn btn--primary btn--sm" href="{{ url_for('main.membership', next=url_for('main.account')) }}">See memberships</a>
+          {% else %}
+          <p class="ms-exact__renews">Memberships are under maintenance right now.</p>
+          {% endif %}
           {% endif %}
         </div>
 

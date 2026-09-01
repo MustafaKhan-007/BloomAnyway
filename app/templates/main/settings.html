@@ -168,14 +168,19 @@
         {% if current_user.membership_is_canceling() %}
         Access ends on <strong>{{ current_user.membership_access_end_display() or 'your billing period end' }}</strong>.
         {% elif current_user.is_member() %}Manage your links, the Content Hub and the Showcase from here.{% else %}Join to unlock the community, links and more.{% endif %}</p>
+      {% if not memberships_enabled %}
+      <p class="field-help">Memberships are under maintenance right now, so joining and plan changes are paused for a short while.</p>
+      {% endif %}
       <div class="settings-actions">
+        {% if memberships_enabled %}
         <a class="btn btn--secondary btn--sm" href="{{ url_for('main.membership') }}">
           {{ 'Change plan' if current_user.is_member() else 'See memberships' }}</a>
+        {% endif %}
         {% if current_user.is_member() %}
         <a class="btn btn--secondary btn--sm" href="{{ url_for('main.my_listings', **{'from': 'myspace'}) }}">Your listings</a>
         {% endif %}
       </div>
-      {% if current_user.is_member() and not current_user.is_admin %}
+      {% if memberships_enabled and current_user.is_member() and not current_user.is_admin %}
       {% if current_user.membership_is_canceling() %}
       <form method="post" action="{{ url_for('main.resume_membership') }}" style="margin-top: 12px;">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

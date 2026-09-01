@@ -250,12 +250,18 @@ def create_app(config_class=None):
                 preview["options"] = [(c, choice_label(c)) for c in CHOICES]
             except Exception:
                 preview = {"on": False}
+        try:
+            from .services.memberships import can_use_memberships
+            memberships_enabled = can_use_memberships(current_user)
+        except Exception:
+            memberships_enabled = False
         return {"site": all_settings(),
                 "announcements": anns,
                 "current_year": date.today().year,
                 "unread_notes": unread,
                 "nav_notifications": nav_notes,
                 "owner_preview": preview,
+                "memberships_enabled": memberships_enabled,
                 "turnstile_site_key": app.config.get("TURNSTILE_SITE_KEY") or ""}
 
     # --- health check ---------------------------------------------------------

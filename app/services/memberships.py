@@ -19,6 +19,33 @@ log = logging.getLogger(__name__)
 
 _PAID_TIERS = ("healing", "creator", "full_bloom")
 
+
+# --- "memberships under maintenance" allowlist --------------------------------
+# Memberships are disabled for everyone except admins and the accounts an owner
+# lists in Studio. Everyone else (including signed-out visitors) sees a simple
+# "under maintenance" page and can't view, buy, or manage a membership.
+
+def membership_access_emails() -> set[str]:
+    """Lowercased emails allowed to use memberships while under maintenance."""
+    from .settings import get_setting
+    raw = get_setting("membership_access_emails") or ""
+    out: set[str] = set()
+    for line in raw.replace(",", "\n").splitlines():
+        e = line.strip().lower()
+        if e:
+            out.add(e)
+    return out
+
+
+def can_use_memberships(user) -> bool:
+    """True for admins and allowlisted accounts; False for everyone else."""
+    if user is None or not getattr(user, "is_authenticated", False):
+        return False
+    if getattr(user, "is_admin", False):
+        return True
+    email = (getattr(user, "email", "") or "").strip().lower()
+    return bool(email) and email in membership_access_emails()
+
 # Exact Stripe product names used in the dashboard (normalized lowercase).
 _STRIPE_PRODUCT_NAME_TIERS = {
     "full bloom membership (annual)": "full_bloom",

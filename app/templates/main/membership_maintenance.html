@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Memberships — under maintenance — {{ site.site_title }}{% endblock %}
+{% block meta_description %}Memberships are temporarily under maintenance. Free accounts still get daily quotes, badges, courses and a look at the Content Hub.{% endblock %}
+
+{% block content %}
+<section class="comm-gate">
+  <div class="container comm-gate__inner">
+    <p class="comm-gate__eyebrow">Memberships</p>
+    <h1>Under maintenance</h1>
+    <p class="comm-gate__lede">
+      We&rsquo;re giving memberships a little care right now, so joining, changing,
+      and managing plans is paused for a short while.
+    </p>
+    <p class="comm-gate__soft">
+      Nothing changes for what you already have &mdash; free accounts still get daily
+      quotes, badges, courses &amp; guides, and a look at the Content Hub. Please check
+      back soon and thank you for your patience.
+    </p>
+
+    <div class="comm-gate__actions">
+      {% if current_user.is_authenticated %}
+      <a class="btn btn--primary" href="{{ url_for('main.account') }}">Back to My space</a>
+      {% else %}
+      <a class="btn btn--primary" href="{{ back_url or url_for('main.index') }}">Go back</a>
+      <a class="btn btn--secondary" href="{{ url_for('auth.login') }}">Sign in</a>
+      {% endif %}
+    </div>
+  </div>
+</section>
+{% endblock %}

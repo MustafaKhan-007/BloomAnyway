@@ -307,6 +307,11 @@ def checkout_membership(tier):
         flash("Make your account first, then join — a membership is tied to "
               "the account it's bought from.", "info")
         return redirect(url_for("auth.login", next=url_for("main.membership")))
+    from ..services.memberships import can_use_memberships
+    if not can_use_memberships(current_user):
+        flash("Memberships are under maintenance right now. Please check back soon.",
+              "info")
+        return redirect(url_for("main.membership"))
     billing = (request.args.get("billing") or request.form.get("billing")
                or "monthly").strip().lower()
     if billing in ("year", "yearly", "annual"):
@@ -459,6 +464,18 @@ def _sync_membership_cancel_flag(user) -> None:
 @bp.route("/membership")
 def membership():
     from ..services.plan_features import build_membership_matrix
+    from ..services.memberships import can_use_memberships
+
+    # Memberships are under maintenance for everyone except admins and the
+    # accounts an owner allowlists in Studio.
+    if not can_use_memberships(current_user):
+        back_url = (_safe_back_url(request.args.get("next"))
+                    or _safe_back_url(request.referrer)
+                    or url_for("main.index"))
+        if back_url.rstrip("/") == url_for("main.membership").rstrip("/"):
+            back_url = url_for("main.index")
+        return render_template("main/membership_maintenance.html",
+                               back_url=back_url), 200
 
     if current_user.is_authenticated:
         from ..services.memberships import reconcile_user
@@ -1320,6 +1337,11 @@ def cancel_membership():
     next_page = (request.form.get("next") or "").strip().lower()
     dest = url_for("main.membership") if next_page == "membership" else url_for("main.settings")
 
+    from ..services.memberships import can_use_memberships
+    if not can_use_memberships(current_user):
+        flash("Memberships are under maintenance right now. Please check back soon.",
+              "info")
+        return redirect(dest)
     if current_user.is_admin:
         flash("The owner account always keeps Full Bloom access.", "info")
         return redirect(dest)
@@ -1417,6 +1439,11 @@ def resume_membership():
     next_page = (request.form.get("next") or "").strip().lower()
     dest = url_for("main.membership") if next_page == "membership" else url_for("main.settings")
 
+    from ..services.memberships import can_use_memberships
+    if not can_use_memberships(current_user):
+        flash("Memberships are under maintenance right now. Please check back soon.",
+              "info")
+        return redirect(dest)
     if current_user.is_admin:
         flash("The owner account always keeps Full Bloom access.", "info")
         return redirect(dest)

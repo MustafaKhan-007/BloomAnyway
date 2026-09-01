@@ -1,0 +1,71 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Membership access{% endblock %}
+
+{% block content %}
+<div class="studio-page">
+  <div class="page-head">
+    <div>
+      <p class="eyebrow">Billing</p>
+      <h1>Membership access</h1>
+      <p class="field-help" style="margin: 6px 0 0; max-width: 640px;">
+        Memberships are <strong>under maintenance</strong> for everyone right now.
+        Admins can always use them. Add the email of any account below to let it
+        view, buy, and manage memberships while maintenance is on. Everyone else
+        sees a friendly &ldquo;under maintenance&rdquo; page at
+        <a href="{{ url_for('main.membership') }}" target="_blank">/membership</a>.
+      </p>
+    </div>
+  </div>
+
+  <section class="admin-panel studio-card studio-section">
+    <h2>Allowlisted accounts</h2>
+    {% if rows %}
+    <p class="field-help studio-section__lede">
+      {{ count }} account(s) can use memberships while it&rsquo;s under maintenance.
+    </p>
+    <table class="admin-table" style="margin-top: 16px;">
+      <thead>
+        <tr><th>Email</th><th>Account</th></tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td>{{ row.email }}</td>
+          <td>
+            {% if row.is_admin %}
+              <span class="status-pill status-pill--test">admin — always allowed</span>
+            {% elif row.has_account %}
+              <span class="status-pill status-pill--published">has an account</span>
+            {% else %}
+              <span class="status-pill status-pill--pending">no account yet</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="field-help studio-section__lede">
+      No accounts are allowlisted yet — only admins can use memberships right now.
+    </p>
+    {% endif %}
+  </section>
+
+  <section class="admin-panel studio-card studio-section">
+    <h2>Edit the allowlist</h2>
+    <p class="field-help studio-section__lede">
+      One email per line. Emails are matched to the account signed in with that
+      address, so add the exact address each person uses to sign in.
+    </p>
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="field">
+        <label for="emails">Allowed emails</label>
+        <textarea id="emails" name="emails" rows="8"
+                  placeholder="name@example.com&#10;another@example.com">{{ emails_text }}</textarea>
+      </div>
+      <button class="btn btn--primary" type="submit" style="margin-top: 12px;">Save allowlist</button>
+    </form>
+  </section>
+</div>
+{% endblock %}

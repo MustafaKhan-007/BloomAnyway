@@ -48,6 +48,10 @@ DEFAULTS = {
     "saman_stripe_price_id": "",
     # ISO date — banner + founder prices on /membership while today <= this date
     "founder_price_ends": "2026-09-30",
+    # Memberships are under maintenance: only admins and the accounts whose
+    # emails are listed here (one per line) can view/buy/manage memberships.
+    # Everyone else sees an "under maintenance" page.
+    "membership_access_emails": "",
 }
 
 #: old brand names that should be rewritten to the current default on boot/seed

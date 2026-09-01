@@ -1651,16 +1651,13 @@ for tier, feats in DEFAULT_FEATURES.items():
             plan_form[field] = "1"
 r = admin.post("/admin/memberships", data=plan_form, follow_redirects=True)
 ok("Owner can configure a membership plan", "Membership plans saved" in r.get_data(as_text=True))
-# A membership follows the email that paid for it, so a visitor with no
-# account yet can read the plans but has nothing to buy.
+# Memberships are under maintenance: everyone except admins and the accounts an
+# owner allowlists in Studio sees a maintenance page, not the plan comparison.
 r = app.test_client().get("/membership")
 mbody = r.get_data(as_text=True)
-ok("Membership page shows the comparison to anyone",
-   "Compare every perk" in mbody and "Creator" in mbody)
-ok("Signed out there is nothing to buy, only a way in",
-   "/checkout/membership/" not in mbody and "Sign in to join" in mbody)
-ok("And it says why, before they reach for a card",
-   "Make your account first" in mbody and "same address at Stripe" in mbody)
+ok("Signed-out visitor sees the memberships-under-maintenance page",
+   r.status_code == 200 and "Under maintenance" in mbody
+   and "Compare every perk" not in mbody)
 r = app.test_client().get("/checkout/membership/creator", follow_redirects=False)
 ok("Membership checkout itself turns a signed-out visitor around",
    r.status_code in (302, 303)
@@ -1673,6 +1670,15 @@ with app.app_context():
     db.session.commit()
 plain_client = app.test_client()
 plain_client.post("/login", data={"email": "plainmember@example.com", "password": USER_PW})
+# A non-admin who isn't allowlisted also gets the maintenance page.
+_maint = plain_client.get("/membership").get_data(as_text=True)
+ok("Non-allowlisted signed-in member also sees maintenance",
+   "Under maintenance" in _maint and "Compare every perk" not in _maint)
+# Allowlist this member in Studio so they can use memberships while it's paused.
+r = admin.post("/admin/membership-access",
+               data={"emails": "plainmember@example.com"}, follow_redirects=True)
+ok("Studio can allowlist an account for memberships",
+   r.status_code == 200 and "can use memberships" in r.get_data(as_text=True))
 mbody = plain_client.get("/membership").get_data(as_text=True)
 ok("Membership page shows comparison + Creator buy button",
    "Compare every perk" in mbody and "/checkout/membership/creator" in mbody
@@ -1712,7 +1718,7 @@ with app.app_context():
             plan.price_cents = cents
             plan.active = True
     db.session.commit()
-r = app.test_client().get("/membership")
+r = plain_client.get("/membership")
 founder_body = r.get_data(as_text=True)
 ok("Founder launch banner shows promo codes and locked-in off",
    "MEMBERFOUNDER" in founder_body
@@ -3338,7 +3344,7 @@ ok("My space shows upcoming peer sessions",
    "Upcoming Sessions" in acct
    and "Manage sessions" in acct)
 ok("Membership matrix lists support groups",
-   "Support groups" in app.test_client().get("/membership").get_data(as_text=True))
+   "Support groups" in admin.get("/membership").get_data(as_text=True))
 
 # Creator-only cannot schedule healing topics
 with app.app_context():

@@ -36,6 +36,7 @@
         <a href="{{ url_for('admin.members') }}" class="{{ 'active' if here.startswith('/admin/members') }}">Members</a>
         <a href="{{ url_for('admin.owners') }}" class="{{ 'active' if here.startswith('/admin/owners') }}">Owners</a>
         <a href="{{ url_for('admin.membership_plans') }}" class="{{ 'active' if here.startswith('/admin/memberships') }}">Plans</a>
+        <a href="{{ url_for('admin.membership_access') }}" class="{{ 'active' if here.startswith('/admin/membership-access') }}">Membership access</a>
         <a href="{{ url_for('admin.products') }}" class="{{ 'active' if here.startswith('/admin/products') }}">Courses &amp; Guides</a>
 
         <p class="admin-nav__label">Content</p>

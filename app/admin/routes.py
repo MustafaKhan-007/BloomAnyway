@@ -2466,6 +2466,56 @@ def membership_plans():
     return render_template("admin/membership_plans.html", plans=plans)
 
 
+@bp.route("/membership-access", methods=["GET", "POST"])
+@admin_required
+def membership_access():
+    """Allowlist of accounts that can use memberships while they're under
+    maintenance. Admins always can; everyone else sees an "under maintenance"
+    page until their email is added here."""
+    from ..services.memberships import membership_access_emails
+
+    if request.method == "POST":
+        raw = request.form.get("emails") or ""
+        emails: list[str] = []
+        seen: set[str] = set()
+        for line in raw.replace(",", "\n").splitlines():
+            e = line.strip().lower()
+            if e and "@" in e and e not in seen:
+                seen.add(e)
+                emails.append(e)
+        set_setting("membership_access_emails", "\n".join(emails))
+        if emails:
+            flash(
+                f"Saved — {len(emails)} account(s) can use memberships while "
+                "it's under maintenance.",
+                "success",
+            )
+        else:
+            flash(
+                "Saved — the allowlist is empty, so only admins can use "
+                "memberships right now.",
+                "success",
+            )
+        return redirect(url_for("admin.membership_access"))
+
+    emails = sorted(membership_access_emails())
+    rows = []
+    for e in emails:
+        user = User.query.filter(func.lower(User.email) == e).first()
+        rows.append({
+            "email": e,
+            "user": user,
+            "has_account": user is not None,
+            "is_admin": bool(user and user.is_admin),
+        })
+    return render_template(
+        "admin/membership_access.html",
+        rows=rows,
+        emails_text="\n".join(emails),
+        count=len(emails),
+    )
+
+
 # ================================ BADGES =====================================
 
 @bp.route("/badges", methods=["GET", "POST"])
