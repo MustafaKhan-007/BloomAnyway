@@ -9267,20 +9267,24 @@ a.at-handle:hover { text-decoration: underline; }
   border-radius: 12px; border: 1px dashed rgba(61, 20, 49, 0.20);
   background: rgba(122, 46, 98, 0.04);
 }
-.studio-lessons__row {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  margin-bottom: 8px;
+/* Each lesson is a card: title, its own description, its files and uploader. */
+.studio-lesson {
+  display: grid; gap: 10px; margin-bottom: 12px; padding: 12px 14px;
+  border-radius: 12px; border: 1px solid rgba(61, 20, 49, 0.16); background: #fff;
 }
-.studio-lessons__num {
-  flex: 0 0 auto; min-width: 72px;
-  font-size: 12px; font-weight: 800; color: var(--plum-deep);
+.studio-lesson__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.studio-lessons__num { font-size: 12px; font-weight: 800; color: var(--plum-deep); }
+.studio-lesson input[name$="_lesson_title"],
+.studio-lesson textarea[name$="_lesson_desc"] { width: 100%; }
+.studio-lesson textarea[name$="_lesson_desc"] { resize: vertical; min-height: 64px; }
+.studio-lesson .module-items { margin: 2px 0 0; }
+.studio-lesson .chunk-up { margin-top: 2px; }
+.studio-module-intro {
+  display: grid; gap: 8px; margin-top: 8px; padding: 12px 14px;
+  border-radius: 12px; border: 1px dashed rgba(61, 20, 49, 0.18);
+  background: rgba(122, 46, 98, 0.03);
 }
-.studio-lessons__row input[name$="_lesson_title"] { flex: 1 1 200px; }
-.studio-lessons__row input[name$="_lesson_desc"] { flex: 2 1 240px; }
-.module-items__lesson { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
-.module-items__lesson select { max-width: 220px; }
-.chunk-up__lesson { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; margin-bottom: 8px; }
-.chunk-up__lesson select { max-width: 240px; }
+.reader-pieces__desc { margin: 2px 0 10px; font-size: 0.98rem; }
 
 .module-add { display: grid; gap: 10px; justify-items: start; }
 .module-add .field { width: 100%; }

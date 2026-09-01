@@ -23,28 +23,12 @@
 </div>
 {% endmacro %}
 
-{% macro lesson_options(lessons, chosen=0) %}
-<option value="0"{{ ' selected' if not chosen }}>Module intro (no lesson)</option>
-{% for lesson in lessons %}
-<option value="{{ loop.index }}"{{ ' selected' if chosen == loop.index }}>Lesson {{ loop.index }}{% if lesson.title %} — {{ lesson.title }}{% endif %}</option>
-{% endfor %}
-{% endmacro %}
-
-{% macro asset_row(item, lessons=None, module_number=None) %}
+{% macro asset_row(item) %}
 <li class="module-items__item">
   <div class="module-items__row">
     <span class="module-items__kind module-items__kind--{{ item.kind }}">{{ item.kind_label() }}</span>
     <span class="module-items__name">{{ item.display_title() }}</span>
     <span class="module-items__size">{{ item.size_display() }}</span>
-    {% if lessons and not item.is_text() %}
-    <label class="module-items__lesson" title="Which lesson this belongs to">
-      <span class="sr-only">Lesson for {{ item.display_title() }}</span>
-      <select name="asset_{{ item.id }}_lesson" form="product-form"
-              data-asset-lesson data-module="{{ module_number }}">
-        {{ lesson_options(lessons, item.lesson_index or 0) }}
-      </select>
-    </label>
-    {% endif %}
     <button class="btn btn--quiet btn--sm" type="submit" form="del-asset-{{ item.id }}">Remove</button>
   </div>
   {% if item.is_text() %}
@@ -364,17 +348,34 @@
 
             <div class="studio-lessons" data-lessons data-module="{{ row.number }}">
               <p class="module-sub-label">Lessons
-                <span class="field-help" style="font-weight:400;">— optional subsections that unlock together with the module</span>
+                <span class="field-help" style="font-weight:400;">— optional subsections that unlock together with the module. Each lesson has its own description and its own files.</span>
               </p>
               <div data-lessons-list>
                 {% for lesson in row.lessons %}
-                <div class="studio-lessons__row" data-lesson-row>
-                  <span class="studio-lessons__num" data-lesson-num>Lesson {{ loop.index }}</span>
+                <div class="studio-lesson" data-lesson-row>
+                  <div class="studio-lesson__head">
+                    <span class="studio-lessons__num" data-lesson-num>Lesson {{ loop.index }}</span>
+                    <button type="button" class="btn btn--quiet btn--sm" data-lesson-remove>Remove</button>
+                  </div>
                   <input type="text" name="mod{{ row.number }}_lesson_title" maxlength="160"
                          value="{{ lesson.title }}" placeholder="Lesson title">
-                  <input type="text" name="mod{{ row.number }}_lesson_desc" maxlength="500"
-                         value="{{ lesson.description }}" placeholder="Short note (optional)">
-                  <button type="button" class="btn btn--quiet btn--sm" data-lesson-remove>Remove</button>
+                  <textarea name="mod{{ row.number }}_lesson_desc" rows="3" maxlength="8000"
+                            placeholder="Description or text extract for this lesson — buyers read this on the lesson (optional).">{{ lesson.description }}</textarea>
+                  {% if not is_new %}
+                  <ul class="module-items" data-module-items{% if not lesson.contents %} hidden{% endif %}>
+                    {% for item in lesson.contents %}{{ asset_row(item) }}{% endfor %}
+                  </ul>
+                  <div class="field chunk-up" data-chunk-upload
+                       data-module="{{ row.number }}" data-lesson="{{ loop.index }}">
+                    <label for="mod{{ row.number }}_l{{ loop.index }}_up">Add videos, documents or images to this lesson</label>
+                    <input type="file" id="mod{{ row.number }}_l{{ loop.index }}_up"
+                           accept="{{ file_accept }}" multiple data-chunk-input>
+                    <p class="field-help">Up to {{ course_max_mb }} MB each. Add a written extract to any file once it lands.</p>
+                    <ul class="chunk-up__list" data-chunk-list hidden></ul>
+                  </div>
+                  {% else %}
+                  <p class="field-help">Save the product, then upload files into this lesson.</p>
+                  {% endif %}
                 </div>
                 {% endfor %}
               </div>
@@ -382,40 +383,20 @@
                       data-module="{{ row.number }}">Add a lesson</button>
             </div>
 
-            {% if not is_new %}
-            <ul class="module-items" data-module-items{% if not row['contents'] %} hidden{% endif %}>
-              {% for item in row['contents'] %}
-              {{ asset_row(item, row.lessons, row.number) }}
-              {% endfor %}
-            </ul>
-            {% endif %}
-
-            <div class="module-add">
-              {% if is_new %}
-              <div class="field">
-                <label for="mod{{ row.number }}_file">Files for this module</label>
-                <input type="file" id="mod{{ row.number }}_file" name="mod{{ row.number }}_file"
-                       accept="{{ file_accept }}" multiple>
-                <p class="field-help">
-                  Pick as many as you like, up to {{ inline_max_mb }} MB each. Save the
-                  product first if you have a long video — the uploader on this page
-                  after saving takes files up to {{ course_max_mb }} MB. Extracts written
-                  for one particular file can be added once it has been saved.
-                </p>
-              </div>
-              {% else %}
-              <div class="field chunk-up" data-chunk-upload data-module="{{ row.number }}">
+            <div class="studio-module-intro" data-module-intro>
+              <p class="module-sub-label">Module intro
+                <span class="field-help" style="font-weight:400;">— files and notes shown before the lessons (optional)</span>
+              </p>
+              {% if not is_new %}
+              <ul class="module-items" data-module-items{% if not row.intro %} hidden{% endif %}>
+                {% for item in row.intro %}{{ asset_row(item) }}{% endfor %}
+              </ul>
+              <div class="field chunk-up" data-chunk-upload
+                   data-module="{{ row.number }}" data-lesson="0">
                 <label for="mod{{ row.number }}_up">Add videos, documents or images</label>
-                <label class="chunk-up__lesson">Add to
-                  <select data-chunk-lesson>{{ lesson_options(row.lessons, 0) }}</select>
-                </label>
                 <input type="file" id="mod{{ row.number }}_up" accept="{{ file_accept }}"
                        multiple data-chunk-input>
-                <p class="field-help">
-                  Up to {{ course_max_mb }} MB each. Large files go up in pieces —
-                  leave this tab open until each one says it's done. Give each file a
-                  written extract with “Add an extract to this file” once it lands.
-                </p>
+                <p class="field-help">Up to {{ course_max_mb }} MB each. These open before the lessons.</p>
                 <ul class="chunk-up__list" data-chunk-list hidden></ul>
               </div>
               <noscript>
@@ -426,8 +407,17 @@
                   <p class="field-help">Up to {{ inline_max_mb }} MB each without JavaScript.</p>
                 </div>
               </noscript>
+              {% else %}
+              <div class="field">
+                <label for="mod{{ row.number }}_file">Files for this module</label>
+                <input type="file" id="mod{{ row.number }}_file" name="mod{{ row.number }}_file"
+                       accept="{{ file_accept }}" multiple>
+                <p class="field-help">
+                  Add module files here, up to {{ inline_max_mb }} MB each — or, after
+                  saving, upload into each lesson above.
+                </p>
+              </div>
               {% endif %}
-
               <div class="module-texts" data-text-blocks></div>
               <button type="button" class="btn btn--quiet btn--sm" data-text-add>
                 Add a written extract

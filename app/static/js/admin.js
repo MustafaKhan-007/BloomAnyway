@@ -105,28 +105,12 @@
       return o;
     }
 
-    // Rebuild the "Add to lesson" dropdowns (on the uploader and each saved
-    // file) from the module's current lesson rows, and renumber the lesson
-    // labels. Selections are kept where they still point at a lesson.
+    // Renumber the "Lesson N" labels after a lesson is added or removed.
     function refreshLessons(row) {
-      var lessonRows = Array.prototype.slice.call(
-        row.querySelectorAll("[data-lesson-row]"));
-      lessonRows.forEach(function (lr, i) {
-        var num = lr.querySelector("[data-lesson-num]");
-        if (num) num.textContent = "Lesson " + (i + 1);
-      });
-      row.querySelectorAll("[data-chunk-lesson], [data-asset-lesson]")
-        .forEach(function (sel) {
-          var cur = sel.value || "0";
-          sel.innerHTML = "";
-          sel.appendChild(optionEl(0, "Module intro (no lesson)"));
-          lessonRows.forEach(function (lr, i) {
-            var ti = lr.querySelector('input[name$="_lesson_title"]');
-            var t = (ti && ti.value.trim()) || "";
-            sel.appendChild(optionEl(i + 1,
-              "Lesson " + (i + 1) + (t ? " \u2014 " + t : "")));
-          });
-          sel.value = sel.querySelector('option[value="' + cur + '"]') ? cur : "0";
+      Array.prototype.slice.call(row.querySelectorAll("[data-lesson-row]"))
+        .forEach(function (lr, i) {
+          var num = lr.querySelector("[data-lesson-num]");
+          if (num) num.textContent = "Lesson " + (i + 1);
         });
     }
 
@@ -160,7 +144,7 @@
           });
         });
         row.querySelectorAll("[data-chunk-upload], [data-lessons], "
-          + "[data-lesson-add], [data-asset-lesson]").forEach(function (el) {
+          + "[data-lesson-add], [data-module-intro]").forEach(function (el) {
           el.setAttribute("data-module", String(n));
         });
       });
@@ -168,24 +152,19 @@
     }
 
     function addSection(n) {
+      // A brand-new module isn't in the saved plan yet, so uploading now can't
+      // know which module it belongs to. Server-rendered modules get real
+      // uploaders (under each lesson and the module intro); a just-added one
+      // asks for a save first.
       if (canChunk) {
-        return '<div class="field chunk-up" data-chunk-upload data-module="' + n + '">' +
-          '<label for="mod' + n + '_up">Add videos, documents or images</label>' +
-          '<label class="chunk-up__lesson">Add to ' +
-          '<select data-chunk-lesson><option value="0">Module intro (no lesson)</option></select>' +
-          '</label>' +
-          '<input type="file" id="mod' + n + '_up" accept="' + accept +
-          '" multiple data-chunk-input>' +
-          '<p class="field-help">Up to ' + maxMb + ' MB each. Large files go up in ' +
-          "pieces — leave this tab open until each one says it's done.</p>" +
-          '<ul class="chunk-up__list" data-chunk-list hidden></ul>' +
-          "</div>";
+        return '<p class="field-help">Save changes, then upload files into this '
+          + "module's lessons and intro.</p>";
       }
       return '<div class="field">' +
         '<label for="mod' + n + '_file">Files for this module</label>' +
         '<input type="file" id="mod' + n + '_file" name="mod' + n +
         '_file" accept="' + accept + '" multiple>' +
-        '<p class="field-help">Save the product first if you have a long video.</p>' +
+        '<p class="field-help">Add module files here; upload into each lesson after saving.</p>' +
         "</div>";
     }
 
@@ -211,12 +190,16 @@
         '<div class="studio-lessons" data-lessons data-module="' + n + '">' +
         '<p class="module-sub-label">Lessons <span class="field-help" ' +
         'style="font-weight:400;">— optional subsections that unlock together ' +
-        'with the module</span></p>' +
+        'with the module. Each lesson has its own description and files.</span></p>' +
         '<div data-lessons-list></div>' +
         '<button type="button" class="btn btn--quiet btn--sm" data-lesson-add ' +
         'data-module="' + n + '">Add a lesson</button></div>' +
+        '<div class="studio-module-intro" data-module-intro data-module="' + n + '">' +
+        '<p class="module-sub-label">Module intro <span class="field-help" ' +
+        'style="font-weight:400;">— files and notes shown before the lessons ' +
+        '(optional)</span></p>' +
         (canChunk ? '<ul class="module-items" data-module-items hidden></ul>' : "") +
-        '<div class="module-add">' + addSection(n) +
+        addSection(n) +
         '<div class="module-texts" data-text-blocks></div>' +
         '<button type="button" class="btn btn--quiet btn--sm" data-text-add>' +
         "Add a written extract</button></div>";
@@ -234,15 +217,18 @@
         var mod = moduleNumberOf(lrow);
         var n = holder.querySelectorAll("[data-lesson-row]").length + 1;
         var block = document.createElement("div");
-        block.className = "studio-lessons__row";
+        block.className = "studio-lesson";
         block.setAttribute("data-lesson-row", "");
         block.innerHTML =
+          '<div class="studio-lesson__head">' +
           '<span class="studio-lessons__num" data-lesson-num>Lesson ' + n + '</span>' +
+          '<button type="button" class="btn btn--quiet btn--sm" data-lesson-remove>Remove</button>' +
+          '</div>' +
           '<input type="text" name="mod' + mod + '_lesson_title" maxlength="160" ' +
           'placeholder="Lesson title">' +
-          '<input type="text" name="mod' + mod + '_lesson_desc" maxlength="500" ' +
-          'placeholder="Short note (optional)">' +
-          '<button type="button" class="btn btn--quiet btn--sm" data-lesson-remove>Remove</button>';
+          '<textarea name="mod' + mod + '_lesson_desc" rows="3" maxlength="8000" ' +
+          'placeholder="Description or text extract for this lesson (optional)."></textarea>' +
+          '<p class="field-help">Save changes, then upload files into this lesson.</p>';
         holder.appendChild(block);
         refreshLessons(lrow);
         var field = block.querySelector("input");
@@ -257,14 +243,6 @@
         if (lrow2) refreshLessons(lrow2);
         return;
       }
-    });
-
-    /* Keep the "Add to lesson" dropdowns showing the lesson names as typed. */
-    list.addEventListener("input", function (e) {
-      var ti = e.target.closest('input[name$="_lesson_title"]');
-      if (!ti) return;
-      var lrow = ti.closest("[data-module-row]");
-      if (lrow) refreshLessons(lrow);
     });
 
     /* Written extracts: typed straight in, any number per module. */
@@ -518,8 +496,11 @@
     }
 
     function showAdded(box, info) {
-      var row = box.closest("[data-module-row]");
-      var items = row ? row.querySelector("[data-module-items]") : null;
+      // Land the new file in the list of the lesson (or module intro) it was
+      // uploaded into, not a shared module list.
+      var block = box.closest("[data-lesson-row], [data-module-intro]")
+        || box.closest("[data-module-row]");
+      var items = block ? block.querySelector("[data-module-items]") : null;
       if (!items) return;
       var li = document.createElement("li");
       li.className = "module-items__row";
@@ -540,8 +521,8 @@
       var bar = li.querySelector(".chunk-up__bar i");
       var state = li.querySelector(".chunk-up__state");
       var moduleNumber = box.getAttribute("data-module") || "";
-      var lessonSel = box.querySelector("[data-chunk-lesson]");
-      var lessonNumber = (lessonSel && lessonSel.value) || "";
+      // Fixed per uploader now (one under each lesson, one for the module intro).
+      var lessonNumber = box.getAttribute("data-lesson") || "";
 
       if (maxMb && file.size > maxMb * 1024 * 1024) {
         li.classList.add("is-error");
