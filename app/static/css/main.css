@@ -9135,6 +9135,11 @@ a.at-handle:hover { text-decoration: underline; }
   content: "\2713"; position: absolute; left: 0; top: 8px;
   color: var(--plum); font-weight: 800;
 }
+/* Two balanced columns (rows differ by at most one). Multi-column keeps the
+   check + hanging indent per item; break-inside stops a row splitting. */
+.pd-checklist--cols { columns: 2; column-gap: 44px; }
+.pd-checklist--cols li { break-inside: avoid; -webkit-column-break-inside: avoid; }
+@media (max-width: 620px) { .pd-checklist--cols { columns: 1; } }
 .pd-curriculum {
   margin: 0; padding: 0; list-style: none;
   display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px 20px;
