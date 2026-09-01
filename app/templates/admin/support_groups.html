@@ -165,35 +165,18 @@
       <h2 style="margin:0;">Saman availability</h2>
     </div>
     <p class="field-help" style="margin-top: 6px;">
-      Weekly windows members can book for Saman 1:1s (60‑minute slots).
-      Pick the coach’s timezone from the full list — daylight saving is applied automatically when slots are offered.
+      Saman’s weekly availability for 1:1s (60‑minute slots). Browse the days and
+      tap every slot she can take a call, then save the whole week in one go. Come
+      back any time to edit — saving replaces the schedule with what’s selected.
+      Pick the coach’s timezone from the full list; daylight saving is applied automatically.
     </p>
     <form method="post" action="{{ url_for('admin.support_groups_availability') }}"
-          class="stack-form sg-schedule" style="margin-top: 12px; max-width: 560px;">
+          class="avail-editor" data-avail-editor style="margin-top: 12px;">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="action" value="add">
-      <div class="form-row">
-        <div class="field">
-          <label for="sg-weekday">Day</label>
-          <select id="sg-weekday" name="weekday" required>
-            {% for label in weekday_labels %}
-            <option value="{{ loop.index0 }}">{{ label }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="field">
-          <label for="sg-start">Start</label>
-          <input type="time" id="sg-start" name="start_time" required value="10:00">
-        </div>
-        <div class="field">
-          <label for="sg-end">End</label>
-          <input type="time" id="sg-end" name="end_time" required value="14:00">
-        </div>
-      </div>
-      <div class="field">
-        <label for="sg-avail-tz-search">Timezone</label>
+      <div class="field" style="max-width: 560px;">
+        <label for="sg-avail-tz-search">Coach’s timezone</label>
         <div class="tz-picker" data-tz-picker>
-          <input type="hidden" name="timezone" id="sg-avail-tz" value="{{ owner_tz }}" required>
+          <input type="hidden" name="timezone" id="sg-avail-tz" value="{{ avail_grid.timezone }}" required>
           <input type="search" id="sg-avail-tz-search" class="tz-picker__search"
                  placeholder="Search city or region…" autocomplete="off"
                  aria-controls="sg-avail-tz-list" aria-expanded="false"
@@ -225,40 +208,55 @@
           slots convert to each member’s timezone automatically.
         </p>
       </div>
-      <button class="btn btn--secondary btn--sm" type="submit">Add window</button>
+
+      <div class="avail-grid__toolbar">
+        <span class="field-help">Tap a slot to toggle it. Drag to paint several, tap a
+          day or time header to fill a whole column or row.</span>
+        <div class="avail-grid__toolbar-actions">
+          <span class="avail-grid__count" data-avail-count aria-live="polite"></span>
+          <button type="button" class="btn btn--secondary btn--sm" data-avail-clear>Clear all</button>
+        </div>
+      </div>
+
+      <div class="avail-grid__scroll">
+        <table class="avail-grid" data-avail-grid>
+          <thead>
+            <tr>
+              <th scope="col" class="avail-grid__corner">Time</th>
+              {% for short in weekday_short %}
+              <th scope="col">
+                <button type="button" class="avail-grid__dayhead" data-avail-col="{{ loop.index0 }}"
+                        title="Toggle all of {{ weekday_labels[loop.index0] }}">{{ short }}</button>
+              </th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in avail_hours %}
+            <tr>
+              <th scope="row" class="avail-grid__timelabel">
+                <button type="button" class="avail-grid__rowhead" data-avail-row="{{ row.hour }}"
+                        title="Toggle {{ row.label12 }} across the week">{{ row.label12 }}</button>
+              </th>
+              {% for wd in range(7) %}
+              <td>
+                <label class="avail-cell">
+                  <input type="checkbox" name="slot" value="{{ wd }}-{{ row.hour }}"
+                         {% if row.hour in avail_grid.selected[wd] %}checked{% endif %}
+                         data-avail-cell data-wd="{{ wd }}" data-hour="{{ row.hour }}"
+                         aria-label="{{ weekday_labels[wd] }} {{ row.label12 }}">
+                  <span class="avail-cell__box" aria-hidden="true"></span>
+                </label>
+              </td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <button class="btn btn--primary" type="submit" style="margin-top: 16px;">Save availability</button>
     </form>
-    {% if window_rows %}
-    {% with form_id='bulk-sg-windows',
-            action=url_for('admin.support_groups_availability'),
-            confirm_template='Remove {n} selected availability window(s)?',
-            confirm_title='Remove selected windows?',
-            confirm_ok='Remove',
-            button_label='Remove selected',
-            hidden={'action': 'remove'} %}
-      {% include "admin/_bulk_bar.html" %}
-    {% endwith %}
-    <ul class="sg-avail-list" style="margin-top: 16px;">
-      {% for row in window_rows %}
-      {% set w = row.window %}
-      <li>
-        <input type="checkbox" name="window_ids" value="{{ w.id }}" form="bulk-sg-windows" data-bulk-item
-               aria-label="Select {{ weekday_labels[w.weekday] }} window">
-        <span>{{ weekday_labels[w.weekday] }}
-          {{ minutes_to_hhmm(w.start_minute) }}–{{ minutes_to_hhmm(w.end_minute) }}
-          <span class="field-help">({{ row.tz_label }})</span>
-        </span>
-        <form method="post" action="{{ url_for('admin.support_groups_availability') }}" style="display:inline;">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="hidden" name="action" value="remove">
-          <input type="hidden" name="window_id" value="{{ w.id }}">
-          <button class="btn btn--secondary btn--sm" type="submit">Remove</button>
-        </form>
-      </li>
-      {% endfor %}
-    </ul>
-    {% else %}
-    <p class="field-help" style="margin-top: 12px;">No windows yet — members won’t see bookable times until you add some.</p>
-    {% endif %}
   </section>
 
   <section class="admin-panel sg-panel" style="margin-top: 24px;">
