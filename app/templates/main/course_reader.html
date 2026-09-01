@@ -121,9 +121,13 @@
     </nav>
     {% endif %}
 
-    {% macro pieces(label, list, module) %}
+    {% macro pieces(label, list, module, description=None) %}
     <nav class="reader-pieces" aria-label="{{ label }}">
       <p class="reader-pieces__title">{{ label }}</p>
+      {% if description %}
+      <div class="reader-pieces__desc reader-doc reader-doc--written">{{ description|markdown }}</div>
+      {% endif %}
+      {% if list %}
       <ol class="reader-pieces__list">
         {% for piece in list %}
         <li class="reader-pieces__item{{ ' is-active' if asset and piece.id == asset.id }}">
@@ -143,6 +147,7 @@
         </li>
         {% endfor %}
       </ol>
+      {% endif %}
     </nav>
     {% endmacro %}
 
@@ -152,8 +157,8 @@
       {{ pieces('Module intro', active.intro, active_module) }}
       {% endif %}
       {% for lesson in active.lessons %}
-        {% if lesson.contents %}
-        {{ pieces('Lesson ' ~ lesson.number ~ (': ' ~ lesson.title if lesson.title else ''), lesson.contents, active_module) }}
+        {% if lesson.contents or lesson.description %}
+        {{ pieces('Lesson ' ~ lesson.number ~ (': ' ~ lesson.title if lesson.title else ''), lesson.contents, active_module, lesson.description) }}
         {% endif %}
       {% endfor %}
     {% elif module_items and module_items|length > 1 %}

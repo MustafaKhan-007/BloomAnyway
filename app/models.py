@@ -519,7 +519,8 @@ class Product(db.Model):
 
     @staticmethod
     def _clean_lessons(raw) -> list[dict]:
-        """Lesson rows within a module: a title and an optional short note."""
+        """Lesson rows within a module: a title and a longer description/extract
+        (shown to buyers on the lesson)."""
         out = []
         for row in raw or []:
             if not isinstance(row, dict):
@@ -529,7 +530,7 @@ class Product(db.Model):
                 continue
             out.append({
                 "title": title[:160],
-                "description": str(row.get("description") or "").strip()[:500],
+                "description": str(row.get("description") or "").strip()[:8000],
             })
         return out
 

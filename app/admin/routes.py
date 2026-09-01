@@ -341,7 +341,7 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
             if not lt:
                 continue
             ld = (lesson_descs[j] if j < len(lesson_descs) else "").strip()
-            lessons.append({"title": lt[:160], "description": ld[:500]})
+            lessons.append({"title": lt[:160], "description": ld[:8000]})
         curriculum_rows.append({
             "title": t[:160],
             "description": (form.get(f"mod{i}_desc") or "").strip()[:500],
