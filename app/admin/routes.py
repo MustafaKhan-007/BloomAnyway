@@ -860,6 +860,11 @@ def product_upload_finish(product_id, upload_id):
         lesson_index = None
     if not module_index:
         lesson_index = None  # a loose file has no lesson
+    elif lesson_index and lesson_index > product.lesson_count(module_index):
+        # The lesson was added in the editor but never saved, so pinning the
+        # file to it would strand the file. Land it in the module instead,
+        # where the owner can see it and sort it once the lesson exists.
+        lesson_index = None
     try:
         asset = finish_upload(
             product, upload_id, str(payload.get("filename") or ""),

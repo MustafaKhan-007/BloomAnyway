@@ -5178,6 +5178,49 @@ r = app.test_client().post(f"/admin/products/{drip_prod_id}/uploads/begin",
                            json={"filename": "sneaky.mp4", "size": 10})
 ok("Only owners can start an upload", r.status_code in (302, 401, 403, 404))
 
+# A lesson added in the editor but not saved yet doesn't exist as far as the
+# product is concerned. A file pinned to it used to belong to no lesson and no
+# module intro, so it showed nowhere: not to the buyer, and not to the owner,
+# who then couldn't move or delete it either.
+_slip = b"\x00\x00\x00\x18ftypmp42" + b"unsaved lesson"
+r = admin.post(f"/admin/products/{drip_prod_id}/uploads/begin",
+               json={"filename": "early.mp4", "size": len(_slip)})
+_early_id = r.get_json()["upload_id"]
+admin.post(f"/admin/products/{drip_prod_id}/uploads/{_early_id}/chunk",
+           data={"chunk": (BytesIO(_slip), "part")},
+           content_type="multipart/form-data")
+r = admin.post(f"/admin/products/{drip_prod_id}/uploads/{_early_id}/finish",
+               json={"filename": "early.mp4", "module": 2, "lesson": 9})
+_early = r.get_json()
+ok("A file uploaded into an unsaved lesson is still saved",
+   r.status_code == 200 and bool(_early.get("asset_id")))
+with app.app_context():
+    _prod = db.session.get(Product, drip_prod_id)
+    _asset = db.session.get(ProductAsset, _early["asset_id"])
+    ok("It waits in the module instead of a lesson that isn't there",
+       _asset.lesson_index is None and _asset.module_index == 2,
+       f"module {_asset.module_index}, lesson {_asset.lesson_index}")
+    _row = _prod.modules()[1]
+    ok("So the owner and the buyer can both see it",
+       _asset.id in [a.id for a in _row["intro"]]
+       and _asset.id in [a.id for a in _row["contents"]])
+
+    # Same rescue for a file already stranded: one uploaded before this was
+    # fixed, or one left behind when its lesson was deleted from the module.
+    _asset.lesson_index = 9
+    db.session.commit()
+    _row = db.session.get(Product, drip_prod_id).modules()[1]
+    _shown = sum(len(les["contents"]) for les in _row["lessons"]) + len(_row["intro"])
+    ok("A file left pointing at a lesson that's gone shows in the module",
+       _asset.id in [a.id for a in _row["intro"]]
+       and _shown == len(_row["contents"]),
+       f"{_shown} of {len(_row['contents'])} files reachable")
+admin.post(f"/admin/products/{drip_prod_id}/assets/{_early['asset_id']}/delete",
+           follow_redirects=True)
+with app.app_context():
+    ok("And a stranded file can be cleared out again",
+       db.session.get(ProductAsset, _early["asset_id"]) is None)
+
 # a file with no module is open from day one and stays reachable
 r = admin.post(
     f"/admin/products/{drip_prod_id}/assets",

@@ -579,6 +579,16 @@ class Product(db.Model):
             days = 0
         return max(1, min(365, days or 7))
 
+    def lesson_count(self, module_index: int | None) -> int:
+        """How many saved lessons a module has. Uploads use this to reject a
+        lesson number that hasn't been saved yet."""
+        if not module_index:
+            return 0
+        rows = self.curriculum()
+        if module_index > len(rows):
+            return 0
+        return len(rows[module_index - 1].get("lessons") or [])
+
     def module_items(self) -> dict[int, list["ProductAsset"]]:
         """Module number → everything in it, in the order it should be worked
         through. A module can hold any mix of videos, documents and written
@@ -606,11 +616,23 @@ class Product(db.Model):
         rows = []
         for i, row in enumerate(self.curriculum(), start=1):
             contents = by_number.get(i, [])
+            lesson_meta = row.get("lessons") or []
             # Module-level content (no lesson) is the module intro; it shows
             # before the lessons in both the reader and the store page.
-            intro = [a for a in contents if not getattr(a, "lesson_index", None)]
+            #
+            # A file pinned to a lesson number this module hasn't got counts as
+            # intro too. That happens when something is uploaded into a lesson
+            # that was added in the editor but not saved yet — and without this,
+            # the file belongs to no lesson and no intro, so it is shown
+            # nowhere at all: not to the buyer, and not to the owner who could
+            # otherwise move it.
+            def _homeless(asset, _n=len(lesson_meta)):
+                li = getattr(asset, "lesson_index", None)
+                return not li or li > _n
+
+            intro = [a for a in contents if _homeless(a)]
             lessons = []
-            for li, meta in enumerate(row.get("lessons") or [], start=1):
+            for li, meta in enumerate(lesson_meta, start=1):
                 litems = [a for a in contents
                           if getattr(a, "lesson_index", None) == li]
                 lessons.append({
