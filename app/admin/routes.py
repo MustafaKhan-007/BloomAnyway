@@ -293,6 +293,25 @@ def _blank_module(number: int) -> dict:
     return {"number": number, "title": "", "description": "", "asset": None}
 
 
+def _lesson_numbers(form, row_number: int) -> dict[int, int]:
+    """Position of a lesson in the form → the lesson number it is saved as.
+
+    A lesson with no title is dropped, so the third set of lesson fields on the
+    page is not necessarily lesson three. Files uploaded with the form are
+    named after the position they were rendered at, and need this to land in
+    the right lesson.
+    """
+    out: dict[int, int] = {}
+    number = 0
+    for pos, raw in enumerate(form.getlist(f"mod{row_number}_lesson_title"),
+                              start=1):
+        if not (raw or "").strip():
+            continue
+        number += 1
+        out[pos] = number
+    return out
+
+
 def _apply_product_fields(product: Product, form) -> dict[int, int]:
     """Map studio form fields onto a Product (caller commits).
 
@@ -336,10 +355,9 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
         lesson_titles = form.getlist(f"mod{i}_lesson_title")
         lesson_descs = form.getlist(f"mod{i}_lesson_desc")
         lessons = []
-        for j, raw_title in enumerate(lesson_titles):
-            lt = (raw_title or "").strip()
-            if not lt:
-                continue
+        for pos in sorted(_lesson_numbers(form, i)):
+            j = pos - 1
+            lt = (lesson_titles[j] or "").strip()
             ld = (lesson_descs[j] if j < len(lesson_descs) else "").strip()
             lessons.append({"title": lt[:160], "description": ld[:8000]})
         curriculum_rows.append({
@@ -512,6 +530,30 @@ def _save_module_files(product: Product, form, files,
                 flash(f"Module {module_number}: that file didn’t upload.", "error")
                 continue
             saved += 1
+
+        # Files attached to a lesson on the page itself. The uploader that
+        # sends files one at a time only exists once the product has an id to
+        # upload against, so without this a lesson on a product being created
+        # has no way to take anything at all.
+        for pos, lesson_number in _lesson_numbers(form, row_number).items():
+            for upload in files.getlist(f"mod{row_number}_lesson{pos}_file"):
+                if not (upload and getattr(upload, "filename", None)):
+                    continue
+                # No title: several files can share a lesson, and each one
+                # reading as its own filename beats all of them reading as the
+                # lesson they are in.
+                try:
+                    add_asset(product, upload, module_index=module_number,
+                              lesson_index=lesson_number)
+                except AssetError as exc:
+                    flash(f"Lesson {lesson_number}: {exc}", "error")
+                    continue
+                except Exception:
+                    log.exception("lesson file upload failed")
+                    flash(f"Lesson {lesson_number}: that file didn’t upload.",
+                          "error")
+                    continue
+                saved += 1
 
         bodies = form.getlist(f"mod{row_number}_text_body")
         headings = form.getlist(f"mod{row_number}_text_title")

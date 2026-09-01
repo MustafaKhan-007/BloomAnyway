@@ -5300,6 +5300,50 @@ with app.app_context():
     ok("And a stranded file can be cleared out again",
        db.session.get(ProductAsset, _early["asset_id"]) is None)
 
+# Lessons take files on the page itself, so a product being created can fill
+# them in one go — the one-at-a-time uploader needs a product id to send to,
+# which a product that doesn't exist yet hasn't got.
+r = admin.post("/admin/products/new", data=_MultiDict([
+    ("title", "Lesson Uploads"), ("track", "building"), ("types", "course"),
+    ("promise", "Files land in lessons"), ("price", "12.00"),
+    ("stripe", "price_lessonup"), ("live", "1"),
+    ("mod1_title", "Module one"), ("mod1_desc", "d"),
+    ("mod1_lesson_title", "Lesson one"), ("mod1_lesson_desc", "first"),
+    ("mod1_lesson_title", "Lesson two"), ("mod1_lesson_desc", "second"),
+    ("mod1_lesson1_file", (BytesIO(b"\x89PNG\r\n\x1a\n" + b"x" * 64), "diagram.png")),
+    ("mod1_lesson2_file", (BytesIO(b"%PDF-1.4 handout"), "handout.pdf")),
+]), content_type="multipart/form-data", follow_redirects=True)
+ok("A new product can be created with files already in its lessons",
+   r.status_code == 200)
+with app.app_context():
+    _lu = Product.query.filter_by(slug="lesson-uploads").first()
+    _lessons = _lu.modules()[0]["lessons"] if _lu else []
+    ok("Each file lands in the lesson it was attached to",
+       [[a.display_title() for a in les["contents"]] for les in _lessons]
+       == [["diagram.png"], ["handout.pdf"]],
+       f"got {[[a.display_title() for a in les['contents']] for les in _lessons]}")
+    _lu_id = _lu.id
+
+# A lesson left untitled is dropped when the curriculum is saved, so the third
+# set of fields on the page is not lesson three.
+r = admin.post(f"/admin/products/{_lu_id}/edit", data=_MultiDict([
+    ("title", "Lesson Uploads"), ("track", "building"), ("types", "course"),
+    ("promise", "Files land in lessons"), ("price", "12.00"),
+    ("stripe", "price_lessonup"), ("live", "1"), ("slug", "lesson-uploads"),
+    ("mod1_title", "Module one"), ("mod1_desc", "d"),
+    ("mod1_lesson_title", "Lesson one"), ("mod1_lesson_desc", "first"),
+    ("mod1_lesson_title", ""), ("mod1_lesson_desc", ""),
+    ("mod1_lesson_title", "Lesson two"), ("mod1_lesson_desc", "second"),
+    ("mod1_lesson3_file", (BytesIO(b"%PDF-1.4 extra"), "extra.pdf")),
+]), content_type="multipart/form-data", follow_redirects=True)
+with app.app_context():
+    _lessons = db.session.get(Product, _lu_id).modules()[0]["lessons"]
+    ok("A blank lesson between two others doesn't misplace the files",
+       r.status_code == 200 and len(_lessons) == 2
+       and [a.display_title() for a in _lessons[1]["contents"]]
+       == ["handout.pdf", "extra.pdf"],
+       f"got {[[a.display_title() for a in x['contents']] for x in _lessons]}")
+
 # a file with no module is open from day one and stays reachable
 r = admin.post(
     f"/admin/products/{drip_prod_id}/assets",

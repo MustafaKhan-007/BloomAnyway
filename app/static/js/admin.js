@@ -92,6 +92,7 @@
     var max = parseInt(root.getAttribute("data-modules-max") || "12", 10) || 12;
     var accept = root.getAttribute("data-modules-accept") || "";
     var maxMb = root.getAttribute("data-upload-max") || "";
+    var inlineMb = root.getAttribute("data-inline-max") || "";
     var canChunk = !!root.getAttribute("data-upload-begin");
     // Field suffixes that carry the module number. Text extracts and lessons
     // repeat, so they are renamed together rather than one input at a time.
@@ -124,8 +125,17 @@
           });
           var input = lr.querySelector("[data-chunk-input]");
           if (input) input.id = "mod" + mod + "_l" + pos + "_up";
-          var lab = lr.querySelector("label[for^='mod']");
+          var lab = lr.querySelector("label[for$='_up']");
           if (lab) lab.setAttribute("for", "mod" + mod + "_l" + pos + "_up");
+          // The plain field is named after the position it sits at, which is
+          // how the save works out which lesson its files belong to.
+          var plain = lr.querySelector("[data-lesson-file]");
+          if (plain) {
+            plain.name = "mod" + mod + "_lesson" + pos + "_file";
+            plain.id = "mod" + mod + "_l" + pos + "_plain";
+            var plab = lr.querySelector("label[for$='_plain']");
+            if (plab) plab.setAttribute("for", plain.id);
+          }
         });
     }
 
@@ -142,6 +152,18 @@
         accept + '" multiple data-chunk-input>' +
         '<p class="field-help">Up to ' + maxMb + ' MB each.</p>' +
         '<ul class="chunk-up__list" data-chunk-list hidden></ul></div>';
+    }
+
+    // A product being created has no id to upload against yet, so its lessons
+    // take files the plain way: attached to the form and saved with it.
+    function lessonFileField(mod, pos) {
+      return '<div class="field"><label for="mod' + mod + '_l' + pos +
+        '_plain">Files for this lesson</label>' +
+        '<input type="file" id="mod' + mod + '_l' + pos + '_plain" name="mod' +
+        mod + '_lesson' + pos + '_file" accept="' + accept + '" multiple ' +
+        'data-lesson-file><p class="field-help">Up to ' + inlineMb +
+        ' MB each. Bigger files go up one at a time once the product is saved.' +
+        '</p></div>';
     }
 
     function moduleNumberOf(row) {
@@ -258,8 +280,7 @@
           'placeholder="Lesson title">' +
           '<textarea name="mod' + mod + '_lesson_desc" rows="3" maxlength="8000" ' +
           'placeholder="Description or text extract for this lesson (optional)."></textarea>' +
-          (canChunk ? lessonUploader(mod, n)
-            : '<p class="field-help">Save changes, then upload files into this lesson.</p>');
+          (canChunk ? lessonUploader(mod, n) : lessonFileField(mod, n));
         holder.appendChild(block);
         refreshLessons(lrow);
         var field = block.querySelector("input");

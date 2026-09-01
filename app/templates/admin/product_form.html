@@ -301,7 +301,8 @@
            data-upload-chunk="{{ url_for('admin.product_upload_chunk', product_id=product.id, upload_id='UPLOAD_ID') }}"
            data-upload-finish="{{ url_for('admin.product_upload_finish', product_id=product.id, upload_id='UPLOAD_ID') }}"
            {%- endif %}
-           data-upload-max="{{ course_max_mb }}">
+           data-upload-max="{{ course_max_mb }}"
+           data-inline-max="{{ inline_max_mb }}">
         <p class="eyebrow" style="margin:0 0 10px;">What’s inside (optional modules)</p>
         <p class="field-help" style="margin:0 0 12px;">
           Leave blank to skip. Start with two — add more whenever you like, including
@@ -373,8 +374,26 @@
                     <p class="field-help">Up to {{ course_max_mb }} MB each. Add a written extract to any file once it lands.</p>
                     <ul class="chunk-up__list" data-chunk-list hidden></ul>
                   </div>
+                  <noscript>
+                    <div class="field">
+                      <label for="mod{{ row.number }}_l{{ loop.index }}_plain">Add files to this lesson</label>
+                      <input type="file" id="mod{{ row.number }}_l{{ loop.index }}_plain"
+                             name="mod{{ row.number }}_lesson{{ loop.index }}_file"
+                             accept="{{ file_accept }}" multiple>
+                      <p class="field-help">Up to {{ inline_max_mb }} MB each without JavaScript.</p>
+                    </div>
+                  </noscript>
                   {% else %}
-                  <p class="field-help">Save the product, then upload files into this lesson.</p>
+                  <div class="field">
+                    <label for="mod{{ row.number }}_l{{ loop.index }}_plain">Files for this lesson</label>
+                    <input type="file" id="mod{{ row.number }}_l{{ loop.index }}_plain"
+                           name="mod{{ row.number }}_lesson{{ loop.index }}_file"
+                           accept="{{ file_accept }}" multiple data-lesson-file>
+                    <p class="field-help">
+                      Up to {{ inline_max_mb }} MB each. Bigger files go up one at a
+                      time once the product is saved.
+                    </p>
+                  </div>
                   {% endif %}
                 </div>
                 {% endfor %}
