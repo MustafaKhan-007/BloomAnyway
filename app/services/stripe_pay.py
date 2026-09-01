@@ -12,7 +12,7 @@ import stripe
 from flask import current_app
 
 from ..extensions import db
-from ..models import Order, Product
+from ..models import Order, Product, User
 
 log = logging.getLogger(__name__)
 
