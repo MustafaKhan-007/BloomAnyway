@@ -147,6 +147,46 @@ SAMAN_QUESTIONS: tuple[dict, ...] = (
     },
 )
 
+#: Ayesha's is the healing side of the same booking: shorter, and leading with
+#: tick-boxes because naming what you're in the middle of is hard to type cold.
+AYESHA_QUESTIONS: tuple[dict, ...] = (
+    {
+        "key": "going_through",
+        "section": "Where you're at",
+        "label": "What are you currently going through?",
+        "input": "checkboxes",
+        "options": ("Divorce", "Custody / co-parenting challenges",
+                    "Separation", "Anxiety"),
+        "other": True,
+    },
+    {
+        "key": "hoping_for",
+        "section": "Where you're at",
+        "label": "What's the main thing you're hoping to get from this call?",
+        "input": "checkboxes",
+        "options": ("Guidance / advice", "Someone to listen",
+                    "Practical next steps"),
+        "other": True,
+    },
+    {
+        "key": "discuss",
+        "section": "The call itself",
+        "label": "Briefly explain what you would like to discuss in this call.",
+        "input": "textarea",
+    },
+    {
+        "key": "before_we_talk",
+        "section": "The call itself",
+        "label": (
+            "Is there anything specific you'd like me to know before we talk?"
+        ),
+        "input": "textarea",
+        # Asked, not demanded — "anything specific" invites "no" as an answer,
+        # and making someone type that to reach checkout is a toll.
+        "optional": True,
+    },
+)
+
 DISCLAIMER_KEYS = (
     "disclaimer_identity",
     "disclaimer_conduct",
@@ -164,11 +204,32 @@ def normalize_coach(coach: str) -> str | None:
     return key if key in COACH_LABELS else None
 
 
+QUESTIONS_BY_COACH: dict[str, tuple[dict, ...]] = {
+    "saman": SAMAN_QUESTIONS,
+    "ayesha": AYESHA_QUESTIONS,
+}
+
+
 def questions_for(coach: str) -> tuple[dict, ...]:
-    key = normalize_coach(coach)
-    if key == "saman":
-        return SAMAN_QUESTIONS
-    return ()
+    return QUESTIONS_BY_COACH.get(normalize_coach(coach) or "", ())
+
+
+def _answer_from_form(form, q: dict) -> str:
+    """One answer, whatever shape the question is asked in.
+
+    Tick-boxes come back as a list plus a free-text "Other"; both collapse to
+    one line so an answer is a string wherever it is stored or shown.
+    """
+    if q.get("input") != "checkboxes":
+        return (form.get(q["key"]) or "").strip()
+    getlist = getattr(form, "getlist", None)
+    picked = [str(v).strip() for v in (getlist(q["key"]) if getlist else [])]
+    picked = [v for v in picked if v in q.get("options", ())]
+    if q.get("other"):
+        other = (form.get(f"{q['key']}_other") or "").strip()
+        if other:
+            picked.append(other[:200])
+    return ", ".join(picked)
 
 
 def parse_answers(form, coach: str) -> tuple[dict | None, str | None]:
@@ -178,8 +239,10 @@ def parse_answers(form, coach: str) -> tuple[dict | None, str | None]:
         return None, "That coaching intake isn’t available yet."
     answers: dict[str, str] = {}
     for q in qs:
-        raw = (form.get(q["key"]) or "").strip()
+        raw = _answer_from_form(form, q)
         if not raw:
+            if q.get("optional"):
+                continue
             return None, f"Please answer: {q['label']}"
         if len(raw) > 2000:
             return None, "One of your answers is a bit long — keep each under 2000 characters."

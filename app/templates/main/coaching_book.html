@@ -43,13 +43,37 @@
         <legend>{{ section_title }}</legend>
         {% for q in qs %}
         <div class="field">
-          <label for="q-{{ q.key }}">{{ q.label }} <span class="req" aria-hidden="true">*</span></label>
+          {% if q.input == 'checkboxes' %}
+          {# A group of boxes has no single control to point a <label> at. #}
+          <span class="field__label" id="q-{{ q.key }}-label">
+            {{ q.label }}{% if not q.optional %} <span class="req" aria-hidden="true">*</span>{% endif %}
+          </span>
+          <div class="coaching-book__choices" role="group" aria-labelledby="q-{{ q.key }}-label">
+            {% for opt in q.options %}
+            <label class="checkline checkline--sm">
+              <input type="checkbox" name="{{ q.key }}" value="{{ opt }}">
+              {{ opt }}
+            </label>
+            {% endfor %}
+            {% if q.other %}
+            <label class="coaching-book__other">
+              <span>Other</span>
+              <input type="text" name="{{ q.key }}_other" maxlength="200"
+                     placeholder="In your own words">
+            </label>
+            {% endif %}
+          </div>
+          {% else %}
+          <label for="q-{{ q.key }}">
+            {{ q.label }}{% if not q.optional %} <span class="req" aria-hidden="true">*</span>{% endif %}
+          </label>
           {% if q.input == 'textarea' %}
           <textarea id="q-{{ q.key }}" name="{{ q.key }}" rows="3" maxlength="2000"
-                    required placeholder="{{ q.placeholder or '' }}"></textarea>
+                    {{ '' if q.optional else 'required' }} placeholder="{{ q.placeholder or '' }}"></textarea>
           {% else %}
           <input type="text" id="q-{{ q.key }}" name="{{ q.key }}" maxlength="500"
-                 required placeholder="{{ q.placeholder or '' }}">
+                 {{ '' if q.optional else 'required' }} placeholder="{{ q.placeholder or '' }}">
+          {% endif %}
           {% endif %}
         </div>
         {% endfor %}

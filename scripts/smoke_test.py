@@ -3595,6 +3595,97 @@ ok("The wrap page offers feedback as well as reporting someone",
    'data-feedback-open' in _wbody and 'data-feedback-pref="feedback"' in _wbody
    and "How was the session?" in _wbody)
 
+# --- Ayesha's 1:1 runs the same intake as Saman's -----------------------------
+from app.services import coaching_intake as intake_svc  # noqa: E402
+
+with app.app_context():
+    from app.services.settings import set_setting as _set
+    _set("ayesha_stripe_price_id", "price_ayesha_1to1")
+    _set("saman_stripe_price_id", "price_saman_1to1")
+    for _coach in ("ayesha", "saman"):
+        _w, _werr = intake_svc.add_availability(
+            _coach, weekday=(utcnow() + timedelta(days=2)).weekday(),
+            start_minute=9 * 60, end_minute=15 * 60, tz_name="UTC")
+        ok(f"{_coach.title()} availability saved", _w is not None and not _werr, _werr)
+
+r = wrap_client.get("/coaching/ayesha/book")
+_abody = r.get_data(as_text=True)
+ok("Ayesha has a booking page, the same one Saman has",
+   r.status_code == 200 and "What are you currently going through?" in _abody)
+ok("Her first two questions are tick-boxes with an Other box",
+   'name="going_through" value="Divorce"' in _abody
+   and 'name="hoping_for" value="Someone to listen"' in _abody
+   and 'name="going_through_other"' in _abody)
+ok("The last one is asked, not demanded",
+   "anything specific you&#39;d like me to know" in _abody.lower()
+   or "anything specific you'd like me to know" in _abody.lower())
+ok("And Saman's questionnaire is untouched",
+   "What's your niche" in wrap_client.get("/coaching/saman/book").get_data(as_text=True)
+   or "What&#39;s your niche" in wrap_client.get("/coaching/saman/book").get_data(as_text=True))
+
+with app.app_context():
+    from werkzeug.datastructures import MultiDict as _MD
+    _form = _MD([("going_through", "Divorce"), ("going_through", "Anxiety"),
+                 ("going_through_other", "sleep"),
+                 ("hoping_for", "Someone to listen"),
+                 ("discuss", "How to talk to the kids about it."),
+                 ("disclaimer_identity", "1"), ("disclaimer_conduct", "1"),
+                 ("disclaimer_recording", "1")])
+    _ans, _aerr = intake_svc.parse_answers(_form, "ayesha")
+    ok("Ticked boxes and the Other box collapse into one answer",
+       _aerr is None and _ans["going_through"] == "Divorce, Anxiety, sleep",
+       f"got {_aerr or _ans.get('going_through')}")
+    ok("The optional question can be left alone",
+       "before_we_talk" not in _ans)
+    _bad = _MD([("going_through", "Divorce"),
+                ("going_through", "<script>alert(1)</script>"),
+                ("hoping_for", "Someone to listen"), ("discuss", "x"),
+                ("disclaimer_identity", "1"), ("disclaimer_conduct", "1"),
+                ("disclaimer_recording", "1")])
+    _ans2, _ = intake_svc.parse_answers(_bad, "ayesha")
+    ok("Anything that isn't one of the offered boxes is dropped",
+       _ans2["going_through"] == "Divorce", f"got {_ans2['going_through']}")
+    _missing = _MD([("hoping_for", "Someone to listen"), ("discuss", "x"),
+                    ("disclaimer_identity", "1"), ("disclaimer_conduct", "1"),
+                    ("disclaimer_recording", "1")])
+    _none, _merr = intake_svc.parse_answers(_missing, "ayesha")
+    ok("But the required ones are still required",
+       _none is None and "currently going through" in (_merr or ""), f"got {_merr}")
+    _slots = intake_svc.open_slots("ayesha", viewer_tz="UTC")
+    ok("Her availability turns into bookable slots", len(_slots) > 0)
+    _slot_utc = _slots[0]["utc"]
+
+r = wrap_client.post("/coaching/ayesha/book", data={
+    "going_through": "Divorce", "hoping_for": "Practical next steps",
+    "discuss": "Where to start with custody.", "slot_utc": _slot_utc,
+    "disclaimer_identity": "1", "disclaimer_conduct": "1",
+    "disclaimer_recording": "1",
+}, follow_redirects=False)
+ok("Booking her sends you on to checkout with the intake attached",
+   r.status_code in (302, 303)
+   and "/checkout/addon/ayesha" in (r.headers.get("Location") or "")
+   and "intake=" in (r.headers.get("Location") or ""),
+   f"got {r.headers.get('Location')}")
+with app.app_context():
+    from app.models import CoachingIntake as _CI
+    _intake = (_CI.query.filter_by(coach="ayesha")
+               .order_by(_CI.id.desc()).first())
+    ok("Her intake is saved against her, not Saman",
+       _intake is not None and _intake.coach == "ayesha"
+       and _intake.status == "pending_payment")
+    ok("With the answers on it, readable in Studio",
+       any("currently going through" in row["label"]
+           for row in intake_svc.answer_rows(_intake)))
+
+r = wrap_client.get("/checkout/addon/ayesha", follow_redirects=False)
+ok("Paying for her 1:1 without answering first sends you back to the questions",
+   r.status_code in (302, 303)
+   and "/coaching/ayesha/book" in (r.headers.get("Location") or ""),
+   f"got {r.headers.get('Location')}")
+_sgbody = admin.get("/admin/support-groups").get_data(as_text=True)
+ok("Studio manages both founders' availability, and says whose is whose",
+   "1:1 availability" in _sgbody and "Ayesha" in _sgbody and "Saman" in _sgbody)
+
 
 # site image uploads (hero / story teaser)
 from io import BytesIO

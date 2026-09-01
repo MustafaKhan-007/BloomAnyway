@@ -28,7 +28,7 @@
 
 {% block content %}
 {% set facilitator_checkout = url_for('main.checkout_addon', kind='facilitator') if site.facilitator_stripe_price_id else none %}
-{% set ayesha_checkout = url_for('main.checkout_addon', kind='ayesha') if site.ayesha_stripe_price_id else none %}
+{% set ayesha_checkout = url_for('main.coaching_book', coach='ayesha') if site.ayesha_stripe_price_id else none %}
 {% set saman_checkout = url_for('main.coaching_book', coach='saman') if site.saman_stripe_price_id else none %}
 {% set facilitator_url = facilitator_checkout or site.facilitator_booking_url or url_for('main.contact') %}
 {% set ayesha_url = ayesha_checkout or site.ayesha_booking_url or url_for('main.contact') %}

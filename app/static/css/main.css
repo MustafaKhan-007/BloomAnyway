@@ -3041,6 +3041,24 @@ a.studio-member-filter.is-active span { color: #fff; }
   color: var(--plum);
 }
 .coaching-book .req { color: var(--plum); }
+/* Tick-box questions: naming what you're in the middle of is hard to type
+   cold, so the common answers are offered and "Other" is left open. */
+.coaching-book__choices { display: flex; flex-wrap: wrap; gap: 8px; }
+.coaching-book__choices .checkline { margin: 0; }
+.coaching-book__other {
+  display: flex; align-items: center; gap: 10px;
+  flex: 1 1 240px; min-width: 200px; margin: 0;
+  padding: 4px 6px 4px 14px; border-radius: 999px;
+  border: 1.5px dashed rgba(122, 46, 98, 0.3);
+  font-size: 13px; font-weight: 700; color: var(--plum-deep);
+}
+.coaching-book__other input {
+  flex: 1; min-width: 0;
+  border: 0; background: transparent; padding: 6px 4px;
+  font-size: 13px;
+}
+.coaching-book__other input:focus { outline: none; }
+.coaching-book__other:focus-within { border-color: var(--plum); border-style: solid; }
 .coaching-book__acks {
   display: flex;
   flex-direction: column;

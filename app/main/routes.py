@@ -2156,10 +2156,8 @@ def coaching_book(coach):
     from ..services.timefmt import viewer_timezone
 
     key = intake_svc.normalize_coach(coach)
-    if key != "saman":
-        abort(404)
-    questions = intake_svc.questions_for(key)
-    if not questions:
+    questions = intake_svc.questions_for(key or "")
+    if not key or not questions:
         abort(404)
 
     price_id = (settings_service.get_setting(f"{key}_stripe_price_id") or "").strip()
@@ -2239,8 +2237,10 @@ def checkout_addon(kind):
 
     # Saman 1:1 must go through the questionnaire + slot picker first.
     intake_id = request.args.get("intake", type=int) or request.form.get("intake", type=int)
-    if kind_key == "saman" and not intake_id:
-        return redirect(url_for("main.coaching_book", coach="saman"))
+    # Both founders' 1:1s go through the questionnaire first; there is no
+    # paying for one without having said what the call is for.
+    if kind_key in ("saman", "ayesha") and not intake_id:
+        return redirect(url_for("main.coaching_book", coach=kind_key))
 
     price_id = (settings_service.get_setting(info["setting"]) or "").strip()
     if not price_id:

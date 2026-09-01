@@ -3227,21 +3227,25 @@ def support_groups():
         else:
             continue
         break
-    saman_windows = intake_svc.list_availability("saman")
-    saman_intakes = intake_svc.studio_intakes("saman", limit=30)
-    intake_meeting_ids = {i.meeting_id for i in saman_intakes if i.meeting_id}
+    # Both founders take 1:1s through the same questionnaire, so the panels
+    # cover whoever has one rather than Saman alone.
+    coaches = [(key, intake_svc.coach_label(key))
+               for key in intake_svc.QUESTIONS_BY_COACH]
+    intakes = intake_svc.studio_intakes(limit=30)
+    intake_meeting_ids = {i.meeting_id for i in intakes if i.meeting_id}
     # Intake-linked 1:1s live only in the intakes panel (not duplicated below).
     open_rows = [m for m in open_rows if m.id not in intake_meeting_ids]
     seat_map = sg_svc.seats_for_meetings(
         open_rows + past
-        + [i.meeting for i in saman_intakes if i.meeting_id and i.meeting]
+        + [i.meeting for i in intakes if i.meeting_id and i.meeting]
     )
     intake_rows = []
-    for intake in saman_intakes:
+    for intake in intakes:
         answers = intake_svc.answer_rows(intake)
         meeting = intake.meeting
         intake_rows.append({
             "intake": intake,
+            "coach_label": intake_svc.coach_label(intake.coach),
             "answers": answers,
             "member": intake.member,
             "meeting": meeting,
@@ -3252,9 +3256,11 @@ def support_groups():
     window_rows = [
         {
             "window": w,
+            "coach_label": intake_svc.coach_label(key),
             "tz_label": timezone_label(w.timezone),
         }
-        for w in saman_windows
+        for key, _label in coaches
+        for w in intake_svc.list_availability(key)
     ]
     return render_template(
         "admin/support_groups.html",
@@ -3263,7 +3269,7 @@ def support_groups():
         past_meetings=past,
         seat_map=seat_map,
         owner_tz=owner_tz,
-        saman_windows=saman_windows,
+        coaches=coaches,
         window_rows=window_rows,
         intake_rows=intake_rows,
         weekday_labels=intake_svc.WEEKDAY_LABELS,
@@ -3290,7 +3296,9 @@ def support_groups_availability():
         removed = 0
         err = None
         for wid in ids:
-            err = intake_svc.remove_availability(wid, coach="saman")
+            # No coach filter: the ids come from the list we rendered, and both
+            # founders' windows are in it.
+            err = intake_svc.remove_availability(wid)
             if err:
                 break
             removed += 1
@@ -3310,14 +3318,19 @@ def support_groups_availability():
         flash("Pick a start and end time.", "error")
         return redirect(url_for("admin.support_groups"))
     tz = (request.form.get("timezone") or current_user.timezone or "UTC").strip()
+    coach = intake_svc.normalize_coach(request.form.get("coach") or "saman")
+    if not coach:
+        flash("Pick whose availability that is.", "error")
+        return redirect(url_for("admin.support_groups"))
     _, err = intake_svc.add_availability(
-        "saman",
+        coach,
         weekday=request.form.get("weekday", type=int),
         start_minute=start,
         end_minute=end,
         tz_name=tz,
     )
-    flash(err or "Saman availability saved.", "error" if err else "success")
+    flash(err or f"{intake_svc.coach_label(coach)} availability saved.",
+          "error" if err else "success")
     return redirect(url_for("admin.support_groups"))
 
 
