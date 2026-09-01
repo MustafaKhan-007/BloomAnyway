@@ -117,6 +117,11 @@
           if (num) num.textContent = "Lesson " + pos;
           var up = lr.querySelector("[data-chunk-upload]");
           if (up) up.setAttribute("data-lesson", String(pos));
+          // Files uploaded into this lesson a moment ago follow it if the
+          // lesson moves before the form is saved.
+          lr.querySelectorAll("[data-lesson-pin]").forEach(function (pin) {
+            pin.value = String(pos);
+          });
           var input = lr.querySelector("[data-chunk-input]");
           if (input) input.id = "mod" + mod + "_l" + pos + "_up";
           var lab = lr.querySelector("label[for^='mod']");
@@ -536,6 +541,19 @@
       li.querySelector(".module-items__kind").textContent = info.kind_label || "File";
       li.querySelector(".module-items__name").textContent = info.title || "";
       li.querySelector(".module-items__size").textContent = info.size || "";
+      // A lesson added just now doesn't exist server-side, so the upload
+      // couldn't file the piece under it and left it in the module. Saying
+      // where it was dropped lets the form save finish the job: by then the
+      // lesson has been written, and the file is pinned to it.
+      var lesson = box.getAttribute("data-lesson") || "";
+      if (info.asset_id && lesson) {
+        var pin = document.createElement("input");
+        pin.type = "hidden";
+        pin.name = "asset_" + info.asset_id + "_lesson";
+        pin.value = lesson;
+        pin.setAttribute("data-lesson-pin", "");
+        li.appendChild(pin);
+      }
       items.hidden = false;
       items.appendChild(li);
     }

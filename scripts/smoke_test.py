@@ -5215,8 +5215,37 @@ with app.app_context():
        _asset.id in [a.id for a in _row["intro"]]
        and _shown == len(_row["contents"]),
        f"{_shown} of {len(_row['contents'])} files reachable")
+    _asset.lesson_index = None
+    db.session.commit()
+
+# Saving the form finishes what the upload couldn't: the lesson is written
+# first, so the file dropped into it can now be pinned there. The editor sends
+# the lesson it was dropped under alongside the lesson itself.
+_mod_fields = {"mod1_title": "Week one", "mod1_desc": "Start here",
+               "mod2_title": "Week two", "mod2_desc": "Keep going",
+               "mod3_title": "Week three", "mod3_desc": "Look back"}
+r = admin.post(
+    f"/admin/products/{drip_prod_id}/edit",
+    data=_MultiDict([
+        *dict(_drip_fields, **_mod_fields, slug="drip-course").items(),
+        ("mod2_lesson_title", "The one we just added"),
+        ("mod2_lesson_desc", "Written at the same time as the upload."),
+        (f"asset_{_early['asset_id']}_lesson", "1"),
+    ]),
+    content_type="multipart/form-data", follow_redirects=True)
+with app.app_context():
+    _row = db.session.get(Product, drip_prod_id).modules()[1]
+    ok("Saving drops the file into the lesson it was uploaded under",
+       r.status_code == 200 and len(_row["lessons"]) == 1
+       and _early["asset_id"] in [a.id for a in _row["lessons"][0]["contents"]],
+       f"lessons={len(_row['lessons'])}")
+
 admin.post(f"/admin/products/{drip_prod_id}/assets/{_early['asset_id']}/delete",
            follow_redirects=True)
+admin.post(f"/admin/products/{drip_prod_id}/edit",
+           data=_MultiDict(dict(_drip_fields, **_mod_fields,
+                                slug="drip-course").items()),
+           content_type="multipart/form-data", follow_redirects=True)
 with app.app_context():
     ok("And a stranded file can be cleared out again",
        db.session.get(ProductAsset, _early["asset_id"]) is None)
