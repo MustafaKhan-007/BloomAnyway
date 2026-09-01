@@ -254,6 +254,98 @@ def remove_availability(row_id: int, coach: str | None = None) -> str | None:
     return None
 
 
+def availability_grid(coach: str) -> dict:
+    """Weekly availability expanded into selectable 60-minute start hours.
+
+    Returns ``{"timezone": <tz>, "selected": {weekday: set(hours)}}`` so the
+    Studio grid can pre-check the hours a member could start a session. Each
+    stored window is unpacked into the individual 60-minute slots it produces
+    (the same steps :func:`open_slots` walks), so editing round-trips cleanly.
+    """
+    selected: dict[int, set[int]] = {wd: set() for wd in range(7)}
+    tz_name = ""
+    for win in list_availability(coach):
+        if not tz_name:
+            tz_name = win.timezone or ""
+        cursor = win.start_minute
+        while cursor + SLOT_STEP_MINUTES <= win.end_minute:
+            selected[win.weekday].add(cursor // 60)
+            cursor += SLOT_STEP_MINUTES
+    return {"timezone": tz_name, "selected": selected}
+
+
+def _merge_hours_to_windows(hours: list[int]) -> list[tuple[int, int]]:
+    """Collapse sorted, de-duped start hours into contiguous minute windows."""
+    windows: list[tuple[int, int]] = []
+    for hour in sorted(set(hours)):
+        start = hour * 60
+        end = start + SLOT_STEP_MINUTES
+        if windows and windows[-1][1] == start:
+            windows[-1] = (windows[-1][0], end)
+        else:
+            windows.append((start, end))
+    return windows
+
+
+def set_availability(
+    coach: str,
+    *,
+    tz_name: str | None,
+    slots_by_weekday: dict[int, list[int]],
+) -> tuple[int, str | None]:
+    """Replace a coach's whole weekly schedule from a grid of chosen hours.
+
+    ``slots_by_weekday`` maps a weekday (0=Mon … 6=Sun) to the 60-minute start
+    hours the coach is available. Contiguous hours merge into a single window.
+    The coach's existing windows are cleared and rebuilt in one transaction, so
+    this both creates and edits the schedule. Returns ``(window_count, error)``.
+    """
+    key = normalize_coach(coach)
+    if not key:
+        return 0, "Unknown coach."
+    tz = normalize_timezone(tz_name)
+    if not tz:
+        return 0, "Pick a valid timezone from the list."
+
+    cleaned: dict[int, list[int]] = {}
+    for weekday, hours in slots_by_weekday.items():
+        try:
+            wd = int(weekday)
+        except (TypeError, ValueError):
+            return 0, "Pick valid days and times."
+        if wd < 0 or wd > 6:
+            return 0, "Pick valid days and times."
+        valid_hours = []
+        for hour in hours:
+            try:
+                h = int(hour)
+            except (TypeError, ValueError):
+                return 0, "Pick valid times."
+            if h < 0 or h > 23:
+                return 0, "Pick valid times."
+            valid_hours.append(h)
+        if valid_hours:
+            cleaned[wd] = valid_hours
+
+    now = utcnow()
+    CoachAvailability.query.filter_by(coach=key).delete(synchronize_session=False)
+    count = 0
+    for weekday, hours in cleaned.items():
+        for start_minute, end_minute in _merge_hours_to_windows(hours):
+            db.session.add(CoachAvailability(
+                coach=key,
+                weekday=weekday,
+                start_minute=start_minute,
+                end_minute=end_minute,
+                timezone=tz,
+                active=True,
+                created_at=now,
+            ))
+            count += 1
+    db.session.commit()
+    return count, None
+
+
 def _booked_starts(coach: str) -> set[datetime]:
     """UTC starts already taken by open/paid intakes or scheduled 1:1s for this coach."""
     key = normalize_coach(coach)
@@ -422,6 +514,14 @@ def create_pending_intake(
     )
     for row in stale:
         row.status = "cancelled"
+    db.session.flush()
+
+    # Final guard against a race: between the open-slots check above and this
+    # commit another member could have grabbed the same time. After clearing
+    # this user's own stale holds, the slot must still be free of anyone else's
+    # active booking, so a booked time can never be double-sold.
+    if slot_utc.replace(microsecond=0) in _booked_starts(key):
+        return None, "That time was just booked — pick another slot."
 
     intake = CoachingIntake(
         user_id=user.id,

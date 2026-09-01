@@ -939,3 +939,103 @@
 
   paint();
 })();
+
+/* ---- coach 1:1 availability: weekly grid (browse days, pick all times, save once) ---- */
+(function () {
+  var editor = document.querySelector("[data-avail-editor]");
+  if (!editor) return;
+  var grid = editor.querySelector("[data-avail-grid]");
+  if (!grid) return;
+
+  var cells = Array.prototype.slice.call(grid.querySelectorAll("[data-avail-cell]"));
+  var countOut = editor.querySelector("[data-avail-count]");
+  var clearBtn = editor.querySelector("[data-avail-clear]");
+
+  function updateCount() {
+    if (!countOut) return;
+    var n = cells.filter(function (c) { return c.checked; }).length;
+    countOut.textContent = n + (n === 1 ? " slot / week" : " slots / week");
+  }
+
+  function setCell(cell, on) {
+    if (cell.checked !== on) cell.checked = on;
+    var label = cell.closest(".avail-cell");
+    if (label) label.classList.toggle("is-on", cell.checked);
+  }
+
+  function cellFrom(target) {
+    if (!target || !target.closest) return null;
+    var label = target.closest(".avail-cell");
+    return label ? label.querySelector("[data-avail-cell]") : null;
+  }
+
+  // Reflect the server-rendered checked state into the visual boxes + count.
+  cells.forEach(function (c) { setCell(c, c.checked); });
+  updateCount();
+
+  // --- drag to paint several cells at once ---------------------------------
+  // Mouse: mousedown seeds the start cell, mouseover paints the rest with the
+  // same on/off value, and the trailing click is swallowed so nothing double
+  // toggles. Keyboard (space/enter) has no mousedown, so its click toggles.
+  var painting = false;
+  var paintOn = true;
+  var startCell = null;
+
+  grid.addEventListener("mousedown", function (e) {
+    if (e.button !== 0) return;
+    var cell = cellFrom(e.target);
+    if (!cell) return;
+    painting = true;
+    startCell = cell;
+    paintOn = !cell.checked;
+    setCell(cell, paintOn);
+    updateCount();
+  });
+
+  grid.addEventListener("mouseover", function (e) {
+    if (!painting) return;
+    var cell = cellFrom(e.target);
+    if (!cell) return;
+    setCell(cell, paintOn);
+    updateCount();
+  });
+
+  document.addEventListener("mouseup", function () {
+    painting = false;
+    // Let the click that follows this mouseup see startCell, then clear it.
+    setTimeout(function () { startCell = null; }, 0);
+  });
+
+  grid.addEventListener("click", function (e) {
+    var cell = cellFrom(e.target);
+    if (!cell) return;          // header buttons handled below
+    e.preventDefault();         // we own the checked state
+    if (startCell) return;      // this click belongs to a mouse interaction
+    setCell(cell, !cell.checked);
+    updateCount();
+  });
+
+  // --- weekday column + hour row headers fill/clear a whole line -----------
+  function membersBy(attr, key) {
+    return cells.filter(function (c) { return c.getAttribute(attr) === key; });
+  }
+  function toggleGroup(members) {
+    var allOn = members.length && members.every(function (c) { return c.checked; });
+    members.forEach(function (c) { setCell(c, !allOn); });
+    updateCount();
+  }
+
+  editor.addEventListener("click", function (e) {
+    var col = e.target.closest ? e.target.closest("[data-avail-col]") : null;
+    if (col) { toggleGroup(membersBy("data-wd", col.getAttribute("data-avail-col"))); return; }
+    var row = e.target.closest ? e.target.closest("[data-avail-row]") : null;
+    if (row) { toggleGroup(membersBy("data-hour", row.getAttribute("data-avail-row"))); }
+  });
+
+  if (clearBtn) {
+    clearBtn.addEventListener("click", function () {
+      cells.forEach(function (c) { setCell(c, false); });
+      updateCount();
+    });
+  }
+})();

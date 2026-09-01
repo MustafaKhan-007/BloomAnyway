@@ -97,6 +97,14 @@ def admin_required(f):
     return wrapper
 
 
+def _hour_label_12(hour: int) -> str:
+    """A 12-hour label for an availability grid row, e.g. 0 -> '12 AM', 14 -> '2 PM'."""
+    hour = int(hour) % 24
+    suffix = "AM" if hour < 12 else "PM"
+    h12 = hour % 12 or 12
+    return f"{h12} {suffix}"
+
+
 def _form_ids(name: str = "ids") -> list[int]:
     """Parse checkbox / multi-value id lists from a Studio bulk form."""
     out: list[int] = []
@@ -3080,8 +3088,12 @@ def support_groups():
     past = sg_svc.recent_meetings()
     owner_tz = (current_user.timezone or "UTC").strip() or "UTC"
     from ..services.timefmt import timezone_groups, timezone_label
-    tz_groups = timezone_groups(selected=owner_tz)
-    selected_tz_label = timezone_label(owner_tz)
+    # The availability grid edits one weekly schedule, so its timezone picker
+    # defaults to the schedule's saved timezone (falling back to the owner's).
+    avail_grid = intake_svc.availability_grid("saman")
+    schedule_tz = (avail_grid.get("timezone") or "").strip() or owner_tz
+    tz_groups = timezone_groups(selected=schedule_tz)
+    selected_tz_label = timezone_label(schedule_tz)
     for group in tz_groups:
         for opt in group["options"]:
             if opt.get("selected"):
@@ -3090,6 +3102,13 @@ def support_groups():
         else:
             continue
         break
+    avail_grid["timezone"] = schedule_tz
+    # Rows of the weekly grid: one per 60-minute start hour (00:00 … 23:00).
+    avail_hours = [
+        {"hour": h, "label": intake_svc.minutes_to_hhmm(h * 60),
+         "label12": _hour_label_12(h)}
+        for h in range(24)
+    ]
     saman_windows = intake_svc.list_availability("saman")
     saman_intakes = intake_svc.studio_intakes("saman", limit=30)
     intake_meeting_ids = {i.meeting_id for i in saman_intakes if i.meeting_id}
@@ -3128,8 +3147,11 @@ def support_groups():
         owner_tz=owner_tz,
         saman_windows=saman_windows,
         window_rows=window_rows,
+        avail_grid=avail_grid,
+        avail_hours=avail_hours,
         intake_rows=intake_rows,
         weekday_labels=intake_svc.WEEKDAY_LABELS,
+        weekday_short=("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"),
         minutes_to_hhmm=intake_svc.minutes_to_hhmm,
         tz_groups=tz_groups,
         selected_tz_label=selected_tz_label,
@@ -3139,48 +3161,38 @@ def support_groups():
 @bp.route("/support-groups/availability", methods=["POST"])
 @admin_required
 def support_groups_availability():
+    """Save Saman's whole weekly schedule from the availability grid at once.
+
+    The grid posts one ``slot`` value per chosen cell as ``"<weekday>-<hour>"``
+    (e.g. ``2-14`` = Wednesday 14:00). Saving replaces the existing schedule, so
+    the same form both creates and edits availability.
+    """
     from ..services import coaching_intake as intake_svc
 
-    action = (request.form.get("action") or "add").strip().lower()
-    if action == "remove":
-        ids = _form_ids("window_ids")
-        single = request.form.get("window_id", type=int) or 0
-        if single and single not in ids:
-            ids.append(single)
-        if not ids:
-            flash("Select at least one availability window to remove.", "error")
-            return redirect(url_for("admin.support_groups"))
-        removed = 0
-        err = None
-        for wid in ids:
-            err = intake_svc.remove_availability(wid, coach="saman")
-            if err:
-                break
-            removed += 1
-        if err:
-            flash(err, "error")
-        else:
-            flash(
-                f"Removed {removed} availability window"
-                f"{'s' if removed != 1 else ''}.",
-                "success",
-            )
-        return redirect(url_for("admin.support_groups"))
-
-    start = intake_svc.hhmm_to_minutes(request.form.get("start_time") or "")
-    end = intake_svc.hhmm_to_minutes(request.form.get("end_time") or "")
-    if start is None or end is None:
-        flash("Pick a start and end time.", "error")
-        return redirect(url_for("admin.support_groups"))
     tz = (request.form.get("timezone") or current_user.timezone or "UTC").strip()
-    _, err = intake_svc.add_availability(
-        "saman",
-        weekday=request.form.get("weekday", type=int),
-        start_minute=start,
-        end_minute=end,
-        tz_name=tz,
+    slots_by_weekday: dict[int, list[int]] = {}
+    for raw in request.form.getlist("slot"):
+        piece = (raw or "").strip()
+        if "-" not in piece:
+            continue
+        wd_s, hour_s = piece.split("-", 1)
+        try:
+            weekday = int(wd_s)
+            hour = int(hour_s)
+        except (TypeError, ValueError):
+            continue
+        slots_by_weekday.setdefault(weekday, []).append(hour)
+
+    count, err = intake_svc.set_availability(
+        "saman", tz_name=tz, slots_by_weekday=slots_by_weekday,
     )
-    flash(err or "Saman availability saved.", "error" if err else "success")
+    if err:
+        flash(err, "error")
+    elif count:
+        flash("Saman's availability saved.", "success")
+    else:
+        flash("Cleared Saman's availability — members won't see bookable times.",
+              "success")
     return redirect(url_for("admin.support_groups"))
 
 
