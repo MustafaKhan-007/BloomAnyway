@@ -166,10 +166,10 @@
       <h2 style="margin:0;">1:1 availability</h2>
     </div>
     <p class="field-help" style="margin-top: 6px;">
-      Set a whole week at once: pick whose it is, walk the days, tick the hours
-      they're free, then save. Ticking is adding and unticking is removing —
-      what you see here is what members can book. Times are in the coach's own
-      timezone and convert to each member's automatically.
+      Set a whole week at once: pick whose it is, then tick every hour they're
+      free across all seven days and save. Ticking is adding and unticking is
+      removing — what you see here is what members can book. Times are in the
+      coach's own timezone and convert to each member's automatically.
     </p>
 
     {# Plain links rather than a dropdown that needs scripting to act on: the
@@ -189,41 +189,61 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="coach" value="{{ picked_coach }}">
 
-      <div class="sg-week__days" role="tablist" aria-label="Day of the week">
-        {% for label in weekday_labels %}
-        <button type="button" class="sg-week__day{{ ' is-active' if loop.index0 == 0 }}"
-                data-week-day="{{ loop.index0 }}" role="tab"
-                aria-selected="{{ 'true' if loop.index0 == 0 else 'false' }}">
-          {{ label[:3] }}
-          <span class="sg-week__day-count" data-week-count="{{ loop.index0 }}"
-                {% if not week_counts[loop.index0] %}hidden{% endif %}>{{ week_counts[loop.index0] }}</span>
-        </button>
-        {% endfor %}
+      <div class="sg-grid__toolbar">
+        <span class="field-help">Tick every hour the coach can take a call. Drag to
+          paint several at once; tap a day or a time header to fill or clear a
+          whole line.</span>
+        <div class="sg-grid__toolbar-actions">
+          <span class="sg-grid__count" data-week-total aria-live="polite"></span>
+          <button type="button" class="btn btn--quiet btn--sm" data-week-workweek>Mon–Fri 9–5</button>
+          <button type="button" class="btn btn--quiet btn--sm" data-week-clear-all>Clear all</button>
+        </div>
       </div>
 
-      {% for label in weekday_labels %}
-      {% set day = loop.index0 %}
-      <div class="sg-week__panel" data-week-panel="{{ day }}" {% if day %}hidden{% endif %}
-           role="tabpanel" aria-label="{{ label }}">
-        <div class="sg-week__panel-head">
-          <strong>{{ label }}</strong>
-          <span>
-            <button type="button" class="btn btn--quiet btn--sm" data-week-workday="{{ day }}">9–5</button>
-            <button type="button" class="btn btn--quiet btn--sm" data-week-clear="{{ day }}">Clear</button>
-          </span>
-        </div>
-        <div class="sg-week__hours">
-          {% for hour in day_hours %}
-          <label class="sg-week__hour">
-            <input type="checkbox" name="slot" value="{{ day }}:{{ hour }}"
-                   data-week-slot="{{ day }}"
-                   {{ 'checked' if hour in week_grid[day] }}>
-            <span>{{ '%02d:00'|format(hour) }}</span>
-          </label>
-          {% endfor %}
-        </div>
+      {# One table shows the whole week at once — every day is a column and every
+         hour a row — so the coach's week is visible and editable without hopping
+         between day tabs. Only the ticked cells post as "day:hour". #}
+      <div class="sg-grid__scroll">
+        <table class="sg-grid" data-week-grid>
+          <thead>
+            <tr>
+              <th scope="col" class="sg-grid__corner">Time</th>
+              {% for label in weekday_labels %}
+              <th scope="col">
+                <button type="button" class="sg-grid__dayhead" data-week-col="{{ loop.index0 }}"
+                        title="Toggle all of {{ label }}">
+                  {{ label[:3] }}
+                  <span class="sg-grid__daycount" data-week-count="{{ loop.index0 }}"
+                        {% if not week_counts[loop.index0] %}hidden{% endif %}>{{ week_counts[loop.index0] }}</span>
+                </button>
+              </th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for hour in day_hours %}
+            <tr>
+              <th scope="row" class="sg-grid__timelabel">
+                <button type="button" class="sg-grid__rowhead" data-week-row="{{ hour }}"
+                        title="Toggle {{ '%02d:00'|format(hour) }} across the week">{{ '%02d:00'|format(hour) }}</button>
+              </th>
+              {% for label in weekday_labels %}
+              {% set day = loop.index0 %}
+              <td>
+                <label class="sg-cell">
+                  <input type="checkbox" name="slot" value="{{ day }}:{{ hour }}"
+                         data-week-slot="{{ day }}" data-week-hour="{{ hour }}"
+                         {{ 'checked' if hour in week_grid[day] }}
+                         aria-label="{{ label }} {{ '%02d:00'|format(hour) }}">
+                  <span class="sg-cell__box" aria-hidden="true"></span>
+                </label>
+              </td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
-      {% endfor %}
 
       <div class="field" style="margin-top: 16px;">
         <label for="sg-avail-tz-search">Timezone</label>
@@ -443,24 +463,4 @@
   </section>
   {% endif %}
 </div>
-<script>
-(function () {
-  var sel = document.getElementById("sg-kind");
-  if (!sel) return;
-  function sync() {
-    var kind = sel.value;
-    document.querySelectorAll("[data-sg-for]").forEach(function (el) {
-      var show = el.getAttribute("data-sg-for") === kind;
-      el.hidden = !show;
-      el.querySelectorAll("input, select").forEach(function (input) {
-        if (input.name === "coach" || input.name === "member_email") {
-          input.required = show;
-        }
-      });
-    });
-  }
-  sel.addEventListener("change", sync);
-  sync();
-})();
-</script>
 {% endblock %}
