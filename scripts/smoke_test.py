@@ -4780,6 +4780,56 @@ with app.app_context():
         app.config["TESTING"] = True
     assert _real_cancel is not None
 
+# Switching plans cancels the old subscription seconds before the new one is
+# paid for, but the local order saying so is still marked paid when the payment
+# lands. Reading the status off Stripe stops the owner being told a member has
+# two live memberships when one of them is already gone.
+with app.app_context():
+    _subs = {
+        "sub_switched_away": {"id": "sub_switched_away", "status": "canceled"},
+        "sub_second_plan": {"id": "sub_second_plan", "status": "active"},
+        "sub_winding_down": {"id": "sub_winding_down", "status": "active",
+                             "cancel_at_period_end": True},
+    }
+
+    class _FakeLookup:
+        @staticmethod
+        def retrieve(sid, **kw):
+            if sid not in _subs:
+                raise Exception(f"No such subscription: {sid}")
+            return _subs[sid]
+
+    _real_sub = pay.stripe.Subscription
+    _real_conf = pay.configured
+    pay.stripe.Subscription = _FakeLookup
+    pay.configured = lambda: True
+    app.config["TESTING"] = False
+    try:
+        _before = len(_billing_alerts)
+        pay._flag_extra_memberships(
+            "switcher@example.com", "sub_new_plan", ["sub_switched_away"])
+        ok("Switching plans doesn't report the plan just left as a second one",
+           len(_billing_alerts) == _before, f"got {_billing_alerts[_before:]}")
+        pay._flag_extra_memberships(
+            "winding@example.com", "sub_new_plan", ["sub_winding_down"])
+        ok("Nor one that is already set to stop renewing",
+           len(_billing_alerts) == _before, f"got {_billing_alerts[_before:]}")
+        pay._flag_extra_memberships(
+            "stale@example.com", "sub_new_plan", ["sub_long_gone"])
+        ok("Nor a subscription id Stripe has never heard of",
+           len(_billing_alerts) == _before, f"got {_billing_alerts[_before:]}")
+        pay._flag_extra_memberships(
+            "double@example.com", "sub_new_plan",
+            ["sub_second_plan", "sub_switched_away"])
+        ok("But a genuinely live second membership is still reported",
+           len(_billing_alerts) == _before + 1
+           and "more than one membership" in _billing_alerts[-1].lower(),
+           f"got {_billing_alerts[_before:]}")
+    finally:
+        pay.stripe.Subscription = _real_sub
+        pay.configured = _real_conf
+        app.config["TESTING"] = True
+
 _alerts = len(_billing_alerts)
 _stripe_event("customer.updated",
               {"id": "cus_1", "object": "customer", "email": "brand-new@example.com"},

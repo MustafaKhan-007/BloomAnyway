@@ -1677,15 +1677,28 @@ def _flag_extra_memberships(email: str, keep_sub: str, sub_ids: list[str]) -> No
     We never cancel on our own guess — that is how a paying member's billing got
     cancelled. Subscriptions already set to cancel (a real switch or self-cancel)
     are left out, so this only speaks up about genuine live duplicates.
+
+    Candidates come partly from local order rows, which say what was true when
+    the row was written, not what is true now. Switching plans cancels the old
+    subscription outright moments before the new one is paid for, so each one
+    is checked against Stripe before the owner is told anything: an outright
+    cancel leaves no cancel-at date to notice it by, only a dead status.
     """
     live: list[str] = []
     for sid in sub_ids:
         try:
             _configure_stripe()
             sub_d = _as_dict(stripe.Subscription.retrieve(sid))
-        except Exception:
+        except Exception as exc:
+            if "no such subscription" in str(exc).lower():
+                continue  # a stale id from an old order, not a second plan
+            log.warning(
+                "stripe: could not check whether %s is still live (%s)", sid, exc)
             live.append(sid)
             continue
+        status = (sub_d.get("status") or "").strip().lower()
+        if status not in ("active", "trialing", "past_due"):
+            continue  # cancelled, expired or never started — nobody is billed
         if sub_d.get("cancel_at_period_end") or sub_d.get("cancel_at"):
             continue  # already ending — nothing to flag
         live.append(sid)
