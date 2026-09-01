@@ -3270,14 +3270,22 @@ def support_groups():
                 seat_map.get(intake.meeting_id, []) if intake.meeting_id else []
             ),
         })
-    window_rows = [
+    # The week editor opens on whatever is already saved for the chosen coach,
+    # so editing and setting up for the first time are the same screen.
+    picked_coach = (request.args.get("coach") or "").strip().lower()
+    picked_coach = intake_svc.normalize_coach(picked_coach) or coaches[0][0]
+    week_grid = {day: sorted(hours)
+                 for day, hours in intake_svc.week_grid(picked_coach).items()}
+    week_tz = intake_svc.week_timezone(picked_coach, owner_tz)
+    week_counts = {day: len(hours) for day, hours in week_grid.items()}
+    saved_weeks = [
         {
-            "window": w,
-            "coach_label": intake_svc.coach_label(key),
-            "tz_label": timezone_label(w.timezone),
+            "coach": key,
+            "coach_label": label,
+            "hours": sum(len(h) for h in intake_svc.week_grid(key).values()),
+            "tz_label": timezone_label(intake_svc.week_timezone(key, owner_tz)),
         }
-        for key, _label in coaches
-        for w in intake_svc.list_availability(key)
+        for key, label in coaches
     ]
     return render_template(
         "admin/support_groups.html",
@@ -3287,7 +3295,12 @@ def support_groups():
         seat_map=seat_map,
         owner_tz=owner_tz,
         coaches=coaches,
-        window_rows=window_rows,
+        picked_coach=picked_coach,
+        week_grid=week_grid,
+        week_counts=week_counts,
+        week_tz=week_tz,
+        day_hours=intake_svc.DAY_HOURS,
+        saved_weeks=saved_weeks,
         intake_rows=intake_rows,
         weekday_labels=intake_svc.WEEKDAY_LABELS,
         minutes_to_hhmm=intake_svc.minutes_to_hhmm,
@@ -3301,54 +3314,34 @@ def support_groups():
 def support_groups_availability():
     from ..services import coaching_intake as intake_svc
 
-    action = (request.form.get("action") or "add").strip().lower()
-    if action == "remove":
-        ids = _form_ids("window_ids")
-        single = request.form.get("window_id", type=int) or 0
-        if single and single not in ids:
-            ids.append(single)
-        if not ids:
-            flash("Select at least one availability window to remove.", "error")
-            return redirect(url_for("admin.support_groups"))
-        removed = 0
-        err = None
-        for wid in ids:
-            # No coach filter: the ids come from the list we rendered, and both
-            # founders' windows are in it.
-            err = intake_svc.remove_availability(wid)
-            if err:
-                break
-            removed += 1
-        if err:
-            flash(err, "error")
-        else:
-            flash(
-                f"Removed {removed} availability window"
-                f"{'s' if removed != 1 else ''}.",
-                "success",
-            )
-        return redirect(url_for("admin.support_groups"))
-
-    start = intake_svc.hhmm_to_minutes(request.form.get("start_time") or "")
-    end = intake_svc.hhmm_to_minutes(request.form.get("end_time") or "")
-    if start is None or end is None:
-        flash("Pick a start and end time.", "error")
-        return redirect(url_for("admin.support_groups"))
-    tz = (request.form.get("timezone") or current_user.timezone or "UTC").strip()
-    coach = intake_svc.normalize_coach(request.form.get("coach") or "saman")
+    coach = intake_svc.normalize_coach(request.form.get("coach") or "")
     if not coach:
         flash("Pick whose availability that is.", "error")
         return redirect(url_for("admin.support_groups"))
-    _, err = intake_svc.add_availability(
-        coach,
-        weekday=request.form.get("weekday", type=int),
-        start_minute=start,
-        end_minute=end,
-        tz_name=tz,
-    )
-    flash(err or f"{intake_svc.coach_label(coach)} availability saved.",
-          "error" if err else "success")
-    return redirect(url_for("admin.support_groups"))
+
+    # The whole week arrives at once as "weekday:hour" ticks, so unticking is
+    # how a window is removed and there is nothing to save one row at a time.
+    picks: dict[int, list[int]] = {day: [] for day in range(7)}
+    for raw in request.form.getlist("slot"):
+        day_s, _, hour_s = (raw or "").partition(":")
+        if day_s.isdigit() and hour_s.isdigit():
+            day, hour = int(day_s), int(hour_s)
+            if 0 <= day <= 6 and 0 <= hour <= 23:
+                picks[day].append(hour)
+
+    tz = (request.form.get("timezone") or current_user.timezone or "UTC").strip()
+    saved, err = intake_svc.set_week_availability(coach, picks, tz_name=tz)
+    if err:
+        flash(err, "error")
+    elif saved:
+        hours = sum(len(v) for v in picks.values())
+        flash(f"{intake_svc.coach_label(coach)}'s week saved — {hours} "
+              f"hour{'s' if hours != 1 else ''} open across "
+              f"{saved} window{'s' if saved != 1 else ''}.", "success")
+    else:
+        flash(f"{intake_svc.coach_label(coach)} is now marked unavailable all "
+              "week. Nothing can be booked until you open some hours.", "info")
+    return redirect(url_for("admin.support_groups", coach=coach))
 
 
 @bp.route("/support-groups/form", methods=["POST"])

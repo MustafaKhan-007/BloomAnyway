@@ -306,6 +306,89 @@ def add_availability(
     return row, None
 
 
+#: The hours a coach can be marked free. Slots are hourly, so an hour is the
+#: smallest thing worth ticking.
+DAY_HOURS = tuple(range(24))
+
+
+def week_grid(coach: str) -> dict[int, set[int]]:
+    """Which hours are already marked free, weekday → set of start hours.
+
+    Turns saved windows back into the ticks that made them, so the editor opens
+    on what is there rather than on nothing.
+    """
+    grid: dict[int, set[int]] = {day: set() for day in range(7)}
+    for win in list_availability(coach):
+        start = max(0, win.start_minute // 60)
+        end = min(24, -(-win.end_minute // 60))  # round up to the hour
+        for hour in range(start, end):
+            grid[win.weekday].add(hour)
+    return grid
+
+
+def week_timezone(coach: str, fallback: str | None = None) -> str:
+    """The timezone the saved week is written in, for the editor to open on."""
+    rows = list_availability(coach)
+    if rows:
+        return rows[0].timezone or normalize_timezone(fallback) or "UTC"
+    return normalize_timezone(fallback) or "UTC"
+
+
+def _merge_hours(hours) -> list[tuple[int, int]]:
+    """Ticked hours → the fewest contiguous ranges that cover them."""
+    out: list[tuple[int, int]] = []
+    for hour in sorted(set(hours)):
+        if out and out[-1][1] == hour * 60:
+            out[-1] = (out[-1][0], (hour + 1) * 60)
+        else:
+            out.append((hour * 60, (hour + 1) * 60))
+    return out
+
+
+def set_week_availability(
+    coach: str,
+    picks: dict[int, list[int]] | dict[int, set[int]],
+    *,
+    tz_name: str | None,
+) -> tuple[int, str | None]:
+    """Replace a coach's whole week in one go. Returns (windows saved, error).
+
+    Saving the week as a whole is what lets the editor be a week: there is no
+    add-one-then-add-another, and unticking is how you remove. Contiguous hours
+    are merged so a morning is one window rather than four.
+    """
+    key = normalize_coach(coach)
+    if not key:
+        return 0, "Unknown coach."
+    tz = normalize_timezone(tz_name)
+    if not tz:
+        return 0, "Pick a valid timezone from the list."
+
+    ranges: list[tuple[int, int, int]] = []
+    for day, hours in (picks or {}).items():
+        try:
+            day = int(day)
+        except (TypeError, ValueError):
+            continue
+        if not 0 <= day <= 6:
+            continue
+        clean = {int(h) for h in hours if str(h).strip().isdigit()}
+        clean = {h for h in clean if 0 <= h <= 23}
+        for start, end in _merge_hours(clean):
+            ranges.append((day, start, end))
+
+    (CoachAvailability.query
+     .filter_by(coach=key)
+     .delete(synchronize_session=False))
+    for day, start, end in ranges:
+        db.session.add(CoachAvailability(
+            coach=key, weekday=day, start_minute=start, end_minute=end,
+            timezone=tz, active=True, created_at=utcnow(),
+        ))
+    db.session.commit()
+    return len(ranges), None
+
+
 def remove_availability(row_id: int, coach: str | None = None) -> str | None:
     row = db.session.get(CoachAvailability, row_id)
     if row is None:

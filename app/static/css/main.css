@@ -2858,6 +2858,64 @@ a.studio-member-filter.is-active span { color: #fff; }
   outline-offset: 1px;
 }
 
+/* A coach's week, set in one pass: days across the top, hours underneath. */
+.sg-week__who { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.sg-week__whoami {
+  padding: 7px 16px; border-radius: 999px; text-decoration: none;
+  border: 1.5px solid rgba(61, 20, 49, 0.16); background: #fff;
+  font-size: 13px; font-weight: 700; color: var(--plum-deep);
+}
+.sg-week__whoami:hover { border-color: var(--plum); }
+.sg-week__whoami.is-active {
+  background: var(--plum-deep); border-color: var(--plum-deep); color: #fff8f3;
+}
+.sg-week__days { display: flex; flex-wrap: wrap; gap: 6px; }
+.sg-week__day {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px; border-radius: 999px; cursor: pointer;
+  border: 1.5px solid rgba(61, 20, 49, 0.16); background: #fff;
+  font: inherit; font-size: 13px; font-weight: 700; color: var(--plum-deep);
+}
+.sg-week__day:hover { border-color: var(--plum); }
+.sg-week__day.is-active {
+  background: var(--plum-deep); border-color: var(--plum-deep); color: #fff8f3;
+}
+.sg-week__day-count {
+  min-width: 20px; padding: 1px 6px; border-radius: 999px;
+  background: var(--gold-soft); color: var(--plum-deep);
+  font-size: 11px; font-weight: 800;
+}
+.sg-week__day.is-active .sg-week__day-count { background: rgba(255, 248, 243, 0.9); }
+.sg-week__panel {
+  margin-top: 14px; padding: 14px;
+  border-radius: 14px; background: var(--ivory-deep);
+  border: 1px solid rgba(61, 20, 49, 0.08);
+}
+.sg-week__panel-head {
+  display: flex; flex-wrap: wrap; align-items: center;
+  justify-content: space-between; gap: 8px; margin-bottom: 10px;
+}
+.sg-week__hours {
+  display: grid; gap: 6px;
+  grid-template-columns: repeat(auto-fill, minmax(74px, 1fr));
+}
+.sg-week__hour { margin: 0; }
+.sg-week__hour input { position: absolute; opacity: 0; pointer-events: none; }
+.sg-week__hour span {
+  display: block; padding: 8px 4px; border-radius: 10px; cursor: pointer;
+  text-align: center; font-size: 13px; font-weight: 700;
+  background: #fff; border: 1.5px solid rgba(61, 20, 49, 0.14);
+  color: var(--ink-soft);
+}
+.sg-week__hour input:checked + span {
+  background: var(--plum); border-color: var(--plum); color: #fff8f3;
+}
+.sg-week__hour input:focus-visible + span { outline: 2px solid var(--plum); outline-offset: 2px; }
+.sg-week__summary {
+  list-style: none; margin: 18px 0 0; padding: 0;
+  display: flex; flex-direction: column; gap: 6px;
+  font-size: 14px; color: var(--ink);
+}
 .sg-avail-list {
   list-style: none; margin: 0; padding: 0;
   display: flex; flex-direction: column; gap: 10px;

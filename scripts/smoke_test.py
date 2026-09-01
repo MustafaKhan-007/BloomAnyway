@@ -3734,6 +3734,73 @@ _sgbody = admin.get("/admin/support-groups").get_data(as_text=True)
 ok("Studio manages both founders' availability, and says whose is whose",
    "1:1 availability" in _sgbody and "Ayesha" in _sgbody and "Saman" in _sgbody)
 
+# --- availability is a week you set in one pass -------------------------------
+# Ticking hours across the days and saving once, rather than adding a window at
+# a time. Unticking is how an hour is taken away.
+_wbody = admin.get("/admin/support-groups?coach=ayesha").get_data(as_text=True)
+ok("The week editor opens on the coach you asked for",
+   'name="coach" value="ayesha"' in _wbody and 'data-sg-week' in _wbody)
+ok("Switching coach is a plain link, needing no script the CSP would block",
+   "onchange=" not in _wbody
+   and 'href="/admin/support-groups?coach=saman"' in _wbody
+   and "sg-week__whoami is-active" in _wbody)
+_sbody2 = admin.get("/admin/support-groups?coach=saman").get_data(as_text=True)
+ok("And each coach's own week comes back, not the other's",
+   'name="coach" value="saman"' in _sbody2
+   and 'value="ayesha" selected' not in _sbody2)
+ok("With every day reachable and every hour tickable",
+   all(f'value="{d}:9"' in _wbody for d in range(7)))
+ok("And what is already saved comes back ticked",
+   'value="{}:9"'.format((utcnow() + timedelta(days=2)).weekday()) in _wbody
+   and 'checked' in _wbody)
+
+r = admin.post("/admin/support-groups/availability", data={
+    "coach": "ayesha", "timezone": "UTC",
+    # Monday morning in one run, plus a lone Wednesday hour.
+    "slot": ["0:9", "0:10", "0:11", "2:14"],
+}, follow_redirects=True)
+ok("Saving the week reports what went in",
+   "hours open across" in r.get_data(as_text=True), flashes(r))
+with app.app_context():
+    _wins = intake_svc.list_availability("ayesha")
+    _shape = sorted((w.weekday, w.start_minute, w.end_minute) for w in _wins)
+    ok("Hours next to each other become one window, not four",
+       _shape == [(0, 540, 720), (2, 840, 900)], f"got {_shape}")
+    ok("All of it saved in the timezone chosen for the week",
+       {w.timezone for w in _wins} == {"UTC"})
+    ok("The editor can read its own week back",
+       intake_svc.week_grid("ayesha")[0] == {9, 10, 11}
+       and intake_svc.week_grid("ayesha")[2] == {14})
+    ok("And members get bookable slots from it",
+       len(intake_svc.open_slots("ayesha", viewer_tz="UTC")) > 0)
+
+# Saving again is editing: the week is replaced, not added to.
+admin.post("/admin/support-groups/availability", data={
+    "coach": "ayesha", "timezone": "UTC", "slot": ["0:9"],
+}, follow_redirects=True)
+with app.app_context():
+    _shape = sorted((w.weekday, w.start_minute, w.end_minute)
+                    for w in intake_svc.list_availability("ayesha"))
+    ok("Unticking an hour removes it rather than leaving it behind",
+       _shape == [(0, 540, 600)], f"got {_shape}")
+    ok("Saman's week is untouched by saving Ayesha's",
+       len(intake_svc.list_availability("saman")) > 0)
+
+r = admin.post("/admin/support-groups/availability", data={
+    "coach": "ayesha", "timezone": "UTC",
+}, follow_redirects=True)
+ok("Clearing every day says so plainly, rather than looking like a no-op",
+   "unavailable all week" in r.get_data(as_text=True), flashes(r))
+with app.app_context():
+    ok("And nothing is bookable once the week is empty",
+       intake_svc.list_availability("ayesha") == []
+       and intake_svc.open_slots("ayesha", viewer_tz="UTC") == [])
+    # Put her week back for anything downstream.
+    intake_svc.set_week_availability(
+        "ayesha", {(utcnow() + timedelta(days=2)).weekday(): [9, 10, 11, 12, 13, 14]},
+        tz_name="UTC")
+    ok("Setup restored", len(intake_svc.open_slots("ayesha", viewer_tz="UTC")) > 0)
+
 
 # site image uploads (hero / story teaser)
 from io import BytesIO

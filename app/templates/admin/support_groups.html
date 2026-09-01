@@ -166,43 +166,69 @@
       <h2 style="margin:0;">1:1 availability</h2>
     </div>
     <p class="field-help" style="margin-top: 6px;">
-      Weekly windows members can book for a founder 1:1 (60‑minute slots).
-      Pick the coach’s timezone from the full list — daylight saving is applied automatically when slots are offered.
+      Set a whole week at once: pick whose it is, walk the days, tick the hours
+      they're free, then save. Ticking is adding and unticking is removing —
+      what you see here is what members can book. Times are in the coach's own
+      timezone and convert to each member's automatically.
     </p>
+
+    {# Plain links rather than a dropdown that needs scripting to act on: the
+       CSP forbids inline handlers, and a switch this small shouldn't depend on
+       JavaScript running at all. #}
+    <nav class="sg-week__who" style="margin-top: 12px;" aria-label="Whose week">
+      <span class="field__label" style="margin: 0;">Whose week</span>
+      {% for key, label in coaches %}
+      <a class="sg-week__whoami{{ ' is-active' if key == picked_coach }}"
+         href="{{ url_for('admin.support_groups', coach=key) }}"
+         {% if key == picked_coach %}aria-current="page"{% endif %}>{{ label }}</a>
+      {% endfor %}
+    </nav>
+
     <form method="post" action="{{ url_for('admin.support_groups_availability') }}"
-          class="stack-form sg-schedule" style="margin-top: 12px; max-width: 560px;">
+          class="sg-week" data-sg-week style="margin-top: 14px;">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="action" value="add">
-      <div class="form-row">
-        <div class="field">
-          <label for="sg-avail-coach">Whose</label>
-          <select id="sg-avail-coach" name="coach" required>
-            {% for key, label in coaches %}
-            <option value="{{ key }}">{{ label }}</option>
-            {% endfor %}
-          </select>
+      <input type="hidden" name="coach" value="{{ picked_coach }}">
+
+      <div class="sg-week__days" role="tablist" aria-label="Day of the week">
+        {% for label in weekday_labels %}
+        <button type="button" class="sg-week__day{{ ' is-active' if loop.index0 == 0 }}"
+                data-week-day="{{ loop.index0 }}" role="tab"
+                aria-selected="{{ 'true' if loop.index0 == 0 else 'false' }}">
+          {{ label[:3] }}
+          <span class="sg-week__day-count" data-week-count="{{ loop.index0 }}"
+                {% if not week_counts[loop.index0] %}hidden{% endif %}>{{ week_counts[loop.index0] }}</span>
+        </button>
+        {% endfor %}
+      </div>
+
+      {% for label in weekday_labels %}
+      {% set day = loop.index0 %}
+      <div class="sg-week__panel" data-week-panel="{{ day }}" {% if day %}hidden{% endif %}
+           role="tabpanel" aria-label="{{ label }}">
+        <div class="sg-week__panel-head">
+          <strong>{{ label }}</strong>
+          <span>
+            <button type="button" class="btn btn--quiet btn--sm" data-week-workday="{{ day }}">9–5</button>
+            <button type="button" class="btn btn--quiet btn--sm" data-week-clear="{{ day }}">Clear</button>
+          </span>
         </div>
-        <div class="field">
-          <label for="sg-weekday">Day</label>
-          <select id="sg-weekday" name="weekday" required>
-            {% for label in weekday_labels %}
-            <option value="{{ loop.index0 }}">{{ label }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="field">
-          <label for="sg-start">Start</label>
-          <input type="time" id="sg-start" name="start_time" required value="10:00">
-        </div>
-        <div class="field">
-          <label for="sg-end">End</label>
-          <input type="time" id="sg-end" name="end_time" required value="14:00">
+        <div class="sg-week__hours">
+          {% for hour in day_hours %}
+          <label class="sg-week__hour">
+            <input type="checkbox" name="slot" value="{{ day }}:{{ hour }}"
+                   data-week-slot="{{ day }}"
+                   {{ 'checked' if hour in week_grid[day] }}>
+            <span>{{ '%02d:00'|format(hour) }}</span>
+          </label>
+          {% endfor %}
         </div>
       </div>
-      <div class="field">
+      {% endfor %}
+
+      <div class="field" style="margin-top: 16px;">
         <label for="sg-avail-tz-search">Timezone</label>
         <div class="tz-picker" data-tz-picker>
-          <input type="hidden" name="timezone" id="sg-avail-tz" value="{{ owner_tz }}" required>
+          <input type="hidden" name="timezone" id="sg-avail-tz" value="{{ week_tz }}" required>
           <input type="search" id="sg-avail-tz-search" class="tz-picker__search"
                  placeholder="Search city or region…" autocomplete="off"
                  aria-controls="sg-avail-tz-list" aria-expanded="false"
@@ -212,12 +238,12 @@
             <div class="tz-picker__group" data-tz-group>
               <div class="tz-picker__group-label">{{ group.label }}</div>
               {% for opt in group.options %}
-              <button type="button" class="tz-picker__opt{% if opt.selected %} is-selected{% endif %}"
+              <button type="button" class="tz-picker__opt{% if opt.value == week_tz %} is-selected{% endif %}"
                       role="option"
                       data-value="{{ opt.value }}"
                       data-label="{{ opt.label }}"
                       data-search="{{ (opt.value ~ ' ' ~ opt.label)|lower }}"
-                      {% if opt.selected %}aria-selected="true"{% else %}aria-selected="false"{% endif %}>
+                      aria-selected="{{ 'true' if opt.value == week_tz else 'false' }}">
                 {{ opt.label }}
               </button>
               {% endfor %}
@@ -226,48 +252,31 @@
             <p class="tz-picker__empty" data-tz-empty hidden>No matching timezones</p>
           </div>
           <p class="tz-picker__chosen" data-tz-chosen>
-            Selected: <strong>{{ selected_tz_label }}</strong>
+            Selected: <strong>{{ week_tz }}</strong>
           </p>
         </div>
-        <p class="field-help">
-          Type to search the full IANA list. Offsets update with daylight saving;
-          slots convert to each member’s timezone automatically.
-        </p>
       </div>
-      <button class="btn btn--secondary btn--sm" type="submit">Add window</button>
+
+      <button class="btn btn--primary" type="submit">Save {{ coaches|selectattr('0', 'equalto', picked_coach)|map(attribute=1)|first }}&rsquo;s week</button>
+      <p class="field-help" style="margin-top: 8px;">
+        Saving replaces this coach&rsquo;s whole week. Clearing every day marks them
+        unavailable, and nothing can be booked until you open hours again.
+      </p>
     </form>
-    {% if window_rows %}
-    {% with form_id='bulk-sg-windows',
-            action=url_for('admin.support_groups_availability'),
-            confirm_template='Remove {n} selected availability window(s)?',
-            confirm_title='Remove selected windows?',
-            confirm_ok='Remove',
-            button_label='Remove selected',
-            hidden={'action': 'remove'} %}
-      {% include "admin/_bulk_bar.html" %}
-    {% endwith %}
-    <ul class="sg-avail-list" style="margin-top: 16px;">
-      {% for row in window_rows %}
-      {% set w = row.window %}
+
+    <ul class="sg-week__summary">
+      {% for row in saved_weeks %}
       <li>
-        <input type="checkbox" name="window_ids" value="{{ w.id }}" form="bulk-sg-windows" data-bulk-item
-               aria-label="Select {{ weekday_labels[w.weekday] }} window">
-        <span><strong>{{ row.coach_label }}</strong> &middot; {{ weekday_labels[w.weekday] }}
-          {{ minutes_to_hhmm(w.start_minute) }}–{{ minutes_to_hhmm(w.end_minute) }}
-          <span class="field-help">({{ row.tz_label }})</span>
-        </span>
-        <form method="post" action="{{ url_for('admin.support_groups_availability') }}" style="display:inline;">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="hidden" name="action" value="remove">
-          <input type="hidden" name="window_id" value="{{ w.id }}">
-          <button class="btn btn--secondary btn--sm" type="submit">Remove</button>
-        </form>
+        <strong>{{ row.coach_label }}</strong>
+        {% if row.hours %}
+        {{ row.hours }} hour{{ '' if row.hours == 1 else 's' }} open a week
+        <span class="field-help">({{ row.tz_label }})</span>
+        {% else %}
+        <span class="field-help">nothing open — no bookable times</span>
+        {% endif %}
       </li>
       {% endfor %}
     </ul>
-    {% else %}
-    <p class="field-help" style="margin-top: 12px;">No windows yet — members won’t see bookable times until you add some.</p>
-    {% endif %}
   </section>
 
   <section class="admin-panel sg-panel" style="margin-top: 24px;">

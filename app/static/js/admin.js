@@ -207,6 +207,70 @@
     renumber();
   })();
 
+  /* ---- a coach's week of 1:1 hours, set in one go ----
+     One form holds all seven days; only the chosen day is on screen, so the
+     whole week is saved with a single submit and unticking is how an hour is
+     taken away. */
+  (function () {
+    var root = document.querySelector("[data-sg-week]");
+    if (!root) return;
+
+    function slots(day) {
+      return root.querySelectorAll('[data-week-slot="' + day + '"]');
+    }
+
+    function syncCount(day) {
+      var badge = root.querySelector('[data-week-count="' + day + '"]');
+      if (!badge) return;
+      var n = 0;
+      slots(day).forEach(function (box) { if (box.checked) n += 1; });
+      badge.textContent = String(n);
+      badge.hidden = n === 0;
+    }
+
+    function showDay(day) {
+      root.querySelectorAll("[data-week-panel]").forEach(function (panel) {
+        panel.hidden = panel.getAttribute("data-week-panel") !== String(day);
+      });
+      root.querySelectorAll("[data-week-day]").forEach(function (tab) {
+        var on = tab.getAttribute("data-week-day") === String(day);
+        tab.classList.toggle("is-active", on);
+        tab.setAttribute("aria-selected", on ? "true" : "false");
+      });
+    }
+
+    root.addEventListener("click", function (e) {
+      var tab = e.target.closest("[data-week-day]");
+      if (tab) {
+        showDay(tab.getAttribute("data-week-day"));
+        return;
+      }
+      var workday = e.target.closest("[data-week-workday]");
+      if (workday) {
+        var d = workday.getAttribute("data-week-workday");
+        slots(d).forEach(function (box) {
+          var hour = parseInt((box.value.split(":")[1] || "0"), 10);
+          box.checked = hour >= 9 && hour < 17;
+        });
+        syncCount(d);
+        return;
+      }
+      var clear = e.target.closest("[data-week-clear]");
+      if (clear) {
+        var c = clear.getAttribute("data-week-clear");
+        slots(c).forEach(function (box) { box.checked = false; });
+        syncCount(c);
+      }
+    });
+
+    root.addEventListener("change", function (e) {
+      var box = e.target.closest("[data-week-slot]");
+      if (box) syncCount(box.getAttribute("data-week-slot"));
+    });
+
+    for (var day = 0; day < 7; day += 1) syncCount(day);
+  })();
+
   /* ---- extracts written for one particular file ----
      These hang off a saved file rather than a module, so they also appear
      among the loose files outside the module list. Wired from the document
