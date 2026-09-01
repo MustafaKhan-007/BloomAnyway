@@ -481,11 +481,7 @@ def _session_to_payment_data(session) -> dict:
                 price_id = price
     email = _buyer_email(session)
     # $0 / 100% off: no PaymentIntent — fall back to subscription or session id.
-    payment_id = (
-        _stripe_id(session.get("payment_intent"))
-        or _stripe_id(session.get("subscription"))
-        or _stripe_id(session.get("id"))
-    )
+    payment_id = _session_payment_id(session)
     meta_out = dict(meta or {})
     sub_id = _stripe_id(session.get("subscription"))
     if sub_id:
@@ -638,6 +634,21 @@ def fulfill_checkout_session_id(session_id: str) -> Order | None:
     return handle_payment_event("payment.succeeded", data)
 
 
+def _session_payment_id(session: dict) -> str:
+    """The id an order is stored under, from a Checkout Session.
+
+    Kept next to ``_session_to_payment_data`` so the two can't drift: a $0 or
+    fully discounted checkout has no PaymentIntent and falls back to the
+    subscription, then the session itself.
+    """
+    return (
+        _stripe_id(session.get("payment_intent"))
+        or _stripe_id(session.get("subscription"))
+        or _stripe_id(session.get("id"))
+        or ""
+    )
+
+
 def sync_recent_payments(*, days: int = 60, max_pages: int = 3) -> dict:
     """Pull recent completed Checkout Sessions and fulfill any missing locally."""
     if not configured():
@@ -676,9 +687,28 @@ def sync_recent_payments(*, days: int = 60, max_pages: int = 3) -> dict:
         items = list(page.data or [])
         if not items:
             break
+        # A list entry is a whole Session bar its line items, so the payment id
+        # can be read straight off it. Anything already fulfilled is skipped
+        # before the retrieve rather than after: this loop used to spend one
+        # API round trip per session, every single time it ran.
+        candidates = {}
+        for session in items:
+            pid = _session_payment_id(_as_dict(session))
+            if pid:
+                candidates.setdefault(pid, []).append(session.id)
+        done: set[str] = set()
+        if candidates:
+            done = {
+                row.ls_order_id for row in Order.query
+                .filter(Order.ls_order_id.in_(list(candidates)),
+                        Order.status == "paid")
+                .all()
+            }
         for session in items:
             checked += 1
             starting_after = session.id
+            if _session_payment_id(_as_dict(session)) in done:
+                continue
             try:
                 full = stripe.checkout.Session.retrieve(
                     session.id, expand=["line_items"]

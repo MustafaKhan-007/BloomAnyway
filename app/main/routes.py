@@ -854,12 +854,16 @@ def account():
         try:
             if session_id:
                 pay.fulfill_checkout_session_id(session_id)
-            pay.sync_recent_payments(days=14, max_pages=1)
             link_pending_purchases(current_user)
             db.session.commit()
         except Exception:
             log.exception("account: purchase sync after checkout failed")
             db.session.rollback()
+        # Catching up on anything a webhook missed is a safety net, not this
+        # purchase — that one is already fulfilled above from its session id.
+        # Waiting on it here meant landing back from Stripe onto a page that
+        # sat there for a Stripe call per checkout of the last fortnight.
+        pay.start_background_sync(days=14, max_pages=1)
 
     orders = (Order.query
               .filter(func.lower(Order.buyer_email) == current_user.email.lower())
@@ -2086,13 +2090,15 @@ def support_groups_page():
         try:
             if session_id:
                 pay.fulfill_checkout_session_id(session_id)
-            pay.sync_recent_payments(days=7, max_pages=1)
             db.session.commit()
             if current_user.is_authenticated:
                 flash("You’re booked — check My space → Activity for the confirmation.", "success")
         except Exception:
             log.exception("support groups: purchase sync after checkout failed")
             db.session.rollback()
+        # Same as My space: the booking they just paid for is done above, so
+        # the wider catch-up runs behind the page rather than in front of it.
+        pay.start_background_sync(days=7, max_pages=1)
 
     stats = sg_svc.circle_stats()
     healing = [s for s in stats if s["circle"].track == "healing"]

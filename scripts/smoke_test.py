@@ -4600,9 +4600,55 @@ with app.app_context():
     blind = pay.replace_other_memberships(
         "unplaceable@example.com", keep_order_id="BLIND-NOWHERE",
         keep_subscription_id=None)
-    ok("A payment we cannot place cancels nothing at all",
-       blind["cancelled"] == [] and "unknown_subscription" in blind["errors"],
-       f"got {blind}")
+ok("A payment we cannot place cancels nothing at all",
+   blind["cancelled"] == [] and "unknown_subscription" in blind["errors"],
+   f"got {blind}")
+
+# Coming back from Stripe used to wait on one API call per checkout of the last
+# fortnight. The order id is on the list entry, so anything already fulfilled
+# is skipped before the call rather than after it.
+with app.app_context():
+    import types as _types
+    _seen = {"list": 0, "retrieve": 0}
+
+    class _Sess(dict):
+        __getattr__ = dict.get
+
+    _fake = [_Sess({"id": f"cs_perf{i}", "object": "checkout.session",
+                    "status": "complete", "payment_status": "paid",
+                    "amount_total": 2400, "currency": "usd",
+                    "payment_intent": f"pi_perf{i}", "metadata": {},
+                    "customer_email": "perf@example.com",
+                    "line_items": {"data": []}}) for i in range(6)]
+    ok("A checkout session's order id can be read off the list entry",
+       pay._session_payment_id(_fake[0]) == "pi_perf0")
+
+    for _s in _fake[:5]:  # five already fulfilled, one new
+        db.session.add(Order(ls_order_id=_s["payment_intent"], status="paid",
+                             buyer_email="perf@example.com", total_cents=2400,
+                             currency="USD"))
+    db.session.commit()
+
+    class _Page:
+        def __init__(self, data): self.data = data; self.has_more = False
+
+    _real_stripe, _real_conf, _real_cfg = pay.stripe, pay.configured, pay._configure_stripe
+    pay.configured = lambda: True
+    pay._configure_stripe = lambda: None
+    pay.stripe = _types.SimpleNamespace(checkout=_types.SimpleNamespace(
+        Session=_types.SimpleNamespace(
+            list=lambda **kw: (_seen.__setitem__("list", _seen["list"] + 1)
+                               or _Page(_fake)),
+            retrieve=lambda sid, **kw: (_seen.__setitem__("retrieve", _seen["retrieve"] + 1)
+                                        or next(s for s in _fake if s["id"] == sid)))))
+    app.config["TESTING"] = False
+    try:
+        pay.sync_recent_payments(days=14, max_pages=1)
+    finally:
+        app.config["TESTING"] = True
+        pay.stripe, pay.configured, pay._configure_stripe = _real_stripe, _real_conf, _real_cfg
+    ok("Only the checkout it hasn't seen costs an API call",
+       _seen == {"list": 1, "retrieve": 1}, f"got {_seen}")
 
 
 # --- the other ways the money stops -------------------------------------------
