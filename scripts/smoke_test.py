@@ -1185,6 +1185,51 @@ ok("But not under one it isn't",
 ok("The product page names both",
    "Course, Template" in client.get("/courses/rebuild-your-week").get_data(as_text=True))
 
+# --- a running promo code -----------------------------------------------------
+_promo_fields = {
+    "title": "Rebuild Your Week", "track": "building", "types": ["course"],
+    "slug": "rebuild-your-week", "promise": "A course, and the templates.",
+    "price": "24.00", "stripe": "price_rebuild_week", "live": "1",
+}
+r = admin.post(f"/admin/products/{_multi_id}/edit",
+               data=dict(_promo_fields, promo_price="18.00", promo_code="spring25"),
+               follow_redirects=True)
+with app.app_context():
+    _p = db.session.get(Product, _multi_id)
+    ok("Studio saves a promo price and its code",
+       _p.has_promo() and _p.promo_price_cents == 1800
+       and _p.promo_code_display() == "SPRING25",
+       f"got {_p.promo_code!r} {_p.promo_price_cents}")
+    ok("And works out what comes off",
+       _p.promo_display() == "$18" and _p.promo_saving_display() == "$6",
+       f"got {_p.promo_display()} / {_p.promo_saving_display()}")
+
+_pd = client.get("/courses/rebuild-your-week").get_data(as_text=True)
+ok("The product page leads with the promo price and strikes the old one",
+   "pd-promo" in _pd and "$18" in _pd and "<s>$24</s>" in _pd)
+ok("And says which code to type",
+   "SPRING25" in _pd and "at checkout" in _pd)
+_tile = _catalogue("/courses?b=course")
+ok("The catalogue tile shows the sale price over the old one",
+   "lib-card__price--promo" in _tile and "<s>$24</s>" in _tile)
+ok("With the saving and the code on the card",
+   "lib-card__promo" in _tile and "SPRING25" in _tile and "$6 off" in _tile)
+
+# Half a promo is no promo, and one that doesn't save anything isn't a sale.
+for _bad, _why in (({"promo_price": "18.00", "promo_code": ""}, "no code"),
+                   ({"promo_price": "", "promo_code": "SPRING25"}, "no price"),
+                   ({"promo_price": "30.00", "promo_code": "SPRING25"}, "dearer")):
+    admin.post(f"/admin/products/{_multi_id}/edit",
+               data=dict(_promo_fields, **_bad), follow_redirects=True)
+    with app.app_context():
+        ok(f"A promo with {_why} isn't advertised",
+           not db.session.get(Product, _multi_id).has_promo())
+ok("And the card goes back to the ordinary price",
+   "lib-card__price--promo" not in _catalogue("/courses?b=course"))
+with app.app_context():
+    db.session.get(Product, _multi_id).set_types(["course", "template"])
+    db.session.commit()
+
 # Anything still posting one type keeps working, and so does a product that
 # has only ever had one.
 r = admin.post("/admin/products/new", data={
@@ -1331,10 +1376,24 @@ ok("Free member reads a tip that was opened to Free",
    r.status_code == 200 and "ten first lines" in r.get_data(as_text=True))
 r = free_client.get(f"/watch/{vid_id}")
 free_tip = r.get_data(as_text=True)
-ok("Locked tip shows a teaser, not the whole thing",
-   r.status_code == 200 and "Start with three pages" in free_tip
+# A locked tip is blurred rather than teased. Blurring in CSS alone would
+# still ship the words — the page source, and reader modes, would have them.
+ok("A locked tip sends none of its words, not even an opening",
+   r.status_code == 200
+   and "Start with three pages" not in free_tip
    and "Don&#39;t edit while you write." not in free_tip
    and "See memberships" in free_tip)
+ok("But there is blurred writing there, so it reads as locked and not empty",
+   "tip-read__blurred" in free_tip)
+with app.app_context():
+    _shape = db.session.get(Video, vid_id).locked_shape()
+    ok("The blur is filler shaped like the tip, carrying none of it",
+       _shape and _shape in free_tip
+       and not any(w in _shape.lower()
+                   for w in ("start", "pages", "edit", "write")),
+       f"got {_shape[:60]!r}")
+    ok("And it holds still between loads rather than reshuffling",
+       db.session.get(Video, vid_id).locked_shape() == _shape)
 r = client.get(f"/watch/{vid_id}/stream", headers={"Range": "bytes=0-3"})
 ok("Video streams with range support (206 partial)",
    r.status_code == 206 and r.headers.get("Accept-Ranges") == "bytes"

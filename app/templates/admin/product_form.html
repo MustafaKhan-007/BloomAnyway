@@ -193,6 +193,34 @@
       </div>
       <div class="form-row">
         <div class="field">
+          <label for="promo_price">Promo price (optional)</label>
+          <input type="text" id="promo_price" name="promo_price" placeholder="19.00"
+                 value="{{ '%.2f'|format(product.promo_price_cents / 100) if product.promo_price_cents is not none else '' }}">
+        </div>
+        <div class="field">
+          <label for="promo_code">Promo code</label>
+          <input type="text" id="promo_code" name="promo_code" maxlength="40"
+                 placeholder="SPRING25" value="{{ product.promo_code or '' }}">
+        </div>
+        <div class="field" style="flex:2; padding-top:28px;">
+          {% if product.has_promo() %}
+          <p class="field-help">
+            <strong>Running now:</strong> {{ product.promo_display() }} with
+            <code>{{ product.promo_code_display() }}</code> —
+            {{ product.promo_saving_display() }} off, shown on the card and the
+            product page.
+          </p>
+          {% else %}
+          <p class="field-help">
+            Fill in both to put a sale banner on the card and the product page.
+            The code is the one they type at Stripe checkout — make it in Stripe
+            first. Clear either field to take the banner down.
+          </p>
+          {% endif %}
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="field">
           <label for="perk_tier">Additional perk (optional)</label>
           <select id="perk_tier" name="perk_tier">
             <option value="">No membership perk</option>

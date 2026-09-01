@@ -372,6 +372,23 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
     elif compare is not None:
         product.compare_at_cents = compare
 
+    # A promo needs both halves. Clearing either one takes the banner down,
+    # rather than leaving a code with no price or a price with no code.
+    promo_code = (form.get("promo_code") or "").strip().upper()[:40]
+    promo_price = _parse_price_cents(form.get("promo_price"))
+    if not promo_code or (form.get("promo_price") or "").strip() == "":
+        product.promo_code = None
+        product.promo_price_cents = None
+    else:
+        product.promo_code = promo_code
+        product.promo_price_cents = promo_price
+    if (product.promo_price_cents is not None and product.price_cents is not None
+            and product.promo_price_cents >= product.price_cents):
+        flash("The promo price needs to be lower than the normal price, so "
+              "the banner was left off.", "info")
+        product.promo_code = None
+        product.promo_price_cents = None
+
     if form.get("use_accent"):
         product.accent_color = _parse_accent(form.get("accent"))
     else:

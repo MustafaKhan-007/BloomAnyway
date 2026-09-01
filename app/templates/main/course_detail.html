@@ -40,10 +40,24 @@
           {{ bloom_cover(product.title, product.kind_short(), cover, product.cover_url or none) }}
         </div>
         <div class="pd-hero__buy">
+          {% if product.has_promo() %}
+          <div class="pd-hero__price">
+            <strong>{{ product.promo_display() }}</strong>
+            <s>{{ product.price_display() }}</s>
+          </div>
+          <p class="pd-promo">
+            <span class="pd-promo__spark" aria-hidden="true">&#10022;</span>
+            <span>
+              <strong>{{ product.promo_saving_display() }} off right now.</strong>
+              Enter <code>{{ product.promo_code_display() }}</code> at checkout.
+            </span>
+          </p>
+          {% else %}
           <div class="pd-hero__price">
             <strong>{{ product.price_display() or '—' }}</strong>
             {% if product.compare_at_display() %}<s>{{ product.compare_at_display() }}</s>{% endif %}
           </div>
+          {% endif %}
           {% if product.has_perk() %}
           <p class="pd-hero__perk">Also included: {{ product.perk_summary() }}</p>
           {% endif %}

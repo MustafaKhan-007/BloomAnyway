@@ -81,8 +81,8 @@
 
       <div class="reel-read__copy">
         {% if not can_read %}
-        <article class="reel-read__body forum-body reel-read__body--locked">
-          {{ review.teaser() }}
+        <article class="reel-read__body forum-body tip-read__blurred" aria-hidden="true">
+          {{ review.locked_shape() }}
         </article>
         <div class="reel-read__lock">
           <h2>The rest is for Creator members</h2>

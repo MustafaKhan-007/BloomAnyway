@@ -7539,13 +7539,14 @@ a.at-handle:hover { text-decoration: underline; }
   box-shadow: 0 8px 24px rgba(61, 20, 49, 0.05);
   font-size: 16.5px; line-height: 1.75;
 }
-.tip-read__teaser {
-  position: relative; max-height: 132px; overflow: hidden;
+/* Stands in for writing behind a paywall. What's underneath is filler shaped
+   like the real thing, blurred past reading — the words are never sent. */
+.tip-read__blurred {
+  max-height: 170px; overflow: hidden;
   margin: 8px 0 18px; font-size: 16.5px; line-height: 1.7; color: var(--rm-ink);
-}
-.tip-read__teaser::after {
-  content: ""; position: absolute; inset: auto 0 0; height: 70px;
-  background: linear-gradient(rgba(255, 251, 245, 0), var(--dawn-ivory, #fffbf5));
+  filter: blur(5px);
+  user-select: none; -webkit-user-select: none;
+  pointer-events: none;
 }
 .tip-read__more-head { margin-top: 48px; }
 
@@ -7690,15 +7691,6 @@ a.at-handle:hover { text-decoration: underline; }
 .reel-read__cta h2 { margin: 0 0 6px; font-size: 1.2rem; }
 .reel-read__cta p { margin: 0 0 14px; font-size: 14.5px; color: var(--rm-plum); }
 
-/* the taste non-members get, fading into the upgrade prompt */
-.reel-read__body--locked {
-  position: relative; max-height: 240px; overflow: hidden;
-}
-.reel-read__body--locked::after {
-  content: ""; position: absolute; inset: auto 0 0 0; height: 120px;
-  background: linear-gradient(to bottom, rgba(255, 255, 255, 0), var(--dawn-ivory));
-  pointer-events: none;
-}
 .reel-read__lock {
   margin-top: 18px; padding: 22px 24px; border-radius: 18px;
   background: linear-gradient(135deg, #f7e8c8 0%, #fff7e6 55%, #f0d59a 100%);
@@ -8411,6 +8403,17 @@ a.at-handle:hover { text-decoration: underline; }
   font-size: 1.35rem; font-weight: 800; color: var(--plum-deep);
   margin-right: auto;
 }
+.lib-card__price--promo { display: inline-flex; align-items: baseline; gap: 7px; }
+.lib-card__price--promo s {
+  font-size: 0.95rem; font-weight: 600; color: var(--ink-soft);
+}
+/* The sale line on a catalogue card: what comes off, and the code for it. */
+.lib-card__promo { color: var(--plum-deep); font-weight: 700; }
+.lib-card__promo code {
+  padding: 1px 6px; border-radius: 6px;
+  background: var(--gold-soft); border: 1px solid rgba(239, 167, 51, 0.5);
+  font-size: 12.5px; letter-spacing: 0.04em;
+}
 .lib-card__badge {
   margin: 0 0 6px; font-size: 11px; font-weight: 800;
   letter-spacing: 0.08em; text-transform: uppercase; color: var(--lib-cover, #5A3158);
@@ -8892,6 +8895,20 @@ a.at-handle:hover { text-decoration: underline; }
 .pd-hero__price { display: flex; align-items: baseline; gap: 10px; }
 .pd-hero__price strong { font-size: 1.6rem; color: var(--plum); }
 .pd-hero__price s { color: var(--ink-soft); font-size: 1rem; }
+/* The sale banner above the buy button on a product page. */
+.pd-promo {
+  flex: 1 1 100%; margin: 4px 0 0;
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 10px 12px; border-radius: 12px;
+  background: var(--gold-soft); border: 1px solid rgba(239, 167, 51, 0.5);
+  font-size: 13.5px; line-height: 1.5; color: var(--ink);
+}
+.pd-promo__spark { color: var(--gold); font-size: 15px; line-height: 1.3; }
+.pd-promo code {
+  padding: 1px 6px; border-radius: 6px;
+  background: rgba(255, 255, 255, 0.75); border: 1px solid rgba(239, 167, 51, 0.55);
+  font-weight: 800; letter-spacing: 0.05em;
+}
 .pd-hero__cta { min-width: 140px; justify-content: center; width: 100%; }
 .pd-hero__note { flex: 1 1 100%; margin: 0; font-size: 13px; color: var(--ink-soft); }
 .pd-hero__perk {

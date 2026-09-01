@@ -1,5 +1,6 @@
 """All SQLAlchemy models."""
 import json
+import random
 from datetime import date, datetime, timedelta, timezone
 
 from flask_login import UserMixin
@@ -10,6 +11,34 @@ from .extensions import db
 #: number of profanity warnings allowed before a forum ban (the ban lands on
 #: the next offense after this many warnings)
 FORUM_WARNING_LIMIT = 2
+
+#: Letters that still read as words once a paragraph is blurred out.
+_SHAPE_LETTERS = "aacdeeghiilmnoorrsttu"
+
+
+def blurred_shape(text: str, *, seed: int = 0, limit: int = 420) -> str:
+    """Filler shaped like the writing behind a paywall, carrying none of it.
+
+    Blurring the real words in CSS would still ship them: they sit in the page
+    source for anyone who opens it, and reader modes strip the blur outright.
+    This keeps the rhythm of the paragraph — the word lengths, the shape of it
+    — so it reads as writing you haven't unlocked rather than a grey box, while
+    the words themselves never leave the server.
+    """
+    words = (text or "").split()
+    if not words:
+        return ""
+    # Seeded so it doesn't reshuffle on every page load.
+    rng = random.Random(seed or len(words))
+    out: list[str] = []
+    used = 0
+    for word in words:
+        size = min(len(word), 14)
+        out.append("".join(rng.choice(_SHAPE_LETTERS) for _ in range(size)))
+        used += size + 1
+        if used >= limit:
+            break
+    return " ".join(out)
 
 
 def utcnow():
@@ -364,6 +393,11 @@ class Product(db.Model):
 
     price_cents = db.Column(db.Integer)
     compare_at_cents = db.Column(db.Integer)
+    #: A running promo: what it costs with the code, and the code to type at
+    #: Stripe checkout. Both or neither — a price with no code is a mystery and
+    #: a code with no price is nothing to advertise.
+    promo_price_cents = db.Column(db.Integer)
+    promo_code = db.Column(db.String(40))
     currency = db.Column(db.String(3), nullable=False, default="USD")
     ls_checkout_url = db.Column(db.String(500))  # legacy; unused
     ls_variant_id = db.Column(db.String(40), index=True)  # legacy; unused
@@ -632,18 +666,43 @@ class Product(db.Model):
         return f"{months} {unit} of {label} membership, free"
 
     def price_display(self):
-        if self.price_cents is None:
+        return self._money_display(self.price_cents)
+
+    # --- a running promo code -------------------------------------------------
+    def has_promo(self) -> bool:
+        """A promo needs a code to type and a price that beats the normal one."""
+        return bool(
+            (self.promo_code or "").strip()
+            and self.promo_price_cents is not None
+            and self.price_cents is not None
+            and 0 <= self.promo_price_cents < self.price_cents
+        )
+
+    def promo_display(self) -> str:
+        if not self.has_promo():
             return ""
-        symbol = {"USD": "$", "EUR": "\u20ac", "GBP": "\u00a3"}.get(self.currency, self.currency + " ")
-        amount = self.price_cents / 100
-        return f"{symbol}{amount:,.0f}" if self.price_cents % 100 == 0 else f"{symbol}{amount:,.2f}"
+        return self._money_display(self.promo_price_cents)
+
+    def promo_code_display(self) -> str:
+        return (self.promo_code or "").strip().upper()
+
+    def promo_saving_display(self) -> str:
+        """How much comes off, in money — "save $12"."""
+        if not self.has_promo():
+            return ""
+        return self._money_display(self.price_cents - self.promo_price_cents)
+
+    def _money_display(self, cents) -> str:
+        if cents is None:
+            return ""
+        symbol = {"USD": "$", "EUR": "\u20ac",
+                  "GBP": "\u00a3"}.get(self.currency, self.currency + " ")
+        amount = cents / 100
+        return (f"{symbol}{amount:,.0f}" if cents % 100 == 0
+                else f"{symbol}{amount:,.2f}")
 
     def compare_at_display(self):
-        if self.compare_at_cents is None:
-            return ""
-        symbol = {"USD": "$", "EUR": "\u20ac", "GBP": "\u00a3"}.get(self.currency, self.currency + " ")
-        amount = self.compare_at_cents / 100
-        return f"{symbol}{amount:,.0f}" if self.compare_at_cents % 100 == 0 else f"{symbol}{amount:,.2f}"
+        return self._money_display(self.compare_at_cents)
 
     # --- what this product is ------------------------------------------------
     # ``type`` holds the primary kind and is what cards, filters and the bundle
@@ -1243,6 +1302,10 @@ class Video(db.Model):
             text = text[:limit].rsplit(" ", 1)[0]
         return text + "\u2026"
 
+    def locked_shape(self) -> str:
+        """What a member who can't read this tip is shown instead of it."""
+        return blurred_shape(self.body, seed=self.id or 0)
+
     def read_minutes(self) -> int:
         words = len((self.body or "").split())
         return max(1, round(words / 200)) if words else 0
@@ -1743,6 +1806,10 @@ class ReelReview(db.Model):
         words = text.split(" ")
         text = " ".join(words[: max(1, len(words) // 2)])
         return (text[:limit].rstrip() + "…") if text else ""
+
+    def locked_shape(self) -> str:
+        """What a member who can't read the review is shown instead of it."""
+        return blurred_shape(self.body, seed=self.id or 0)
 
 
 class ReelSubmission(db.Model):

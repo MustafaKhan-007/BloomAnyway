@@ -53,9 +53,11 @@
       <article class="tip-read__body forum-body">{{ video.body|nl2br }}</article>
       {% endif %}
     {% else %}
-      {% if video.teaser() %}
-      <div class="tip-read__teaser">
-        <p>{{ video.teaser() }}</p>
+      {% if video.locked_shape() %}
+      {# Not the tip. Shaped like it, so the lock reads as writing you haven't
+         unlocked, but the words themselves never reach the browser. #}
+      <div class="tip-read__blurred" aria-hidden="true">
+        <p>{{ video.locked_shape() }}</p>
       </div>
       {% endif %}
       <div class="video-locked"
