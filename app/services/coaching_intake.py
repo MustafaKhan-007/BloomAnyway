@@ -514,6 +514,14 @@ def create_pending_intake(
     )
     for row in stale:
         row.status = "cancelled"
+    db.session.flush()
+
+    # Final guard against a race: between the open-slots check above and this
+    # commit another member could have grabbed the same time. After clearing
+    # this user's own stale holds, the slot must still be free of anyone else's
+    # active booking, so a booked time can never be double-sold.
+    if slot_utc.replace(microsecond=0) in _booked_starts(key):
+        return None, "That time was just booked — pick another slot."
 
     intake = CoachingIntake(
         user_id=user.id,
