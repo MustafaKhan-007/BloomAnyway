@@ -1388,6 +1388,11 @@ _SPOTLIGHT_KEYS = _SPOTLIGHT_FORM_KEYS + (
     "spotlight_reel_notified",
 )
 
+#: Site images are set by uploading one, never by typing an address. They are
+#: kept out of the form sweep below because there is no field to sweep: reading
+#: a missing field would blank the uploaded image every time Settings is saved.
+_IMAGE_URL_KEYS = ("portrait_url", "hero_image_url")
+
 
 def _spotlight_end_date(kind: str, raw: str, filled: bool):
     """Run-until date for a slot: the owner's date, else the default run."""
@@ -1671,8 +1676,8 @@ def settings():
             return redirect(url_for("admin.settings"))
         values = {key: (request.form.get(key) or "").strip()
                   for key in SETTING_DEFAULTS
-                  if key not in _SPOTLIGHT_KEYS}
-        # Site images: upload preferred; clear flags; URL fields still work.
+                  if key not in _SPOTLIGHT_KEYS and key not in _IMAGE_URL_KEYS}
+        # Site images: uploaded, cleared, or left exactly as they were.
         from ..services.site_images import (SiteImageError, clear as clear_site_image,
                                             process_and_save)
         try:

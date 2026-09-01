@@ -3797,6 +3797,33 @@ with app.app_context():
     _hr = _him.size[0] / _him.size[1]
     ok("Story teaser upload is cropped to 1:1 aspect",
        abs(_hr - 1.0) < 0.03, f"ratio={_hr:.3f} size={_him.size}")
+
+# Site images are uploaded, not typed. There is no address field any more, so
+# saving Settings must leave the uploaded image alone rather than reading a
+# field that isn't there and blanking it.
+_sbody = admin.get("/admin/settings").get_data(as_text=True)
+ok("Settings asks for a file, not an image address",
+   'name="portrait_url"' not in _sbody and 'name="hero_image_url"' not in _sbody
+   and 'name="portrait_file"' in _sbody and 'name="hero_file"' in _sbody)
+with app.app_context():
+    _before_imgs = (get_setting("portrait_url"), get_setting("hero_image_url"))
+    ok("Setup: both site images are set", all(_before_imgs), f"got {_before_imgs}")
+admin.post("/admin/settings", data={
+    "site_title": "Bloom Anyway", "instagram_url": "", "contact_email": "",
+    "announcement_text": "", "announcement_expires": "",
+}, follow_redirects=True)
+with app.app_context():
+    ok("Saving Settings keeps the images that were uploaded",
+       (get_setting("portrait_url"), get_setting("hero_image_url")) == _before_imgs,
+       f"got {(get_setting('portrait_url'), get_setting('hero_image_url'))}")
+admin.post("/admin/settings", data={
+    "site_title": "Bloom Anyway", "instagram_url": "", "contact_email": "",
+    "announcement_text": "", "announcement_expires": "", "clear_portrait": "1",
+}, follow_redirects=True)
+with app.app_context():
+    ok("But Remove current photo still takes one down",
+       not get_setting("portrait_url")
+       and get_setting("hero_image_url") == _before_imgs[1])
 r = app.test_client().get("/")
 ok("Home uses the split healing / building hero",
    "home-hero" in r.get_data(as_text=True)
