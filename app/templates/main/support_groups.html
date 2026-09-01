@@ -286,11 +286,17 @@
           </ul>
         </div>
         <div class="sg-page__premium-cta">
+          {% if addon_prices.facilitator %}
+          <p class="sg-price"><strong>{{ addon_prices.facilitator }}</strong> per session</p>
+          {% endif %}
           <a class="btn btn--gold" href="{{ facilitator_url }}"
              {% if facilitator_external %}target="_blank" rel="noopener"{% endif %}>
             Book your spot &rarr;
           </a>
-          <p class="field-help" style="margin: 10px 0 0;">Price shown at checkout</p>
+          <p class="field-help" style="margin: 10px 0 0;">
+            {%- if addon_prices.facilitator %}Paid at checkout
+            {%- else %}Price shown at checkout{% endif -%}
+          </p>
         </div>
       </div>
     </div>
@@ -357,7 +363,11 @@
             <li>Focused on your situation</li>
             <li>In-site video once Studio books you</li>
           </ul>
-          <p class="field-help" style="margin: 0 0 12px;">Limited availability · price shown at checkout
+          {% if addon_prices.ayesha %}
+          <p class="sg-price"><strong>{{ addon_prices.ayesha }}</strong> per session</p>
+          {% endif %}
+          <p class="field-help" style="margin: 0 0 12px;">Limited availability
+            {%- if not addon_prices.ayesha %} · price shown at checkout{% endif %}
             · refundable if you cancel {{ refund_hours }}+ hours ahead</p>
           <a class="btn btn--primary" href="{{ ayesha_url }}"
              {% if ayesha_external %}target="_blank" rel="noopener"{% endif %}>
@@ -379,7 +389,11 @@
             <li>Content &amp; growth strategy</li>
             <li>In-site video once Studio books you</li>
           </ul>
-          <p class="field-help" style="margin: 0 0 12px;">Limited availability · price shown at checkout
+          {% if addon_prices.saman %}
+          <p class="sg-price"><strong>{{ addon_prices.saman }}</strong> per session</p>
+          {% endif %}
+          <p class="field-help" style="margin: 0 0 12px;">Limited availability
+            {%- if not addon_prices.saman %} · price shown at checkout{% endif %}
             · refundable if you cancel {{ refund_hours }}+ hours ahead</p>
           <a class="btn btn--gold" href="{{ saman_url }}"
              {% if saman_external %}target="_blank" rel="noopener"{% endif %}>

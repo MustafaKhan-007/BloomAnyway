@@ -1855,6 +1855,80 @@ def resolve_membership_tier(
     return tier_for_stripe_product(prod_id, pname or nick)
 
 
+#: Add-on prices are set once and read on every page that lists them, so a
+#: short in-process cache keeps a Stripe round trip out of the render.
+_PRICE_TEXT_CACHE: dict[str, tuple[float, str]] = {}
+_PRICE_TEXT_TTL = 600.0
+
+
+def format_price_amount(cents, currency: str) -> str:
+    """Money the way the rest of the catalogue writes it."""
+    if cents is None:
+        return ""
+    try:
+        amount = int(cents)
+    except (TypeError, ValueError):
+        return ""
+    code = (currency or "usd").upper()[:3]
+    symbol = {"USD": "$", "EUR": "\u20ac", "GBP": "\u00a3"}.get(code, code + " ")
+    value = amount / 100
+    return (f"{symbol}{value:,.0f}" if amount % 100 == 0
+            else f"{symbol}{value:,.2f}")
+
+
+def price_display(price_id: str | None) -> str:
+    """What Stripe charges for one price id, formatted. Empty when unknown.
+
+    Never raises and never leaves a page waiting: if Stripe can't be reached
+    the caller just falls back to whatever it said before there was a price.
+    """
+    pid = (price_id or "").strip()
+    if not pid or not configured() or current_app.config.get("TESTING"):
+        return ""
+    now = time.monotonic()
+    cached = _PRICE_TEXT_CACHE.get(pid)
+    if cached and (now - cached[0]) < _PRICE_TEXT_TTL:
+        return cached[1]
+    try:
+        _configure_stripe()
+        price = _as_dict(stripe.Price.retrieve(pid))
+    except Exception:
+        # Cache the miss too, or a mistyped id costs a Stripe call per view.
+        log.warning("stripe: could not read price %s", pid, exc_info=True)
+        _PRICE_TEXT_CACHE[pid] = (now, "")
+        return ""
+    text = format_price_amount(price.get("unit_amount"), price.get("currency"))
+    recurring = price.get("recurring")
+    if text and isinstance(recurring, dict) and recurring.get("interval"):
+        count = recurring.get("interval_count") or 1
+        unit = str(recurring.get("interval"))
+        text += f" / {unit}" if count == 1 else f" / {count} {unit}s"
+    _PRICE_TEXT_CACHE[pid] = (now, text)
+    return text
+
+
+#: The bookable extras, and the Studio setting holding each one's price id.
+ADDON_PRICE_SETTINGS = {
+    "facilitator": "facilitator_stripe_price_id",
+    "ayesha": "ayesha_stripe_price_id",
+    "saman": "saman_stripe_price_id",
+}
+
+
+def addon_prices() -> dict[str, str]:
+    """Formatted price per add-on, empty string where there isn't one to show."""
+    from .settings import get_setting
+
+    out = {}
+    for kind, key in ADDON_PRICE_SETTINGS.items():
+        try:
+            out[kind] = price_display(get_setting(key))
+        except Exception:
+            log.exception("stripe: could not price add-on %s", kind)
+            out[kind] = ""
+    return out
+
+
 def _stripe_price_product_info(price_id: str | None) -> tuple[str | None, str, str]:
     """Return (product_id, product_name, nickname) for a Stripe price."""
     pid = (price_id or "").strip()

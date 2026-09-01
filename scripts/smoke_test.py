@@ -3046,6 +3046,34 @@ ok("Seated member can open the embedded Daily room once live",
    and "daily-js" in r.get_data(as_text=True)
    and "sg-daily-root" in r.get_data(as_text=True)
    and "support-room.js" in r.get_data(as_text=True))
+
+# --- add-on prices, read from their Stripe price ids --------------------------
+ok("Money is formatted the way the rest of the catalogue writes it",
+   pay.format_price_amount(4500, "usd") == "$45"
+   and pay.format_price_amount(12050, "USD") == "$120.50"
+   and pay.format_price_amount(4500, "gbp") == "\u00a345"
+   and pay.format_price_amount(None, "usd") == "")
+
+_sg_body = client.get("/support-groups").get_data(as_text=True)
+ok("With no price to show, the tiles say so rather than showing nothing",
+   _sg_body.count("Price shown at checkout") >= 1
+   and "price shown at checkout" in _sg_body
+   and 'class="sg-price"' not in _sg_body)
+
+_real_addon_prices = pay.addon_prices
+pay.addon_prices = lambda: {"facilitator": "$45", "ayesha": "$120",
+                            "saman": "$150"}
+try:
+    _sg_body = client.get("/support-groups").get_data(as_text=True)
+finally:
+    pay.addon_prices = _real_addon_prices
+ok("The facilitator tile shows what a session costs",
+   "<strong>$45</strong> per session" in _sg_body)
+ok("Both 1:1 tiles show their own price",
+   "<strong>$120</strong> per session" in _sg_body
+   and "<strong>$150</strong> per session" in _sg_body)
+ok("And the placeholder copy steps aside once there is a real price",
+   "price shown at checkout" not in _sg_body.lower())
 with app.app_context():
     ended = db.session.get(SupportGroupMeeting, mid)
     # Put the original future time back so later reminder/cancel tests stay valid,

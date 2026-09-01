@@ -2128,6 +2128,7 @@ def support_groups_page():
         peer_cap=sg_svc.PEER_MEETING_CAP,
         peer_minutes=sg_svc.peer_meeting_minutes(),
         max_sessions=sg_svc.MAX_OPEN_SESSIONS_PER_CIRCLE,
+        addon_prices=pay.addon_prices(),
         facilitator_sessions=facilitator_sessions,
         facilitator_spots=facilitator_spots,
         facilitator_seats=facilitator_seats,

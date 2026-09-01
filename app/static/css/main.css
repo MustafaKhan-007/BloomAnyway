@@ -6924,6 +6924,14 @@ a.at-handle:hover { text-decoration: underline; }
 }
 .sg-coach__avatar--gold { background: #c79a41; }
 .sg-coach__role { margin: 0; font-size: 12px; letter-spacing: 0.08em; color: #c79a41; font-weight: 700; }
+/* What an add-on costs, read from its Stripe price. */
+.sg-price { margin: 0 0 10px; font-size: 15px; color: var(--ink-soft); }
+.sg-price strong {
+  font-family: var(--font-display); font-size: 1.5rem;
+  color: var(--plum-deep); margin-right: 4px;
+}
+.sg-page__premium-cta .sg-price { color: rgba(255, 248, 243, 0.82); }
+.sg-page__premium-cta .sg-price strong { color: #fff8f3; }
 .sg-coach h3, .sg-coach h4 { margin: 0; color: #3d1431; font-family: var(--font-display); }
 .sg-queue { list-style: none; padding: 0; margin: 12px 0; }
 .sg-queue li {
