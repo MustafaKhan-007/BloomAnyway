@@ -4599,6 +4599,46 @@ ok("A renewal waiting on the member's bank is not silent",
    any("bank" in t.lower() for t in _billing_alerts[_alerts:]),
    f"got {_billing_alerts[_alerts:]}")
 
+# Cancelling someone's billing is the most damaging thing the site does by
+# itself, so when it does it unasked the owner hears about it, and the reason
+# goes onto the subscription in Stripe.
+with app.app_context():
+    _cancel_calls = []
+    _real_cancel = pay.stripe.Subscription.cancel
+
+    class _FakeCancel:
+        @staticmethod
+        def cancel(sid, **kw):
+            _cancel_calls.append({"sid": sid, **kw})
+            return {"id": sid, "status": "canceled"}
+
+    _real_sub = pay.stripe.Subscription
+    _real_conf = pay.configured
+    pay.stripe.Subscription = _FakeCancel
+    pay.configured = lambda: True
+    app.config["TESTING"] = False
+    _alerts_before_cancel = len(_billing_alerts)
+    try:
+        ok("A cancel the member asked for goes through",
+           pay._cancel_stripe_subscription_now("sub_asked", "member cancelled"))
+        ok("Its reason is written onto the subscription in Stripe",
+           "member cancelled" in str(_cancel_calls[-1].get("cancellation_details")),
+           f"got {_cancel_calls[-1]}")
+        ok("And it doesn't email the owner about a cancel they asked for",
+           len(_billing_alerts) == _alerts_before_cancel)
+        ok("A cancel the site decided on its own also goes through",
+           pay._cancel_stripe_subscription_now("sub_auto", "some internal rule"))
+        ok("But that one the owner is told about",
+           len(_billing_alerts) > _alerts_before_cancel
+           and any("cancelled a subscription" in t.lower()
+                   for t in _billing_alerts[_alerts_before_cancel:]),
+           f"got {_billing_alerts[_alerts_before_cancel:]}")
+    finally:
+        pay.stripe.Subscription = _real_sub
+        pay.configured = _real_conf
+        app.config["TESTING"] = True
+    assert _real_cancel is not None
+
 _alerts = len(_billing_alerts)
 _stripe_event("customer.updated",
               {"id": "cus_1", "object": "customer", "email": "brand-new@example.com"},

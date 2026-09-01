@@ -331,6 +331,7 @@ def checkout_membership(tier):
         try:
             result = pay.cancel_membership_subscriptions(
                 current_user.email, at_period_end=False,
+                reason="member switched to another plan",
             )
         except Exception:
             log.exception(
@@ -1315,6 +1316,7 @@ def cancel_membership():
             # Keep plan access until the paid period ends; Stripe stops renewals.
             stripe_result = pay.cancel_membership_subscriptions(
                 current_user.email, at_period_end=True,
+                reason="member cancelled",
             )
         except Exception:
             log.exception(

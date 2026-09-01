@@ -988,7 +988,8 @@ def _handle_orphan_membership_payment(order: Order, sub_id: str | None,
     cancelled = False
     if key and configured() and not current_app.config.get("TESTING"):
         try:
-            cancelled = _cancel_stripe_subscription_now(key)
+            cancelled = _cancel_stripe_subscription_now(
+                key, "payment for an account that was deleted")
         except Exception:
             log.exception("stripe: orphan cancel failed for %s", key)
     if cancelled:
@@ -1377,18 +1378,38 @@ def _order_subscription_id(order) -> str | None:
     return _subscription_id_from_payment_ref(oid) if oid else None
 
 
-def _cancel_stripe_subscription_now(sub_id: str) -> bool:
-    """Immediately cancel a Stripe subscription (no remaining access period)."""
+#: Cancels the member asked for. Everything else is the site deciding on its
+#: own that someone should stop being billed, which is the decision worth
+#: hearing about — twice now it has been wrong.
+_ASKED_FOR_CANCELS = ("member cancelled", "owner cancelled", "account closed",
+                      "member switched to another plan")
+
+
+def _cancel_stripe_subscription_now(sub_id: str, reason: str = "unspecified") -> bool:
+    """Immediately cancel a Stripe subscription (no remaining access period).
+
+    ``reason`` is written into Stripe's own cancellation record and, unless the
+    cancel was asked for, emailed to the owner. Cancelling someone's billing is
+    the most damaging thing this app does by itself, and until now it did it
+    without leaving anything behind that said which code path decided to.
+    """
     sid = (sub_id or "").strip()
     if not sid.startswith("sub_"):
         return False
     _configure_stripe()
     try:
-        if hasattr(stripe.Subscription, "cancel"):
+        details = {"comment": f"Bloom Anyway: {reason}"[:500]}
+        try:
+            if hasattr(stripe.Subscription, "cancel"):
+                stripe.Subscription.cancel(sid, cancellation_details=details)
+            else:
+                stripe.Subscription.delete(sid)
+        except TypeError:
+            # Older SDK signature — the cancel still matters more than the note.
             stripe.Subscription.cancel(sid)
-        else:
-            stripe.Subscription.delete(sid)
-        log.info("stripe: cancelled subscription %s immediately", sid)
+        log.warning("stripe: CANCELLED subscription %s — reason: %s", sid, reason)
+        if reason not in _ASKED_FOR_CANCELS:
+            _tell_owner_we_cancelled(sid, reason)
         return True
     except Exception as exc:
         msg = str(exc).lower()
@@ -1397,6 +1418,23 @@ def _cancel_stripe_subscription_now(sub_id: str) -> bool:
             return True
         log.exception("stripe: failed to cancel subscription %s", sid)
         return False
+
+
+def _tell_owner_we_cancelled(sub_id: str, reason: str) -> None:
+    """Say out loud that the site stopped someone's billing, and why."""
+    try:
+        from .mailer import send_billing_alert
+        send_billing_alert(
+            "The site cancelled a subscription",
+            f"Subscription {sub_id} was cancelled by Bloom Anyway itself, not "
+            f"by the member and not from the Stripe dashboard.\n\n"
+            f"Reason: {reason}\n\n"
+            "If that member should still be paying, this is a bug — send this "
+            "message on. The same reason is written on the subscription in "
+            "Stripe under Cancellation details.",
+        )
+    except Exception:
+        log.exception("stripe: could not report an automatic cancel of %s", sub_id)
 
 
 def _schedule_subscription_cancel(sub_id: str) -> dict | None:
@@ -1581,7 +1619,8 @@ def replace_other_memberships(
         if current_app.config.get("TESTING") or not configured():
             result["cancelled"].append(sid)
             continue
-        if _cancel_stripe_subscription_now(sid):
+        if _cancel_stripe_subscription_now(
+                sid, f"replaced by a new membership ({keep_sub})"):
             result["cancelled"].append(sid)
         else:
             result["ok"] = False
@@ -1603,6 +1642,7 @@ def cancel_membership_subscriptions(
     email: str,
     *,
     at_period_end: bool = True,
+    reason: str = "owner cancelled",
 ) -> dict:
     """Cancel Stripe membership subscriptions for this email.
 
@@ -1708,7 +1748,7 @@ def cancel_membership_subscriptions(
                 result["ok"] = False
                 result["errors"].append(f"cancel_failed:{sid}")
         else:
-            if _cancel_stripe_subscription_now(sid):
+            if _cancel_stripe_subscription_now(sid, reason):
                 result["cancelled"].append(sid)
             else:
                 result["ok"] = False
@@ -2113,10 +2153,32 @@ def active_membership_tier_from_stripe(email: str) -> str | None:
     keep_subs = {keep_sid} if keep_sid else set()
     keep_prices = {keep_price} if keep_price else set()
 
-    # One active membership at a time.
-    for _t, _c, sid, _pid, _sub in ranked[1:]:
-        if sid and sid != keep_sid:
-            _cancel_stripe_subscription_now(sid)
+    # Duplicates are reported, never cancelled here. This function answers
+    # "what tier is this person on", and gets called on ordinary reads — a
+    # reconcile, a page load, the Studio audit. Cancelling from a lookup means
+    # billing can stop at a moment nobody asked for anything, which is
+    # impossible to reason about from the outside. A real replacement is
+    # handled where one actually happens, at the new payment.
+    extras = [sid for _t, _c, sid, _pid, _sub in ranked[1:]
+              if sid and sid != keep_sid]
+    if extras:
+        log.warning(
+            "stripe: %s has %s membership subscriptions at once (keeping %s, "
+            "also live: %s) — not cancelling from a lookup",
+            email_norm, len(ranked), keep_sid, ", ".join(extras),
+        )
+        try:
+            from .mailer import send_billing_alert
+            send_billing_alert(
+                "A member has more than one membership subscription",
+                f"{email_norm} is being billed for {len(ranked)} memberships at "
+                f"once.\n\nTheir tier here follows {keep_sid}. Also live: "
+                + ", ".join(extras)
+                + "\n\nNothing was cancelled automatically. Cancel the extras in "
+                "Stripe once you've checked which one they meant to keep.",
+            )
+        except Exception:
+            log.exception("stripe: could not report duplicate subscriptions")
 
     try:
         _heal_local_membership_orders(

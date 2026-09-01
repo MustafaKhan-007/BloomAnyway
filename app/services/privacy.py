@@ -121,7 +121,7 @@ def _clear_membership_history(email: str, *, user_id: int) -> dict:
         from . import stripe_pay as pay
         if pay.configured():
             result = pay.cancel_membership_subscriptions(
-                email_norm, at_period_end=False,
+                email_norm, at_period_end=False, reason="account closed",
             )
             out["stripe_ok"] = bool(result.get("ok"))
             out["stripe_cancelled"] = len(result.get("cancelled") or [])
