@@ -93,9 +93,47 @@
     var accept = root.getAttribute("data-modules-accept") || "";
     var maxMb = root.getAttribute("data-upload-max") || "";
     var canChunk = !!root.getAttribute("data-upload-begin");
-    // Field suffixes that carry the module number. Text extracts repeat, so
-    // they are renamed together rather than one input at a time.
-    var parts = ["title", "desc", "file", "up", "text_title", "text_body"];
+    // Field suffixes that carry the module number. Text extracts and lessons
+    // repeat, so they are renamed together rather than one input at a time.
+    var parts = ["title", "desc", "file", "up", "text_title", "text_body",
+                 "lesson_title", "lesson_desc"];
+
+    function optionEl(value, label) {
+      var o = document.createElement("option");
+      o.value = String(value);
+      o.textContent = label;
+      return o;
+    }
+
+    // Rebuild the "Add to lesson" dropdowns (on the uploader and each saved
+    // file) from the module's current lesson rows, and renumber the lesson
+    // labels. Selections are kept where they still point at a lesson.
+    function refreshLessons(row) {
+      var lessonRows = Array.prototype.slice.call(
+        row.querySelectorAll("[data-lesson-row]"));
+      lessonRows.forEach(function (lr, i) {
+        var num = lr.querySelector("[data-lesson-num]");
+        if (num) num.textContent = "Lesson " + (i + 1);
+      });
+      row.querySelectorAll("[data-chunk-lesson], [data-asset-lesson]")
+        .forEach(function (sel) {
+          var cur = sel.value || "0";
+          sel.innerHTML = "";
+          sel.appendChild(optionEl(0, "Module intro (no lesson)"));
+          lessonRows.forEach(function (lr, i) {
+            var ti = lr.querySelector('input[name$="_lesson_title"]');
+            var t = (ti && ti.value.trim()) || "";
+            sel.appendChild(optionEl(i + 1,
+              "Lesson " + (i + 1) + (t ? " \u2014 " + t : "")));
+          });
+          sel.value = sel.querySelector('option[value="' + cur + '"]') ? cur : "0";
+        });
+    }
+
+    function moduleNumberOf(row) {
+      return Array.prototype.indexOf.call(
+        list.querySelectorAll("[data-module-row]"), row) + 1;
+    }
 
     function renumber() {
       var rows = list.querySelectorAll("[data-module-row]");
@@ -121,7 +159,8 @@
             }
           });
         });
-        row.querySelectorAll("[data-chunk-upload]").forEach(function (el) {
+        row.querySelectorAll("[data-chunk-upload], [data-lessons], "
+          + "[data-lesson-add], [data-asset-lesson]").forEach(function (el) {
           el.setAttribute("data-module", String(n));
         });
       });
@@ -131,7 +170,10 @@
     function addSection(n) {
       if (canChunk) {
         return '<div class="field chunk-up" data-chunk-upload data-module="' + n + '">' +
-          '<label for="mod' + n + '_up">Add videos, documents or slides</label>' +
+          '<label for="mod' + n + '_up">Add videos, documents or images</label>' +
+          '<label class="chunk-up__lesson">Add to ' +
+          '<select data-chunk-lesson><option value="0">Module intro (no lesson)</option></select>' +
+          '</label>' +
           '<input type="file" id="mod' + n + '_up" accept="' + accept +
           '" multiple data-chunk-input>' +
           '<p class="field-help">Up to ' + maxMb + ' MB each. Large files go up in ' +
@@ -166,6 +208,13 @@
         '<input type="text" id="mod' + n + '_desc" name="mod' + n +
         '_desc" maxlength="500" value="">' +
         "</div></div>" +
+        '<div class="studio-lessons" data-lessons data-module="' + n + '">' +
+        '<p class="module-sub-label">Lessons <span class="field-help" ' +
+        'style="font-weight:400;">— optional subsections that unlock together ' +
+        'with the module</span></p>' +
+        '<div data-lessons-list></div>' +
+        '<button type="button" class="btn btn--quiet btn--sm" data-lesson-add ' +
+        'data-module="' + n + '">Add a lesson</button></div>' +
         (canChunk ? '<ul class="module-items" data-module-items hidden></ul>' : "") +
         '<div class="module-add">' + addSection(n) +
         '<div class="module-texts" data-text-blocks></div>' +
@@ -173,6 +222,49 @@
         "Add a written extract</button></div>";
       list.appendChild(row);
       renumber();
+    });
+
+    /* Lessons: subsections within a module, added and removed on the spot. */
+    list.addEventListener("click", function (e) {
+      var lessonAdd = e.target.closest("[data-lesson-add]");
+      if (lessonAdd) {
+        var lrow = lessonAdd.closest("[data-module-row]");
+        var holder = lrow && lrow.querySelector("[data-lessons-list]");
+        if (!holder) return;
+        var mod = moduleNumberOf(lrow);
+        var n = holder.querySelectorAll("[data-lesson-row]").length + 1;
+        var block = document.createElement("div");
+        block.className = "studio-lessons__row";
+        block.setAttribute("data-lesson-row", "");
+        block.innerHTML =
+          '<span class="studio-lessons__num" data-lesson-num>Lesson ' + n + '</span>' +
+          '<input type="text" name="mod' + mod + '_lesson_title" maxlength="160" ' +
+          'placeholder="Lesson title">' +
+          '<input type="text" name="mod' + mod + '_lesson_desc" maxlength="500" ' +
+          'placeholder="Short note (optional)">' +
+          '<button type="button" class="btn btn--quiet btn--sm" data-lesson-remove>Remove</button>';
+        holder.appendChild(block);
+        refreshLessons(lrow);
+        var field = block.querySelector("input");
+        if (field) field.focus();
+        return;
+      }
+      var lessonRemove = e.target.closest("[data-lesson-remove]");
+      if (lessonRemove) {
+        var lrow2 = lessonRemove.closest("[data-module-row]");
+        var blk2 = lessonRemove.closest("[data-lesson-row]");
+        if (blk2) blk2.remove();
+        if (lrow2) refreshLessons(lrow2);
+        return;
+      }
+    });
+
+    /* Keep the "Add to lesson" dropdowns showing the lesson names as typed. */
+    list.addEventListener("input", function (e) {
+      var ti = e.target.closest('input[name$="_lesson_title"]');
+      if (!ti) return;
+      var lrow = ti.closest("[data-module-row]");
+      if (lrow) refreshLessons(lrow);
     });
 
     /* Written extracts: typed straight in, any number per module. */
@@ -448,6 +540,8 @@
       var bar = li.querySelector(".chunk-up__bar i");
       var state = li.querySelector(".chunk-up__state");
       var moduleNumber = box.getAttribute("data-module") || "";
+      var lessonSel = box.querySelector("[data-chunk-lesson]");
+      var lessonNumber = (lessonSel && lessonSel.value) || "";
 
       if (maxMb && file.size > maxMb * 1024 * 1024) {
         li.classList.add("is-error");
@@ -499,7 +593,8 @@
             },
             body: JSON.stringify({
               filename: file.name,
-              module: moduleNumber ? parseInt(moduleNumber, 10) : null
+              module: moduleNumber ? parseInt(moduleNumber, 10) : null,
+              lesson: lessonNumber ? parseInt(lessonNumber, 10) : null
             })
           }).then(readJson).then(function (fr) {
             if (!fr.ok) throw new Error(fr.body.error || "Could not save that file.");

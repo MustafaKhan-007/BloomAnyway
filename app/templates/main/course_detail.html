@@ -166,6 +166,17 @@
               <span class="pd-curriculum__inside">{{ inside }}</span>
               {% endif %}
               {% if row.description %}<p>{{ row.description }}</p>{% endif %}
+              {% if row.lessons %}
+              <ul class="pd-curriculum__lessons">
+                {% for lesson in row.lessons %}
+                <li>
+                  <span class="pd-curriculum__lesson-num">Lesson {{ loop.index }}</span>
+                  <span class="pd-curriculum__lesson-title">{{ lesson.title }}</span>
+                  {% if lesson.description %}<span class="pd-curriculum__lesson-note">{{ lesson.description }}</span>{% endif %}
+                </li>
+                {% endfor %}
+              </ul>
+              {% endif %}
             </li>
             {% endfor %}
           </ol>

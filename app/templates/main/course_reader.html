@@ -96,7 +96,9 @@
             <span class="reader-modules__body">
               <strong>{{ m.title }}</strong>
               {% if m.description %}<small>{{ m.description }}</small>{% endif %}
-              {% if m['contents']|length > 1 %}
+              {% if m.lessons %}
+              <small>{{ m.lessons|length }} lesson{{ '' if m.lessons|length == 1 else 's' }}</small>
+              {% elif m['contents']|length > 1 %}
               <small>{{ m['contents']|length }} pieces to work through</small>
               {% endif %}
             </span>
@@ -144,7 +146,17 @@
     </nav>
     {% endmacro %}
 
-    {% if module_items and module_items|length > 1 %}
+    {% set active = (modules|selectattr('number', 'equalto', active_module)|first) if (active_module and modules) else none %}
+    {% if active and active.lessons %}
+      {% if active.intro %}
+      {{ pieces('Module intro', active.intro, active_module) }}
+      {% endif %}
+      {% for lesson in active.lessons %}
+        {% if lesson.contents %}
+        {{ pieces('Lesson ' ~ lesson.number ~ (': ' ~ lesson.title if lesson.title else ''), lesson.contents, active_module) }}
+        {% endif %}
+      {% endfor %}
+    {% elif module_items and module_items|length > 1 %}
     {{ pieces('In this module', module_items, active_module) }}
     {% endif %}
     {% if extras and (module_items or extras|length > 1) %}
