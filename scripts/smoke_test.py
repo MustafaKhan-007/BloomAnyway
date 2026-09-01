@@ -4593,8 +4593,9 @@ with app.app_context():
     placed = pay.replace_other_memberships(
         "placeable@example.com", keep_order_id="BLIND-NEW",
         keep_subscription_id="sub_placeable_new")
-    ok("A payment we can place still replaces the subscription it replaces",
-       placed["cancelled"] == ["sub_placeable_old"], f"got {placed}")
+    ok("A new membership flags the other subscription to the owner, never cancels it",
+       placed["cancelled"] == [] and placed.get("flagged") == ["sub_placeable_old"],
+       f"got {placed}")
 
     _stray("BLIND-LIVE", "unplaceable@example.com", "sub_unplaceable_live")
     blind = pay.replace_other_memberships(

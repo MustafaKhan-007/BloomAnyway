@@ -1116,27 +1116,18 @@ def _handle_orphan_membership_payment(order: Order, sub_id: str | None,
         "(subscription %s) — no welcome sent",
         order.ls_order_id, key or "unknown",
     )
-    cancelled = False
-    if key and configured() and not current_app.config.get("TESTING"):
-        try:
-            cancelled = _cancel_stripe_subscription_now(
-                key, "payment for an account that was deleted")
-        except Exception:
-            log.exception("stripe: orphan cancel failed for %s", key)
-    if cancelled:
-        body = (
-            f"Subscription {key} was still charging after the member deleted "
-            "their account. We cancelled it just now.\n\n"
-            f"Payment {order.ls_order_id} may need refunding — that's your call."
-        )
-    else:
-        body = (
-            f"Payment {order.ls_order_id} came in for a membership whose account "
-            "was deleted"
-            + (f" (subscription {key})." if key else ".")
-            + "\n\nWe could not cancel it automatically. Please cancel it in "
-            "Stripe so they stop being charged."
-        )
+    # We do NOT cancel the subscription ourselves — a wrong guess here cancels a
+    # paying member, which is far worse than a charge the owner refunds by hand.
+    # Flag it instead, with the subscription id and the paying email, so a human
+    # cancels it in Stripe if the account really is gone.
+    body = (
+        f"Payment {order.ls_order_id} came in for a membership whose account "
+        "was deleted"
+        + (f" (subscription {key})." if key else ".")
+        + f"\n\nPaying email on the charge: {(payer_email or '').strip() or '(unknown)'}"
+        + "\n\nNothing was cancelled automatically. If they should no longer be "
+        "charged, cancel this subscription in the Stripe dashboard."
+    )
     try:
         from .mailer import send_billing_alert
         send_billing_alert("Deleted account was charged again", body)
@@ -1680,17 +1671,57 @@ def _clear_membership_grace_cancel(sub_id: str) -> bool:
         return False
 
 
+def _flag_extra_memberships(email: str, keep_sub: str, sub_ids: list[str]) -> None:
+    """Tell the owner a member has more than one live membership subscription.
+
+    We never cancel on our own guess — that is how a paying member's billing got
+    cancelled. Subscriptions already set to cancel (a real switch or self-cancel)
+    are left out, so this only speaks up about genuine live duplicates.
+    """
+    live: list[str] = []
+    for sid in sub_ids:
+        try:
+            _configure_stripe()
+            sub_d = _as_dict(stripe.Subscription.retrieve(sid))
+        except Exception:
+            live.append(sid)
+            continue
+        if sub_d.get("cancel_at_period_end") or sub_d.get("cancel_at"):
+            continue  # already ending — nothing to flag
+        live.append(sid)
+    if not live:
+        return
+    listed = "\n".join(f"  \u2022 {s}" for s in live)
+    body = (
+        f"{email} now has more than one active membership subscription in "
+        f"Stripe:\n\n{listed}\n\n"
+        f"We kept {keep_sub or 'their newest one'} and did NOT cancel anything "
+        "automatically. If this is a duplicate they shouldn't be paying twice "
+        "for, cancel the extra one in the Stripe dashboard. If they meant to "
+        "switch plans or cancelled themselves, that is handled already and you "
+        "can ignore this."
+    )
+    try:
+        from .mailer import send_billing_alert
+        send_billing_alert("A member has more than one membership", body)
+    except Exception:
+        log.exception("stripe: could not flag extra memberships for %s", email)
+
+
 def replace_other_memberships(
     email: str,
     *,
     keep_order_id: str,
     keep_subscription_id: str | None = None,
 ) -> dict:
-    """On a new membership payment: end every other membership immediately.
+    """On a new membership payment: tidy local orders to the new plan, and FLAG
+    (never cancel) any other live subscription to the owner.
 
-    Cancels other Stripe membership subscriptions now, marks their paid Orders
-    refunded (access revoked), keeps ``keep_order_id`` / ``keep_subscription_id``,
-    clears cancel-at flags, and reconciles the member to the new plan only.
+    Marks the member's other paid membership Orders ended locally so their tier
+    reflects the plan they just bought, keeps ``keep_order_id`` /
+    ``keep_subscription_id``, and — instead of cancelling other Stripe
+    subscriptions on a guess — emails the owner about them. Real plan switches,
+    self-cancels and account deletions still cancel explicitly, elsewhere.
     """
     from sqlalchemy import func
 
@@ -1740,7 +1771,7 @@ def replace_other_memberships(
         .all()
     )
 
-    cancel_subs: set[str] = set()
+    other_subs: set[str] = set()
     ended = 0
     for order in paid:
         oid = str(order.ls_order_id or "").strip()
@@ -1748,36 +1779,31 @@ def replace_other_memberships(
             continue
         sid = _order_subscription_id(order)
         if sid and not blind and sid != keep_sub:
-            cancel_subs.add(sid)
+            other_subs.add(sid)
         order.status = "ended"
         ended += 1
 
-    # Also cancel any live Stripe membership sub that isn't the new one
-    # (covers orphans not linked to a local Order id).
+    # Any other live membership subscription is flagged to the owner, not
+    # cancelled — covers duplicates not linked to a local Order id too.
     if not blind and configured() and not current_app.config.get("TESTING"):
         for sid in _membership_subscription_ids_for_email(email_norm, price_ids):
             if sid and sid != keep_sub:
-                cancel_subs.add(sid)
+                other_subs.add(sid)
 
-    for sid in sorted(cancel_subs):
-        if current_app.config.get("TESTING") or not configured():
-            result["cancelled"].append(sid)
-            continue
-        if _cancel_stripe_subscription_now(
-                sid, f"replaced by a new membership ({keep_sub})"):
-            result["cancelled"].append(sid)
-        else:
-            result["ok"] = False
-            result["errors"].append(f"cancel_failed:{sid}")
+    # We never auto-cancel here anymore; keep the key present for callers.
+    result["cancelled"] = []
+    result["flagged"] = sorted(other_subs)
+    if result["flagged"] and configured() and not current_app.config.get("TESTING"):
+        _flag_extra_memberships(email_norm, keep_sub, result["flagged"])
 
     result["orders_ended"] = ended
-    if ended or result["cancelled"]:
+    if ended or result["flagged"]:
         clear_cancel_at_for_email(email_norm)
         reconcile_email(email_norm, downgrade=True)
         log.info(
-            "stripe: membership switch for %s ended %s prior order(s), "
-            "cancelled %s sub(s); kept order=%s sub=%s",
-            email_norm, ended, len(result["cancelled"]), keep_oid, keep_sub or "-",
+            "stripe: new membership for %s ended %s prior local order(s), "
+            "flagged %s other sub(s) for the owner; kept order=%s sub=%s",
+            email_norm, ended, len(result["flagged"]), keep_oid, keep_sub or "-",
         )
     return result
 
