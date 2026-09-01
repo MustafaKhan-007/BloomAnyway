@@ -760,6 +760,27 @@ def schedule_studio_session(
     return meeting, None
 
 
+def meeting_lock_query(meeting_id: int):
+    """The locking read used before seating someone.
+
+    Split out from ``_lock_meeting`` so a test can check the lock is still
+    asked for: SQLite drops ``FOR UPDATE`` silently, so running this proves
+    nothing on its own.
+    """
+    return (SupportGroupMeeting.query
+            .filter_by(id=meeting_id)
+            .with_for_update())
+
+
+def _lock_meeting(meeting_id: int) -> SupportGroupMeeting | None:
+    """Re-read a meeting with its row locked, to hold the seat count still.
+
+    SQLite ignores ``FOR UPDATE`` and doesn't need it — it serialises writers
+    across the whole database. Postgres is where this earns its keep.
+    """
+    return meeting_lock_query(meeting_id).first()
+
+
 def join_peer_session(user: User, meeting_id: int
                      ) -> tuple[SupportGroupApplication | None, str | None]:
     meeting = db.session.get(SupportGroupMeeting, meeting_id)
@@ -778,10 +799,9 @@ def join_peer_session(user: User, meeting_id: int
             return None, "Facilitator sessions are for Healing & Full Bloom members."
     if not meeting.scheduled_at or meeting.scheduled_at <= utcnow():
         return None, "That session has already started or ended."
-    if meeting_spots_left(meeting) <= 0:
-        cap = meeting.capacity or meeting_max_participants(meeting)
-        return None, f"That session is full ({cap} seats max)."
 
+    # Before the capacity check, so someone who already holds a seat is handed
+    # it back rather than told the session is full.
     existing = user_selected_on_meeting(user.id, meeting.id)
     if existing:
         return existing, None
@@ -793,6 +813,18 @@ def join_peer_session(user: User, meeting_id: int
                 f"You're already booked for another {meeting.circle.title} session. "
                 "Leave that one first if you want to switch."
             )
+
+    # From here the seat count has to hold still. Counting free seats and then
+    # inserting is a race: two people clicking at the same moment both count
+    # the same empty seat before either has taken it, and both get in.
+    locked = _lock_meeting(meeting.id)
+    if locked is not None:
+        meeting = locked
+    if meeting.status != "scheduled":
+        return None, "That session isn’t open to join."
+    if meeting_spots_left(meeting) <= 0:
+        cap = meeting.capacity or meeting_max_participants(meeting)
+        return None, f"That session is full ({cap} seats max)."
 
     row = SupportGroupApplication(
         user_id=user.id,

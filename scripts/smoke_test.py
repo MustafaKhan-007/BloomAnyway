@@ -3452,6 +3452,37 @@ with app.app_context():
     joined, jerr = sg_svc.join_peer_session(wrap_peer, wrap_mid)
     ok("Wrap peer seated", joined is not None and not jerr, jerr)
 
+# Seating: the cap holds, and it holds under a lock so two people clicking at
+# the same moment can't both be handed the last seat.
+with app.app_context():
+    from sqlalchemy.dialects import postgresql as _pg
+    from app.models import SupportGroupMeeting as _SGM
+    _lock_sql = str(sg_svc.meeting_lock_query(1)
+                    .statement.compile(dialect=_pg.dialect()))
+    ok("The seat count is taken with the session's row locked",
+       "FOR UPDATE" in _lock_sql, _lock_sql[-60:])
+
+    _cap_m = db.session.get(_SGM, wrap_mid)
+    _cap_m.capacity = 2  # host + wrap_peer already seated
+    db.session.commit()
+    _extra = User(email="sg-cap@example.com", username="sgcap",
+                  membership="healing", email_verified_at=utcnow())
+    _extra.set_password(USER_PW)
+    db.session.add(_extra)
+    db.session.commit()
+    _seat, _err = sg_svc.join_peer_session(_extra, wrap_mid)
+    ok("A full session turns the next person away at the cap",
+       _seat is None and "full" in (_err or "").lower(), f"got {_err}")
+    ok("And nobody was seated past it",
+       len(sg_svc.meeting_seats(_cap_m)) == 2)
+    # Someone who already holds a seat gets it back rather than "it's full".
+    _seated = User.query.filter_by(email="sg-wrap-peer@example.com").first()
+    _again, _again_err = sg_svc.join_peer_session(_seated, wrap_mid)
+    ok("Someone already seated on a full session is handed their own seat",
+       _again is not None and not _again_err, f"got {_again_err}")
+    _cap_m.capacity = 8
+    db.session.commit()
+
 wrap_client = app.test_client()
 wrap_client.post("/login", data={"email": "sg-wrap-peer@example.com", "password": USER_PW})
 r = wrap_client.get(f"/support-groups/meetings/{wrap_mid}/wrap")
