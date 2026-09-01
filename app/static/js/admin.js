@@ -105,13 +105,38 @@
       return o;
     }
 
-    // Renumber the "Lesson N" labels after a lesson is added or removed.
+    // Renumber the "Lesson N" labels after a lesson is added or removed, and
+    // keep each lesson's own uploader pointed at its current position so a file
+    // still lands in the lesson it was dropped under.
     function refreshLessons(row) {
+      var mod = moduleNumberOf(row);
       Array.prototype.slice.call(row.querySelectorAll("[data-lesson-row]"))
         .forEach(function (lr, i) {
+          var pos = i + 1;
           var num = lr.querySelector("[data-lesson-num]");
-          if (num) num.textContent = "Lesson " + (i + 1);
+          if (num) num.textContent = "Lesson " + pos;
+          var up = lr.querySelector("[data-chunk-upload]");
+          if (up) up.setAttribute("data-lesson", String(pos));
+          var input = lr.querySelector("[data-chunk-input]");
+          if (input) input.id = "mod" + mod + "_l" + pos + "_up";
+          var lab = lr.querySelector("label[for^='mod']");
+          if (lab) lab.setAttribute("for", "mod" + mod + "_l" + pos + "_up");
         });
+    }
+
+    // The uploader markup that server-rendered lessons already have, so a
+    // just-added lesson can take files straight away (edit mode only — a brand
+    // new product has no id to upload against yet).
+    function lessonUploader(mod, pos) {
+      return '<ul class="module-items" data-module-items hidden></ul>' +
+        '<div class="field chunk-up" data-chunk-upload data-module="' + mod +
+        '" data-lesson="' + pos + '">' +
+        '<label for="mod' + mod + '_l' + pos + '_up">Add videos, documents or ' +
+        'images to this lesson</label>' +
+        '<input type="file" id="mod' + mod + '_l' + pos + '_up" accept="' +
+        accept + '" multiple data-chunk-input>' +
+        '<p class="field-help">Up to ' + maxMb + ' MB each.</p>' +
+        '<ul class="chunk-up__list" data-chunk-list hidden></ul></div>';
     }
 
     function moduleNumberOf(row) {
@@ -228,7 +253,8 @@
           'placeholder="Lesson title">' +
           '<textarea name="mod' + mod + '_lesson_desc" rows="3" maxlength="8000" ' +
           'placeholder="Description or text extract for this lesson (optional)."></textarea>' +
-          '<p class="field-help">Save changes, then upload files into this lesson.</p>';
+          (canChunk ? lessonUploader(mod, n)
+            : '<p class="field-help">Save changes, then upload files into this lesson.</p>');
         holder.appendChild(block);
         refreshLessons(lrow);
         var field = block.querySelector("input");
