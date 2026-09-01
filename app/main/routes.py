@@ -366,7 +366,13 @@ def checkout_membership(tier):
             return_url=url_for("main.account", purchased=1, _external=True),
             customer_email=email,
             customer_name=name,
-            metadata={"tier": tier, "kind": "membership", "billing": billing},
+            # buyer_user_id is a stable link to the account that bought this, so
+            # a later email change (or a stale Stripe customer email) can never
+            # make the code mistake a live member for a deleted account and
+            # cancel the subscription they just paid for. create_checkout_session
+            # copies metadata onto the subscription too, so renewals carry it.
+            metadata={"tier": tier, "kind": "membership", "billing": billing,
+                      "buyer_user_id": str(current_user.id)},
         )
     except pay.StripeError as exc:
         flash(str(exc), "error")

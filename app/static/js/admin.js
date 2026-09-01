@@ -208,67 +208,157 @@
   })();
 
   /* ---- a coach's week of 1:1 hours, set in one go ----
-     One form holds all seven days; only the chosen day is on screen, so the
-     whole week is saved with a single submit and unticking is how an hour is
-     taken away. */
+     One table shows the whole week at once: every weekday is a column and every
+     hour a row, so nothing is hidden behind day tabs. The whole week saves with
+     a single submit and unticking is how an hour is taken away. */
   (function () {
     var root = document.querySelector("[data-sg-week]");
     if (!root) return;
+    var grid = root.querySelector("[data-week-grid]");
+    if (!grid) return;
 
-    function slots(day) {
-      return root.querySelectorAll('[data-week-slot="' + day + '"]');
+    var cells = Array.prototype.slice.call(grid.querySelectorAll("[data-week-slot]"));
+    var totalOut = root.querySelector("[data-week-total]");
+
+    function daySlots(day) {
+      return cells.filter(function (c) { return c.getAttribute("data-week-slot") === String(day); });
+    }
+    function hourSlots(hour) {
+      return cells.filter(function (c) { return c.getAttribute("data-week-hour") === String(hour); });
     }
 
-    function syncCount(day) {
+    function setCell(cell, on) {
+      if (cell.checked !== on) cell.checked = on;
+      var label = cell.closest(".sg-cell");
+      if (label) label.classList.toggle("is-on", cell.checked);
+    }
+
+    function syncDayCount(day) {
       var badge = root.querySelector('[data-week-count="' + day + '"]');
       if (!badge) return;
       var n = 0;
-      slots(day).forEach(function (box) { if (box.checked) n += 1; });
+      daySlots(day).forEach(function (c) { if (c.checked) n += 1; });
       badge.textContent = String(n);
       badge.hidden = n === 0;
     }
 
-    function showDay(day) {
-      root.querySelectorAll("[data-week-panel]").forEach(function (panel) {
-        panel.hidden = panel.getAttribute("data-week-panel") !== String(day);
-      });
-      root.querySelectorAll("[data-week-day]").forEach(function (tab) {
-        var on = tab.getAttribute("data-week-day") === String(day);
-        tab.classList.toggle("is-active", on);
-        tab.setAttribute("aria-selected", on ? "true" : "false");
-      });
+    function syncTotals() {
+      for (var day = 0; day < 7; day += 1) syncDayCount(day);
+      if (totalOut) {
+        var n = cells.filter(function (c) { return c.checked; }).length;
+        totalOut.textContent = n + (n === 1 ? " hour open / week" : " hours open / week");
+      }
     }
 
-    root.addEventListener("click", function (e) {
-      var tab = e.target.closest("[data-week-day]");
-      if (tab) {
-        showDay(tab.getAttribute("data-week-day"));
-        return;
-      }
-      var workday = e.target.closest("[data-week-workday]");
-      if (workday) {
-        var d = workday.getAttribute("data-week-workday");
-        slots(d).forEach(function (box) {
-          var hour = parseInt((box.value.split(":")[1] || "0"), 10);
-          box.checked = hour >= 9 && hour < 17;
+    function toggleGroup(members) {
+      var allOn = members.length && members.every(function (c) { return c.checked; });
+      members.forEach(function (c) { setCell(c, !allOn); });
+      syncTotals();
+    }
+
+    // Reflect server-rendered checked state into the boxes, then count.
+    cells.forEach(function (c) { setCell(c, c.checked); });
+    syncTotals();
+
+    // Drag to paint many cells: mousedown seeds the first cell, mouseover paints
+    // the rest with the same on/off value, and the trailing click is swallowed so
+    // nothing double-toggles. Keyboard (space) has no mousedown, so its click acts.
+    var painting = false;
+    var paintOn = true;
+    var startCell = null;
+
+    function cellFrom(target) {
+      if (!target || !target.closest) return null;
+      var label = target.closest(".sg-cell");
+      return label ? label.querySelector("[data-week-slot]") : null;
+    }
+
+    grid.addEventListener("mousedown", function (e) {
+      if (e.button !== 0) return;
+      var cell = cellFrom(e.target);
+      if (!cell) return;
+      painting = true;
+      startCell = cell;
+      paintOn = !cell.checked;
+      setCell(cell, paintOn);
+      syncTotals();
+    });
+    grid.addEventListener("mouseover", function (e) {
+      if (!painting) return;
+      var cell = cellFrom(e.target);
+      if (!cell) return;
+      setCell(cell, paintOn);
+      syncTotals();
+    });
+    document.addEventListener("mouseup", function () {
+      painting = false;
+      setTimeout(function () { startCell = null; }, 0);
+    });
+    grid.addEventListener("click", function (e) {
+      var cell = cellFrom(e.target);
+      if (!cell) return;
+      e.preventDefault();        // we own the checked state
+      if (startCell) return;     // this click belongs to a mouse interaction
+      setCell(cell, !cell.checked);
+      syncTotals();
+    });
+
+    // Column (weekday) and row (hour) headers fill or clear a whole line.
+    grid.addEventListener("click", function (e) {
+      var col = e.target.closest ? e.target.closest("[data-week-col]") : null;
+      if (col) { toggleGroup(daySlots(col.getAttribute("data-week-col"))); return; }
+      var row = e.target.closest ? e.target.closest("[data-week-row]") : null;
+      if (row) { toggleGroup(hourSlots(row.getAttribute("data-week-row"))); }
+    });
+
+    // Keyboard toggles (space/enter) fire "change" without a mousedown.
+    grid.addEventListener("change", function (e) {
+      var cell = e.target;
+      if (!cell || !cell.matches || !cell.matches("[data-week-slot]")) return;
+      setCell(cell, cell.checked);
+      syncTotals();
+    });
+
+    var clearAll = root.querySelector("[data-week-clear-all]");
+    if (clearAll) {
+      clearAll.addEventListener("click", function () {
+        cells.forEach(function (c) { setCell(c, false); });
+        syncTotals();
+      });
+    }
+    var workweek = root.querySelector("[data-week-workweek]");
+    if (workweek) {
+      workweek.addEventListener("click", function () {
+        cells.forEach(function (c) {
+          var day = parseInt(c.getAttribute("data-week-slot"), 10);
+          var hour = parseInt(c.getAttribute("data-week-hour"), 10);
+          if (day >= 0 && day <= 4 && hour >= 9 && hour < 17) setCell(c, true);
         });
-        syncCount(d);
-        return;
-      }
-      var clear = e.target.closest("[data-week-clear]");
-      if (clear) {
-        var c = clear.getAttribute("data-week-clear");
-        slots(c).forEach(function (box) { box.checked = false; });
-        syncCount(c);
-      }
-    });
+        syncTotals();
+      });
+    }
+  })();
 
-    root.addEventListener("change", function (e) {
-      var box = e.target.closest("[data-week-slot]");
-      if (box) syncCount(box.getAttribute("data-week-slot"));
-    });
-
-    for (var day = 0; day < 7; day += 1) syncCount(day);
+  /* ---- "Log a session" form: show the fields for the chosen kind ----
+     Moved out of an inline <script> so the page's Content Security Policy
+     (which forbids inline script) doesn't silently block it. */
+  (function () {
+    var sel = document.getElementById("sg-kind");
+    if (!sel) return;
+    function sync() {
+      var kind = sel.value;
+      document.querySelectorAll("[data-sg-for]").forEach(function (el) {
+        var show = el.getAttribute("data-sg-for") === kind;
+        el.hidden = !show;
+        el.querySelectorAll("input, select").forEach(function (input) {
+          if (input.name === "coach" || input.name === "member_email") {
+            input.required = show;
+          }
+        });
+      });
+    }
+    sel.addEventListener("change", sync);
+    sync();
   })();
 
   /* ---- extracts written for one particular file ----

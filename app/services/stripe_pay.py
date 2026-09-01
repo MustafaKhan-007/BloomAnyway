@@ -900,42 +900,127 @@ def upsert_order_from_payment(
     return order
 
 
+def _live_user_from_meta(meta) -> "User | None":
+    """The live account named by a payment/subscription's ``buyer_user_id``.
+
+    Membership checkouts stamp the buyer's account id into metadata (and, via
+    ``subscription_data``, onto the subscription so renewals carry it). Matching
+    on that id — not just whatever email Stripe happens to hold — is what keeps a
+    live member from being mistaken for a deleted account after an email change.
+    """
+    from ..models import User
+
+    if not isinstance(meta, dict):
+        return None
+    raw = str((meta or {}).get("buyer_user_id") or "").strip()
+    if not raw.isdigit():
+        return None
+    user = db.session.get(User, int(raw))
+    if user is not None and user.deleted_at is None:
+        return user
+    return None
+
+
+def _subscription_buyer_user_id(sub_id: str) -> str:
+    """buyer_user_id stamped on a Stripe subscription's metadata (empty if none)."""
+    sid = (sub_id or "").strip()
+    if not sid.startswith("sub_") or not configured():
+        return ""
+    if current_app.config.get("TESTING"):
+        return ""
+    try:
+        _configure_stripe()
+        sub = _as_dict(stripe.Subscription.retrieve(sid))
+    except Exception:
+        log.exception("stripe: could not read subscription %s for its buyer id", sid)
+        return ""
+    meta = sub.get("metadata") if isinstance(sub.get("metadata"), dict) else {}
+    return str((meta or {}).get("buyer_user_id") or "").strip()
+
+
+def _ensure_subscription_buyer_meta(sub_id: str, user_id: int) -> None:
+    """Stamp buyer_user_id onto a live subscription that predates it.
+
+    Subscriptions bought before this link existed can still be tied to their
+    account here, so a later renewal is never mistaken for a deleted account's
+    charge and cancelled. Best-effort: a failure just leaves things as they were.
+    """
+    sid = (sub_id or "").strip()
+    if not sid.startswith("sub_") or not configured():
+        return
+    if current_app.config.get("TESTING"):
+        return
+    try:
+        _configure_stripe()
+        sub = _as_dict(stripe.Subscription.retrieve(sid))
+        meta = sub.get("metadata") if isinstance(sub.get("metadata"), dict) else {}
+        if str((meta or {}).get("buyer_user_id") or "").strip():
+            return
+        new_meta = dict(meta or {})
+        new_meta["buyer_user_id"] = str(user_id)
+        stripe.Subscription.modify(sid, metadata=new_meta)
+        log.info("stripe: stamped buyer_user_id=%s onto subscription %s", user_id, sid)
+    except Exception:
+        log.exception("stripe: could not stamp buyer id onto subscription %s", sid)
+
+
 def _membership_is_orphaned(order: Order, sub_id: str | None,
-                            payer_email: str | None = None) -> bool:
+                            payer_email: str | None = None,
+                            meta: dict | None = None) -> bool:
     """True only when nobody holds the account this payment is paying for.
 
     Closing an account scrubs the buyer email off their orders, so a charge that
     keeps arriving afterwards is usually billing for an account that no longer
     exists. Usually — people come back. Someone who deletes their account and
-    signs up again with the same address owns that subscription again, and
-    cancelling it then cancels a membership they are using and paying for.
+    signs up again (or just changes their email) still owns that subscription,
+    and cancelling it then cancels a membership they are using and paying for.
 
-    So a live account always wins. Being unsure counts as not orphaned: the
-    worst case here is a charge the owner has to refund, against cancelling a
-    paying member by mistake and scrubbing their order off their account.
+    So a live account always wins, and we look hard for one — by the buyer id
+    carried on the payment/subscription first, then by the paying email — before
+    writing anything off. Being unsure counts as not orphaned: the worst case
+    here is a charge the owner has to refund, against cancelling a paying member
+    by mistake and scrubbing their order off their account.
     """
+    from ..models import User
     from .privacy import is_closed_account_email
 
+    # 1) The buyer's own account id, stamped on this payment, is the firmest
+    #    signal there is — an email change can't shake it loose.
+    if _live_user_from_meta(meta) is not None:
+        return False
+
+    # 2) A live account for the paying email wins too.
     payer = (payer_email or "").strip().lower()
     if payer and not is_closed_account_email(payer) and _user_for_email(payer):
         return False
 
+    key = (sub_id or getattr(order, "stripe_subscription_id", None) or "").strip()
+
+    # 3) Ask the subscription itself who it belongs to before writing anyone off:
+    #    it may name its buyer's account id (bought after this fix), or bill an
+    #    email that now holds an account again (a returning member).
+    if key:
+        buyer_uid = _subscription_buyer_user_id(key)
+        if buyer_uid.isdigit():
+            u = db.session.get(User, int(buyer_uid))
+            if u is not None and u.deleted_at is None:
+                return False
+        live = _subscription_payer_email(key)
+        if live and _user_for_email(live):
+            log.info(
+                "stripe: subscription %s bills %s who holds an account — "
+                "not orphaned", key, live,
+            )
+            return False
+
+    # 4) Only now, with no live owner found anywhere, is a scrubbed order (or a
+    #    subscription whose orders were all scrubbed) an orphaned charge.
     if is_closed_account_email(getattr(order, "buyer_email", None)):
         return True
-    key = (sub_id or getattr(order, "stripe_subscription_id", None) or "").strip()
     if not key:
         return False
     rows = Order.query.filter(Order.stripe_subscription_id == key).all()
     if not any(is_closed_account_email(row.buyer_email) for row in rows):
-        return False
-    # The subscription was once a deleted account's. Ask Stripe who is paying
-    # now before writing anyone off — a returning member re-uses the address.
-    live = _subscription_payer_email(key)
-    if live and _user_for_email(live):
-        log.info(
-            "stripe: subscription %s was a closed account's but %s holds an "
-            "account again — not orphaned", key, live,
-        )
         return False
     return True
 
@@ -988,14 +1073,30 @@ def _reclaim_subscription_orders(email_norm: str, sub_id: str | None) -> int:
 
 
 def _handle_orphan_membership_payment(order: Order, sub_id: str | None,
-                                      payer_email: str | None = None) -> None:
+                                      payer_email: str | None = None,
+                                      meta: dict | None = None) -> None:
     """Stop billing a deleted account, and tell the owner it happened."""
+    from ..models import User
     from .privacy import CLOSED_ACCOUNT_EMAIL, is_closed_account_email
 
     key = (sub_id or getattr(order, "stripe_subscription_id", None) or "").strip()
     # Last line of defence before we cancel someone's billing. Cancelling a
     # paying member is far worse than leaving a deleted account's charge for
     # the owner to refund by hand, so anything that looks alive stops us.
+    live = _live_user_from_meta(meta)
+    if live is None and key:
+        buyer_uid = _subscription_buyer_user_id(key)
+        if buyer_uid.isdigit():
+            candidate = db.session.get(User, int(buyer_uid))
+            if candidate is not None and candidate.deleted_at is None:
+                live = candidate
+    if live is not None:
+        log.error(
+            "stripe: refused to write off payment %s — account %s (%s) is live "
+            "(subscription %s)", order.ls_order_id, live.id, live.email,
+            key or "unknown",
+        )
+        return
     payer = (payer_email or getattr(order, "buyer_email", None) or "").strip().lower()
     if not (payer and not is_closed_account_email(payer)):
         # The event didn't name a payer, so ask Stripe rather than act blind.
@@ -1115,8 +1216,12 @@ def handle_payment_event(event_type: str, data: dict) -> Order | None:
                  .filter(func.lower(User.email) == email.strip().lower(),
                          User.deleted_at.is_(None))
                  .first())
-        if buyer:
-            prev_tier = buyer.effective_membership()
+    if buyer is None:
+        # The paying email may not match the account (email change, stale Stripe
+        # customer). The buyer id carried on the payment resolves it firmly.
+        buyer = _live_user_from_meta(meta)
+    if buyer is not None:
+        prev_tier = buyer.effective_membership()
 
     order = upsert_order_from_payment(
         payment_id=str(payment_id),
@@ -1134,22 +1239,31 @@ def handle_payment_event(event_type: str, data: dict) -> Order | None:
     orphaned = False
     if status == "paid" and is_membership:
         sub_ref = (meta or {}).get("subscription_id")
-        orphaned = _membership_is_orphaned(order, sub_ref, payer_email=email)
+        orphaned = _membership_is_orphaned(
+            order, sub_ref, payer_email=email, meta=meta)
         # send_receipt marks a payment we haven't fulfilled before, so replaying
         # old payments through a sync can't spam the owner with the same alert.
         if orphaned and send_receipt:
-            _handle_orphan_membership_payment(order, sub_ref, payer_email=email)
+            _handle_orphan_membership_payment(
+                order, sub_ref, payer_email=email, meta=meta)
         elif not orphaned and buyer is not None:
-            # Someone who deleted their account and came back owns whatever was
-            # written off while they were gone. Hand it back, or the tier they
-            # are paying for never reaches them.
-            reclaimed = _reclaim_subscription_orders(
-                (email or "").strip().lower(),
-                sub_ref or getattr(order, "stripe_subscription_id", None),
-            )
-            if reclaimed:
-                from .memberships import reconcile_email
-                reconcile_email((email or "").strip().lower())
+            # Someone who changed their email (or deleted their account and came
+            # back) owns this payment. Attribute it to the account we now know is
+            # live — Stripe may have billed a different address — so the tier they
+            # paid for actually lands, and hand back anything written off earlier.
+            reclaim_email = (buyer.email or email or "").strip().lower()
+            sub_key = sub_ref or getattr(order, "stripe_subscription_id", None)
+            if (reclaim_email
+                    and (order.buyer_email or "").strip().lower() != reclaim_email
+                    and not is_closed_account_email(order.buyer_email)):
+                order.buyer_email = reclaim_email
+            _reclaim_subscription_orders(reclaim_email, sub_key)
+            from .memberships import reconcile_email
+            reconcile_email(reclaim_email)
+            # Stamp the account id onto an older subscription that lacks it, so
+            # its next renewal is tied to the account instead of guessed by email.
+            if sub_key:
+                _ensure_subscription_buyer_meta(sub_key, buyer.id)
         elif renewal and buyer is None:
             # Subscriptions predating the subscription_id column can't be tied
             # back to a closed account, so leave a trail rather than guessing.

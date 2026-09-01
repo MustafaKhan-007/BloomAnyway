@@ -2911,6 +2911,58 @@ a.studio-member-filter.is-active span { color: #fff; }
   background: var(--plum); border-color: var(--plum); color: #fff8f3;
 }
 .sg-week__hour input:focus-visible + span { outline: 2px solid var(--plum); outline-offset: 2px; }
+
+/* Whole-week 1:1 availability grid: every weekday a column, every hour a row,
+   so the coach's week is visible and editable at a glance (no day tabs). */
+.sg-grid__toolbar {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 10px; margin: 14px 0 8px;
+}
+.sg-grid__toolbar-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.sg-grid__count { font-size: 13px; font-weight: 800; color: var(--plum-deep); white-space: nowrap; }
+.sg-grid__scroll {
+  max-height: 460px; overflow: auto;
+  border: 1px solid rgba(61, 20, 49, 0.12); border-radius: 14px; background: #fff;
+}
+.sg-grid {
+  border-collapse: separate; border-spacing: 0; width: 100%;
+  user-select: none; -webkit-user-select: none;
+}
+.sg-grid th, .sg-grid td {
+  padding: 0; text-align: center;
+  border-bottom: 1px solid rgba(61, 20, 49, 0.07);
+  border-right: 1px solid rgba(61, 20, 49, 0.05);
+}
+.sg-grid thead th {
+  position: sticky; top: 0; z-index: 2; background: var(--ivory-deep); padding: 4px;
+}
+.sg-grid__corner {
+  position: sticky; left: 0; z-index: 3; background: var(--ivory-deep);
+  font-size: 12px; color: var(--ink-soft);
+}
+.sg-grid__timelabel { position: sticky; left: 0; z-index: 1; background: var(--ivory-deep); }
+.sg-grid__dayhead, .sg-grid__rowhead {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border: 0; background: transparent; cursor: pointer; font: inherit;
+  color: var(--plum-deep); font-weight: 700; width: 100%; padding: 8px 6px; border-radius: 8px;
+}
+.sg-grid__rowhead { font-size: 12px; color: var(--ink); padding: 6px 10px; }
+.sg-grid__dayhead:hover, .sg-grid__rowhead:hover { background: rgba(122, 46, 98, 0.10); }
+.sg-grid__daycount {
+  min-width: 18px; padding: 0 5px; border-radius: 999px;
+  background: var(--gold-soft); color: var(--plum-deep); font-size: 11px; font-weight: 800;
+}
+.sg-cell { display: block; position: relative; cursor: pointer; margin: 0; }
+.sg-cell input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
+.sg-cell__box {
+  display: block; min-width: 40px; height: 26px; margin: 3px;
+  border-radius: 8px; background: rgba(61, 20, 49, 0.05);
+  transition: background 0.08s ease;
+}
+.sg-cell:hover .sg-cell__box { background: rgba(122, 46, 98, 0.14); }
+.sg-cell.is-on .sg-cell__box { background: var(--plum); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06); }
+.sg-cell.is-on:hover .sg-cell__box { background: var(--plum-deep); }
+.sg-cell input:focus-visible + .sg-cell__box { outline: 2px solid var(--plum); outline-offset: 2px; }
 .sg-week__summary {
   list-style: none; margin: 18px 0 0; padding: 0;
   display: flex; flex-direction: column; gap: 6px;
@@ -8517,6 +8569,10 @@ a.at-handle:hover { text-decoration: underline; }
 .studio-cover-preview__stack { position: relative; }
 .studio-cover-preview__photo {
   position: absolute; inset: 0;
+  /* Sit above the flower cover's title/kind/brand (z-index: 1) so an uploaded
+     photo fully replaces the generated cover instead of the text bleeding
+     through on top of it. */
+  z-index: 2;
   width: 100%; height: 100%;
   object-fit: contain; object-position: center;
   background: #1a1020; border-radius: 14px;
