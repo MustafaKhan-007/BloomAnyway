@@ -36,13 +36,75 @@
       }
     }
 
+    // Stars are counted rather than matched, because one mark is made of the
+    // other: bold is two, italic is one, and both together is three. An odd
+    // run has a lone star in it, which is the italic; two or more contain a
+    // pair, which is the bold. That way italic comes off ***both*** without
+    // taking a star of the bold with it.
+    function starRun(text, at, step) {
+      var n = 0;
+      while (at >= 0 && at < text.length && text.charAt(at) === "*") {
+        n += 1;
+        at += step;
+      }
+      return n;
+    }
+
+    function alreadyOn(before, after, mark) {
+      if (mark === "*") return before % 2 === 1 && after % 2 === 1;
+      return before >= 2 && after >= 2;
+    }
+
+    function insideOut(picked, mark) {
+      // "**bold**" picked whole — hand back what is between the marks.
+      if (mark === "*" || mark === "**") {
+        var lead = starRun(picked, 0, 1);
+        var tail = starRun(picked, picked.length - 1, -1);
+        if (!alreadyOn(lead, tail, mark)) return null;
+        if (picked.length < mark.length * 2) return null;
+        return picked.slice(mark.length, picked.length - mark.length);
+      }
+      if (picked.length < mark.length * 2) return null;
+      if (picked.slice(0, mark.length) !== mark) return null;
+      if (picked.slice(-mark.length) !== mark) return null;
+      return picked.slice(mark.length, picked.length - mark.length);
+    }
+
+    function wrappedAt(value, from, to, mark) {
+      // "bold" picked with the marks sitting either side of it.
+      if (from < mark.length) return false;
+      if (mark === "*" || mark === "**") {
+        return alreadyOn(starRun(value, from - 1, -1), starRun(value, to, 1), mark);
+      }
+      return value.slice(from - mark.length, from) === mark
+        && value.slice(to, to + mark.length) === mark;
+    }
+
+    // Pressing the same button on the same words takes the formatting off
+    // again, so the buttons read as on and off rather than only on.
     function surround(box, open, close, hint) {
+      var value = box.value;
       var from = box.selectionStart;
       var to = box.selectionEnd;
-      var picked = box.value.slice(from, to);
+      var picked = value.slice(from, to);
+
+      var inner = insideOut(picked, open);
+      if (inner !== null) {
+        write(box, inner, from, to);
+        box.setSelectionRange(from, from + inner.length);
+        return;
+      }
+      if (picked && wrappedAt(value, from, to, open)) {
+        write(box, picked, from - open.length, to + close.length);
+        var back = from - open.length;
+        box.setSelectionRange(back, back + picked.length);
+        return;
+      }
+
       var body = picked || hint;
       write(box, open + body + close, from, to);
-      // Leave the words picked out, so typing replaces the stand-in.
+      // Leave the words picked out, so typing replaces the stand-in — and so
+      // pressing the same button again takes it straight back off.
       var at = from + open.length;
       box.setSelectionRange(at, at + body.length);
     }

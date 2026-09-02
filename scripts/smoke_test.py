@@ -5916,6 +5916,13 @@ ok("The buttons are the five asked for, and no others",
                                  'title: "Bullet points"', 'title: "Link"')))
 ok("They write at the cursor, so the browser's own undo still steps back",
    '"insertText"' in _admin_js2)
+ok("Pressing one a second time on the same words takes it off again",
+   "function alreadyOn" in _admin_js2 and "function insideOut" in _admin_js2
+   and "function wrappedAt" in _admin_js2)
+ok("Counting the stars, so italic comes off bold without taking one with it",
+   "function starRun" in _admin_js2)
+ok("Bullets have always come back off, and still do",
+   "bulleted ? line.replace" in _admin_js2)
 
 # When a PDF still won't open, the reader has to say why and leave a way in.
 _reader_js = client.get("/static/js/course-reader.js").get_data(as_text=True)
