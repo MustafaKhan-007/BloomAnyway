@@ -2,6 +2,134 @@
 (function () {
   "use strict";
 
+  /* ---- formatting buttons over the writing boxes ---- */
+  (function () {
+    var LINK_ICON =
+      '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">' +
+      '<path fill="currentColor" d="M6.6 9.4a2.6 2.6 0 0 0 3.7 0l2.4-2.4a2.6 2.6 0 0 0-3.7-3.7l-1 1 1 1 1-1a1.2 1.2 0 0 1 1.7 1.7L9.3 8.4a1.2 1.2 0 0 1-1.7 0l-1 1Z"/>' +
+      '<path fill="currentColor" d="M9.4 6.6a2.6 2.6 0 0 0-3.7 0L3.3 9a2.6 2.6 0 0 0 3.7 3.7l1-1-1-1-1 1A1.2 1.2 0 0 1 4.3 10l2.4-2.4a1.2 1.2 0 0 1 1.7 0l1-1Z"/>' +
+      "</svg>";
+    var TOOLS = [
+      {name: "bold", face: "B", title: "Bold", wrap: ["**", "**"], hint: "bold text"},
+      {name: "italic", face: "I", title: "Italic", wrap: ["*", "*"], hint: "italic text"},
+      {name: "strike", face: "S", title: "Strikethrough",
+       wrap: ["~~", "~~"], hint: "crossed out"},
+      {name: "list", face: "\u2261", title: "Bullet points", bullets: true},
+      {name: "link", face: LINK_ICON, title: "Link", link: true},
+    ];
+
+    // Written in at the cursor, never over the whole box, so nothing already
+    // typed can be replaced by a stray click. insertText also leaves the
+    // browser's own undo intact, so ctrl-Z still steps back through it.
+    function write(box, text, from, to) {
+      box.focus();
+      box.setSelectionRange(from, to);
+      var done = false;
+      try {
+        done = document.execCommand("insertText", false, text);
+      } catch (err) {
+        done = false;
+      }
+      if (!done) {
+        box.setRangeText(text, from, to, "end");
+        box.dispatchEvent(new Event("input", {bubbles: true}));
+      }
+    }
+
+    function surround(box, open, close, hint) {
+      var from = box.selectionStart;
+      var to = box.selectionEnd;
+      var picked = box.value.slice(from, to);
+      var body = picked || hint;
+      write(box, open + body + close, from, to);
+      // Leave the words picked out, so typing replaces the stand-in.
+      var at = from + open.length;
+      box.setSelectionRange(at, at + body.length);
+    }
+
+    function bullets(box) {
+      var value = box.value;
+      var from = value.lastIndexOf("\n", box.selectionStart - 1) + 1;
+      var to = value.indexOf("\n", box.selectionEnd);
+      if (to === -1) to = value.length;
+      var block = value.slice(from, to);
+      if (!block.trim()) {
+        write(box, "- ", from, to);
+        return;
+      }
+      var lines = block.split("\n");
+      var bulleted = lines.every(function (line) {
+        return !line.trim() || /^\s*[-*]\s+/.test(line);
+      });
+      var out = lines.map(function (line) {
+        if (!line.trim()) return line;
+        return bulleted ? line.replace(/^\s*[-*]\s+/, "") : "- " + line;
+      }).join("\n");
+      write(box, out, from, to);
+      box.setSelectionRange(from, from + out.length);
+    }
+
+    function link(box) {
+      var from = box.selectionStart;
+      var to = box.selectionEnd;
+      var picked = box.value.slice(from, to).trim();
+      var isAddress = /^(https?:\/\/|mailto:)\S+$/i.test(picked);
+      var words = isAddress ? "link text" : (picked || "link text");
+      var where = isAddress ? picked : "https://";
+      var out = "[" + words + "](" + where + ")";
+      write(box, out, from, to);
+      // Whichever half still needs typing is the half left picked out.
+      var at = isAddress ? from + 1 : from + out.indexOf("](") + 2;
+      var len = isAddress ? words.length : where.length;
+      box.setSelectionRange(at, at + len);
+    }
+
+    function run(tool, box) {
+      if (tool.bullets) return bullets(box);
+      if (tool.link) return link(box);
+      return surround(box, tool.wrap[0], tool.wrap[1], tool.hint);
+    }
+
+    function addBar(box) {
+      if (box.dataset.formatReady === "1") return;
+      box.dataset.formatReady = "1";
+      var bar = document.createElement("div");
+      bar.className = "md-tools";
+      bar.setAttribute("role", "toolbar");
+      bar.setAttribute("aria-label", "Formatting");
+      TOOLS.forEach(function (tool) {
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "md-tools__btn md-tools__btn--" + tool.name;
+        btn.title = tool.title;
+        btn.setAttribute("aria-label", tool.title);
+        btn.innerHTML = tool.face;
+        btn.addEventListener("click", function () { run(tool, box); });
+        bar.appendChild(btn);
+      });
+      box.parentNode.insertBefore(bar, box);
+    }
+
+    function sweep(root) {
+      (root || document).querySelectorAll("textarea[data-format]").forEach(addBar);
+    }
+
+    sweep();
+    // Extracts and lessons are written into the page as they are added, so
+    // their boxes are picked up as they appear rather than only on load.
+    if (window.MutationObserver) {
+      new MutationObserver(function (records) {
+        records.forEach(function (record) {
+          record.addedNodes.forEach(function (node) {
+            if (node.nodeType !== 1) return;
+            if (node.matches && node.matches("textarea[data-format]")) addBar(node);
+            else if (node.querySelectorAll) sweep(node);
+          });
+        });
+      }).observe(document.body, {childList: true, subtree: true});
+    }
+  })();
+
   /* ---- folds: a module or lesson shows its name, and opens for the rest ---- */
   (function () {
     var sections = document.querySelectorAll("details.studio-section");
@@ -444,7 +572,7 @@
           '<input type="text" name="mod' + mod + '_lesson_title" maxlength="160" ' +
           'placeholder="Lesson title">' +
           '<div class="studio-fold" data-fold>' +
-          '<textarea name="mod' + mod + '_lesson_desc" rows="3" maxlength="8000" ' +
+          '<textarea name="mod' + mod + '_lesson_desc" rows="3" maxlength="8000" data-format ' +
           'placeholder="Description or text extract for this lesson (optional)."></textarea>' +
           (canChunk ? lessonUploader(mod, n) : lessonFileField(mod, n)) +
           "</div>";
@@ -516,7 +644,7 @@
         block.innerHTML =
           '<input type="text" name="mod' + n + '_text_title" maxlength="160" ' +
           'placeholder="What this extract is called">' +
-          '<textarea name="mod' + n + '_text_body" rows="5" ' +
+          '<textarea name="mod' + n + '_text_body" rows="5" data-format ' +
           'placeholder="Write it here. Buyers read this on the page — no file needed."></textarea>' +
           '<button type="button" class="btn btn--quiet btn--sm" data-text-remove>Remove</button>';
         holder.appendChild(block);
@@ -707,7 +835,7 @@
         block.innerHTML =
           '<input type="text" form="product-form" maxlength="160" name="newnote_' +
           parent + '_title" placeholder="What this extract is called">' +
-          '<textarea form="product-form" rows="5" name="newnote_' + parent +
+          '<textarea form="product-form" rows="5" data-format name="newnote_' + parent +
           '_body" placeholder="Write it here. Buyers read this beside the file — ' +
           'no upload needed."></textarea>' +
           '<button type="button" class="btn btn--quiet btn--sm" data-note-drop>' +

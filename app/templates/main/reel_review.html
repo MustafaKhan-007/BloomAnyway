@@ -94,7 +94,7 @@
             See Creator membership</a>
         </div>
         {% elif review.body %}
-        <article class="reel-read__body forum-body">{{ review.body|nl2br }}</article>
+        <article class="reel-read__body forum-body">{{ review.body|markdown(breaks=True) }}</article>
         {% else %}
         <div class="empty-state">
           <p>The write-up for this review is still being added.</p>

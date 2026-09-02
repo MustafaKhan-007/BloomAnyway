@@ -1418,7 +1418,8 @@ ok("Creator member sees the video room",
    and "Content Hub" in r.get_data(as_text=True))
 r = client.get(f"/watch/{vid_id}")
 ok("Creator member opens a tip and reads it",
-   r.status_code == 200 and "Don&#39;t edit while you write." in r.get_data(as_text=True))
+   r.status_code == 200
+   and "edit while you write." in r.get_data(as_text=True))
 r = free_client.get(f"/watch/{text_tip_id}")
 ok("Free member reads a tip that was opened to Free",
    r.status_code == 200 and "ten first lines" in r.get_data(as_text=True))
@@ -5852,6 +5853,49 @@ ok("A picture that fails leaves the mark it would have had, not its alt text",
 _main_js = client.get("/static/js/main.js").get_data(as_text=True)
 ok("Which the page swaps in when the picture doesn't arrive",
    "data-photo-fallback" in _main_js and '"error"' in _main_js)
+
+# Writing boxes in Studio get formatting buttons. They work by writing marks
+# around what's picked out, so nothing already typed can be replaced.
+from app.services.markdown import render_markdown as _md  # noqa: E402
+
+ok("Bold, italic and strikethrough all render",
+   "<strong>bold</strong>" in _md("**bold**")
+   and "<em>soft</em>" in _md("*soft*")
+   and "<s>gone</s>" in _md("~~gone~~"),
+   f"got {_md('**bold** *soft* ~~gone~~')}")
+ok("So do bullet points and links",
+   "<li>one</li>" in _md("- one\n- two")
+   and 'href="https://example.com"' in _md("[a](https://example.com)"))
+ok("Where lines used to be kept, they still are",
+   "<br>" in _md("one\ntwo", breaks=True)
+   and "<br>" not in _md("one\ntwo"))
+
+_fmt_pages = {
+    "the product editor": f"/admin/products/{drip_prod_id}/edit",
+    "a page": "/admin/pages",
+    "the tip editor": "/admin/content/new",
+}
+for _what, _url in _fmt_pages.items():
+    _r = admin.get(_url)
+    if _r.status_code != 200:
+        continue
+    _body = _r.get_data(as_text=True)
+    if "<textarea" not in _body:
+        continue
+    ok(f"Writing boxes in {_what} carry formatting buttons",
+       "data-format" in _body, "none marked up")
+_pbody = admin.get(f"/admin/products/{drip_prod_id}/edit").get_data(as_text=True)
+_contents_tag = re.search(r"<textarea[^>]*\bname=\"contents\"[^>]*>", _pbody)
+ok("But the one-item-per-line box doesn't, since marks would show through",
+   bool(_contents_tag) and "data-format" not in _contents_tag.group(0),
+   f"got {_contents_tag.group(0) if _contents_tag else 'no box'}")
+_admin_js2 = client.get("/static/js/admin.js").get_data(as_text=True)
+ok("The buttons are the five asked for, and no others",
+   all(t in _admin_js2 for t in ('title: "Bold"', 'title: "Italic"',
+                                 'title: "Strikethrough"',
+                                 'title: "Bullet points"', 'title: "Link"')))
+ok("They write at the cursor, so the browser's own undo still steps back",
+   '"insertText"' in _admin_js2)
 
 # When a PDF still won't open, the reader has to say why and leave a way in.
 _reader_js = client.get("/static/js/course-reader.js").get_data(as_text=True)

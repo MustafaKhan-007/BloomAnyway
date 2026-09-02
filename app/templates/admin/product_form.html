@@ -15,7 +15,7 @@
          form="product-form" maxlength="160" value="{{ item.title or '' }}"
          placeholder="What this extract is called">
   <label class="sr-only" for="note{{ item.id }}_body">Extract text</label>
-  <textarea id="note{{ item.id }}_body" name="note_{{ item.id }}_body" rows="5"
+  <textarea id="note{{ item.id }}_body" name="note_{{ item.id }}_body" rows="5" data-format
             form="product-form"
             placeholder="Write it here. Buyers read this beside the file — no upload needed."
             >{{ item.body or '' }}</textarea>
@@ -304,12 +304,12 @@
       </summary>
       <div class="field">
         <label for="description">About this product</label>
-        <textarea id="description" name="description" rows="5"
+        <textarea id="description" name="description" rows="5" data-format
                   placeholder="Tell them what they’ll get and why it helps…">{{ product.description_md or '' }}</textarea>
       </div>
       <div class="field">
         <label for="audience">Who this is for</label>
-        <textarea id="audience" name="audience" rows="3"
+        <textarea id="audience" name="audience" rows="3" data-format
                   placeholder="Women navigating…">{{ product.audience or '' }}</textarea>
       </div>
       <div class="field">
@@ -489,7 +489,7 @@
                   <input type="text" name="mod{{ row.number }}_lesson_title" maxlength="160"
                          value="{{ lesson.title }}" placeholder="Lesson title">
                   <div class="studio-fold" data-fold hidden>
-                  <textarea name="mod{{ row.number }}_lesson_desc" rows="3" maxlength="8000"
+                  <textarea name="mod{{ row.number }}_lesson_desc" rows="3" maxlength="8000" data-format
                             placeholder="Description or text extract for this lesson — buyers read this on the lesson (optional).">{{ lesson.description }}</textarea>
                   {% if not is_new %}
                   <ul class="module-items" data-module-items{% if not lesson.contents %} hidden{% endif %}>

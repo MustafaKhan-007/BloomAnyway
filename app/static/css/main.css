@@ -9368,6 +9368,30 @@ a.at-handle:hover { text-decoration: underline; }
   margin-bottom: 14px; padding: 14px; border-radius: 12px;
   border: 1px solid rgba(61, 20, 49, 0.12); background: rgba(255, 255, 255, 0.6);
 }
+/* Formatting buttons sitting on top of a writing box. */
+.md-tools {
+  display: flex; align-items: center; gap: 2px; flex-wrap: wrap;
+  margin-bottom: -1px;
+  padding: 4px 6px;
+  border: 1px solid rgba(61, 20, 49, 0.18);
+  border-radius: 10px 10px 0 0;
+  background: var(--dawn-ivory, #fdf8f3);
+}
+.md-tools__btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 30px; height: 28px; padding: 0 7px;
+  border: 0; border-radius: 7px; background: transparent;
+  color: var(--plum-deep); font-size: 14px; font-weight: 700;
+  font-family: var(--font-display, inherit);
+  cursor: pointer; line-height: 1;
+}
+.md-tools__btn:hover { background: rgba(90, 49, 88, 0.12); }
+.md-tools__btn:focus-visible { outline: 2px solid var(--plum); outline-offset: 1px; }
+.md-tools__btn--italic { font-style: italic; }
+.md-tools__btn--strike { text-decoration: line-through; }
+.md-tools__btn--list { font-size: 16px; }
+.md-tools + textarea { border-radius: 0 0 10px 10px; }
+
 /* Each numbered section folds away; its heading and one-line summary stay. */
 .studio-section > .studio-section__head {
   list-style: none;

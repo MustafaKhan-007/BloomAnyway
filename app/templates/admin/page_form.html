@@ -19,7 +19,7 @@
       </div>
       <div class="field">
         <label for="body_md">Body (Markdown)</label>
-        <textarea id="body_md" name="body_md" rows="24">{{ page.body_md if page else '' }}</textarea>
+        <textarea id="body_md" name="body_md" rows="24" data-format>{{ page.body_md if page else '' }}</textarea>
         <p class="field-help">Headings with <code>##</code>, italics with <code>*stars*</code>, images with <code>![](https://...)</code>. Blockquotes (<code>&gt;</code>) render as pull-quotes on the story page.</p>
       </div>
     </section>

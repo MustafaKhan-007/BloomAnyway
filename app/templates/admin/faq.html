@@ -20,7 +20,7 @@
       </div>
       <div class="field">
         <label for="answer_md">Answer (Markdown)</label>
-        <textarea id="answer_md" name="answer_md" rows="4" required></textarea>
+        <textarea id="answer_md" name="answer_md" rows="4" required data-format></textarea>
       </div>
       <div class="field" style="max-width: 160px;">
         <label for="sort_order">Sort order</label>
@@ -59,7 +59,7 @@
         </div>
         <div class="field">
           <label>Answer (Markdown)</label>
-          <textarea name="answer_md" rows="4">{{ item.answer_md }}</textarea>
+          <textarea name="answer_md" rows="4" data-format>{{ item.answer_md }}</textarea>
         </div>
         <div class="field" style="max-width: 160px;">
           <label>Sort order</label>

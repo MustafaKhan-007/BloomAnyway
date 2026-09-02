@@ -50,7 +50,7 @@
       {% endif %}
 
       {% if video.body %}
-      <article class="tip-read__body forum-body">{{ video.body|nl2br }}</article>
+      <article class="tip-read__body forum-body">{{ video.body|markdown(breaks=True) }}</article>
       {% endif %}
     {% else %}
       {% if video.locked_shape() %}
