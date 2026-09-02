@@ -1016,7 +1016,9 @@ class ProductAsset(db.Model):
         try:
             return not os.path.isfile(disk_path(self.disk_name))
         except Exception:
-            return True
+            # Couldn't look is not the same as isn't there. Saying "gone" on a
+            # file that is fine is worse than saying nothing.
+            return False
 
     def display_title(self):
         return self.title or self.filename

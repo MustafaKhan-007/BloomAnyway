@@ -687,6 +687,18 @@
       if (modRemove) {
         var gone = modRemove.closest("[data-module-row]");
         if (!gone) return;
+        // Say so out loud. Files are only deleted for a module named here, so
+        // a row that simply stops reporting where its content lives can never
+        // be mistaken for one somebody meant to throw away.
+        var stamp = gone.querySelector("[data-module-from]");
+        var was = stamp && stamp.value;
+        if (was) {
+          var note = document.createElement("input");
+          note.type = "hidden";
+          note.name = "removed_module";
+          note.value = was;
+          list.appendChild(note);
+        }
         gone.remove();
         renumber();
       }

@@ -5689,8 +5689,9 @@ r = admin.post(f"/admin/products/{_order_id}/edit", data=_MultiDict([
     *_order_base.items(), ("slug", "order-test"),
     ("mod1_from", "1"), ("mod1_title", "Gamma"),
     ("mod2_from", "3"), ("mod2_title", "Beta"),
+    ("removed_module", "2"),
 ]), content_type="multipart/form-data", follow_redirects=True)
-ok("A module removed takes its files rather than leaving them loose",
+ok("A module removed on purpose takes its files rather than leaving them loose",
    _module_map(_order_id) == [("Gamma", ["gamma.pdf"]), ("Beta", ["beta.pdf"])],
    f"got {_module_map(_order_id)}")
 with app.app_context():
@@ -5708,6 +5709,26 @@ ok("A module added comes up empty rather than borrowing another's files",
    _module_map(_order_id) == [("Gamma", ["gamma.pdf"]), ("Beta", ["beta.pdf"]),
                               ("Delta", [])],
    f"got {_module_map(_order_id)}")
+
+# Working a removal out from what a form left unsaid is not good enough: an
+# older page, or a field that didn't make it, would read as a removal and take
+# real uploads with it. Only a row the editor names is ever cleared out.
+_before_quiet = _module_map(_order_id)
+r = admin.post(f"/admin/products/{_order_id}/edit", data=_MultiDict([
+    *_order_base.items(), ("slug", "order-test"),
+    ("mod1_from", "1"), ("mod1_title", "Gamma"),
+    ("mod2_from", ""), ("mod2_title", "Beta"),
+]), content_type="multipart/form-data", follow_redirects=True)
+with app.app_context():
+    _still = [a.filename for a in db.session.get(Product, _order_id).assets]
+    ok("A row that stops saying where its content lives destroys nothing",
+       "beta.pdf" in _still, f"got {_still}")
+with app.app_context():
+    _b = next(a for a in db.session.get(Product, _order_id).assets
+              if a.filename == "beta.pdf")
+    ok("The file is still on the disk behind it too", not _b.file_missing())
+    _b.module_index = 2
+    db.session.commit()
 
 # Lessons move the same way, but removing one only loses the grouping: the
 # module is still there to hold what was inside it.

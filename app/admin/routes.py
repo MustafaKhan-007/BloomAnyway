@@ -331,21 +331,27 @@ def _lesson_numbers(form, row_number: int) -> dict[int, int]:
 
 def _move_module_content(product: Product, module_moves: dict[int, int],
                          lesson_moves: dict[int, dict[int, int]],
-                         old_module_count: int) -> None:
+                         old_module_count: int,
+                         removed: set[int] | None = None) -> None:
     """Carry each module's files to wherever its row has been moved to.
 
     Files are pinned to a module by number, while the rows on the form are
     positional, so without this a module dragged up the list arrives holding
     whatever used to sit in its new slot.
 
-    A module that is gone takes its files with it, which is what removing it
-    means — and better than the alternative of leaving them attached to no
-    module, where they read as content open to every buyer from day one. A
-    lesson that is gone only loses its own grouping: the files stay in the
+    Files are only ever deleted for a module the editor says was removed by
+    hand. Working it out from what the form left unsaid is not good enough:
+    anything that stops a row saying where its content lives — an older page,
+    a field that didn't make it — would read as a removal and take real
+    uploads with it. Left unclaimed for any other reason, a module's files
+    stay exactly where they are, out of sight until its row comes back.
+
+    A lesson that is gone only loses its own grouping: the files stay in the
     module, which is still there to hold them.
     """
     from ..services import assets as asset_svc
 
+    gone = removed or set()
     # Read every position first: reassigning while walking would move a file
     # twice when two modules swap places.
     placed = [(a, a.module_index, a.lesson_index) for a in product.assets]
@@ -353,11 +359,9 @@ def _move_module_content(product: Product, module_moves: dict[int, int],
     for asset, old_module, old_lesson in placed:
         if not old_module:
             continue
-        if old_module > old_module_count and old_module not in module_moves:
-            continue  # newer than this form's idea of the product; leave it
         new_module = module_moves.get(old_module)
         if new_module is None:
-            if asset.parent_asset_id is None:
+            if old_module in gone and asset.parent_asset_id is None:
                 asset_svc.delete_file(asset)
                 db.session.delete(asset)
                 dropped += 1
@@ -470,8 +474,10 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
               + " under a stand-in name — nothing typed there was lost, and "
               "you can rename them whenever.", "info")
     if tracked:
+        removed = {int(v) for v in form.getlist("removed_module")
+                   if str(v).strip().isdigit()}
         _move_module_content(product, module_moves, lesson_moves,
-                             old_module_count)
+                             old_module_count, removed)
 
     product.drip_enabled = bool(form.get("drip"))
     days = (form.get("drip_interval_days") or "").strip()
