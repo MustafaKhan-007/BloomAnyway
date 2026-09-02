@@ -192,28 +192,47 @@ def receipt_files(product, *, budget: int = RECEIPT_MAX_BYTES,
     """
     out: list[dict] = []
     if product is None:
+        log.info("receipt: no product behind this payment, nothing to attach")
         return out
     dripped = product.is_dripped()
     spent = 0
+    # Every way a file can be left out is quiet on its own, and an email that
+    # arrives without the guide looks the same whichever it was. One line says
+    # which, so it doesn't have to be guessed at afterwards.
+    skipped: list[str] = []
     for asset in product.top_level_assets():
+        name = asset.filename or f"asset {asset.id}"
         if asset.kind != "pdf":
+            skipped.append(f"{name}: not a PDF ({asset.kind})")
             continue
         if dripped and asset.module_index:
+            skipped.append(f"{name}: in module {asset.module_index}, not open yet")
             continue
         size = asset.size or 0
-        if size <= 0 or spent + size > budget:
+        if size <= 0:
+            skipped.append(f"{name}: no size recorded")
+            continue
+        if spent + size > budget:
+            skipped.append(f"{name}: over what an email will carry")
             continue
         try:
             data = read_bytes(asset)
-        except Exception:
-            log.exception("receipt: could not read asset %s", asset.id)
+        except Exception as exc:
+            skipped.append(f"{name}: could not be read ({exc.__class__.__name__})")
             continue
         if not data:
+            skipped.append(f"{name}: nothing in it")
             continue
         out.append({"name": asset.filename or "guide.pdf", "data": data})
         spent += size
         if len(out) >= limit:
             break
+    if out:
+        log.info("receipt for %s: attaching %s", product.slug,
+                 ", ".join(f["name"] for f in out))
+    else:
+        log.warning("receipt for %s: nothing attached — %s", product.slug,
+                    "; ".join(skipped) or "the product has no files")
     return out
 
 

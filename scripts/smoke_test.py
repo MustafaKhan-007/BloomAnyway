@@ -6209,6 +6209,43 @@ with app.app_context():
     ok("Anything too big to post is left in the library instead",
        _ast.receipt_files(_rc, budget=10) == [])
 
+    # An email arriving without the guide looks the same whichever reason it
+    # was, so each one says which — otherwise it can only be guessed at.
+    import logging as _logging
+
+    class _Catch(_logging.Handler):
+        def __init__(self):
+            super().__init__()
+            self.said = []
+
+        def emit(self, record):
+            self.said.append(record.getMessage())
+
+    _heard = _Catch()
+    _ast_log = _logging.getLogger("app.services.assets")
+    _ast_log.addHandler(_heard)
+    try:
+        _ast.receipt_files(None)
+        _ast.receipt_files(_rc, budget=10)
+        _gone_pdf = next(a for a in _rc.top_level_assets() if a.kind == "pdf")
+        _pdf_path = _assets_svc.disk_path(_gone_pdf.disk_name)
+        _pdf_keep = open(_pdf_path, "rb").read()
+        _os.remove(_pdf_path)
+        _ast.receipt_files(_rc)
+        open(_pdf_path, "wb").write(_pdf_keep)
+        _ast.receipt_files(_rc)
+    finally:
+        _ast_log.removeHandler(_heard)
+    _all_said = " | ".join(_heard.said)
+    ok("No product behind the payment says so",
+       "no product behind this payment" in _all_said, f"got {_all_said}")
+    ok("A file too big to post says so",
+       "over what an email will carry" in _all_said, f"got {_all_said}")
+    ok("A file whose bytes have gone says so",
+       "could not be read" in _all_said, f"got {_all_said}")
+    ok("And a receipt that does carry one names it",
+       "attaching guide.pdf" in _all_said, f"got {_all_said}")
+
     # A drip-fed course must not arrive whole on day one.
     _rc.drip_enabled = True
     _rc.set_curriculum([{"title": "One"}, {"title": "Two"}])
