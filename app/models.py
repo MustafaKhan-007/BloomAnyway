@@ -1183,15 +1183,21 @@ class MembershipPlan(db.Model):
         return max(0, min(730, days))
 
     def trial_display(self) -> str:
-        """"14 days free" — empty when the plan charges from the start."""
+        """"2 weeks free" — empty when the plan charges from the start.
+
+        Said in whichever unit reads most plainly: a month rather than thirty
+        days, a fortnight rather than fourteen.
+        """
         days = self.free_days()
         if not days:
             return ""
         if days == 1:
             return "1 day free"
+        if days % 30 == 0:
+            months = days // 30
+            return f"{months} month{'' if months == 1 else 's'} free"
         if days % 7 == 0 and days >= 14:
-            weeks = days // 7
-            return f"{weeks} weeks free"
+            return f"{days // 7} weeks free"
         return f"{days} days free"
 
 

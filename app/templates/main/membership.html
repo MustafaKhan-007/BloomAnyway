@@ -87,6 +87,9 @@
     <div class="container">
       <p class="mem-page__back"><a href="{{ back_url }}">&larr; Back to {{ back_label }}</a></p>
       <h1>Find your people. Grow out loud.</h1>
+      {% if trial_note %}
+      <p class="mem-page__trial">&#10024; {{ trial_note }} Cancel before it ends and you pay nothing.</p>
+      {% endif %}
       <p class="mem-page__subline">Start free. Or step in fully and get everything Bloom Anyway has to offer.
         Cancel any time &mdash; no drama.
         {% if current and current != 'none' %}
@@ -364,8 +367,8 @@
           </p>
           {% endif %}
           <p class="mem-card__trial mem-trial--year">&#10003; Pay once a year and save.</p>
-          {% if full_bloom and full_bloom.trial_display() %}
-          <p class="mem-card__freetrial">&#10003; Start with {{ full_bloom.trial_display() }} — cancel before it ends and you pay nothing.</p>
+          {% if full and full.trial_display() %}
+          <p class="mem-card__freetrial">&#10003; Start with {{ full.trial_display() }} — cancel before it ends and you pay nothing.</p>
           {% endif %}
           <p class="mem-card__section-label">Everything in Healing and Creator</p>
           <ul class="mem-card__perks">

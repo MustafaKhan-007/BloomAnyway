@@ -5991,6 +5991,31 @@ finally:
 _trial_page = plain_client.get("/membership").get_data(as_text=True)
 ok("The membership page offers it where someone is deciding",
    "Start with 2 weeks free" in _trial_page, "not offered")
+ok("And says it once at the top before any of the prices",
+   "Every paid plan starts with 2 weeks free" in _trial_page,
+   "nothing at the top")
+with app.app_context():
+    _cr = MembershipPlan.query.filter_by(tier="creator").first()
+    _was_cr = _cr.trial_days
+    _cr.trial_days = 30
+    db.session.commit()
+_mixed = plain_client.get("/membership").get_data(as_text=True)
+ok("When the plans differ there is no one number, so it just says there is one",
+   "Paid plans start with a free trial." in _mixed
+   and "Every paid plan starts with" not in _mixed)
+ok("While each card still names its own",
+   "Start with 2 weeks free" in _mixed and "Start with 1 month free" in _mixed)
+with app.app_context():
+    MembershipPlan.query.filter_by(tier="creator").first().trial_days = _was_cr
+    db.session.commit()
+with app.app_context():
+    _hp2 = MembershipPlan.query.filter_by(tier="healing").first()
+    _hp2.trial_days = 60
+    db.session.commit()
+    ok("A month is a month, not thirty days",
+       _hp2.trial_display() == "2 months free", f"got {_hp2.trial_display()}")
+    _hp2.trial_days = 14
+    db.session.commit()
 _plans_page = admin.get("/admin/memberships").get_data(as_text=True)
 ok("And Studio has somewhere to set it per plan",
    'name="healing_trial_days"' in _plans_page

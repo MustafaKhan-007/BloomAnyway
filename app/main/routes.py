@@ -561,11 +561,22 @@ def membership():
         matrix = MEMBERSHIP_MATRIX
     from ..services import founder_pricing as founder_svc
     founder = founder_svc.public_state(all_plans)
+    # Said once at the top as well as on each card. When every paid plan opens
+    # with the same run, name it; when they differ there is no one number to
+    # give, so it just says there is one.
+    offers = {p.trial_display() for p in all_plans.values()
+              if p.active and p.trial_display()}
+    if len(offers) == 1:
+        trial_note = f"Every paid plan starts with {offers.pop()}."
+    elif offers:
+        trial_note = "Paid plans start with a free trial."
+    else:
+        trial_note = ""
     return render_template("main/membership.html",
                            plans=all_plans,
                            matrix=matrix, current=current,
                            checkout=checkout,
-                           founder=founder,
+                           founder=founder, trial_note=trial_note,
                            back_url=back_url, back_label=back_label)
 
 
