@@ -2,6 +2,41 @@
 (function () {
   "use strict";
 
+  /* ---- folds: a module or lesson shows its name, and opens for the rest ---- */
+  (function () {
+    function setFold(btn, open) {
+      var fold = btn.closest("[data-module-row], [data-lesson-row]");
+      fold = fold && fold.querySelector("[data-fold]");
+      if (!fold) return;
+      fold.hidden = !open;
+      btn.setAttribute("aria-expanded", open ? "true" : "false");
+      btn.textContent = open ? "Close" : "Open";
+    }
+
+    document.addEventListener("click", function (e) {
+      var btn = e.target.closest("[data-fold-toggle]");
+      if (!btn) return;
+      setFold(btn, btn.getAttribute("aria-expanded") !== "true");
+    });
+
+    // A field the browser refuses to accept has to be on screen for it to say
+    // so — otherwise saving fails with nothing visibly wrong anywhere.
+    document.addEventListener("invalid", function (e) {
+      var el = e.target;
+      var fold = el.closest ? el.closest("[data-fold]") : null;
+      if (fold && fold.hidden) {
+        var row = fold.closest("[data-module-row], [data-lesson-row]");
+        var btn = row && row.querySelector("[data-fold-toggle]");
+        if (btn) setFold(btn, true);
+      }
+      var shut = el.closest ? el.closest("details:not([open])") : null;
+      while (shut) {
+        shut.open = true;
+        shut = shut.parentElement && shut.parentElement.closest("details:not([open])");
+      }
+    }, true);
+  })();
+
   /* ---- in-page confirm dialogs (no browser popups) ---- */
   (function () {
     var dialog = document.getElementById("site-confirm");
@@ -276,6 +311,9 @@
         '<div class="studio-modules__head">' +
         '<span class="studio-modules__num" data-module-num>Module ' + n + "</span>" +
         '<span class="studio-order">' +
+        // Open already: it was just added to be filled in.
+        '<button type="button" class="btn btn--quiet btn--sm" data-fold-toggle ' +
+        'aria-expanded="true">Close</button>' +
         '<button type="button" class="btn btn--quiet btn--sm" data-module-up ' +
         'title="Move up" aria-label="Move this module up">\u2191</button>' +
         '<button type="button" class="btn btn--quiet btn--sm" data-module-down ' +
@@ -295,6 +333,7 @@
         '<input type="text" id="mod' + n + '_desc" name="mod' + n +
         '_desc" maxlength="500" value="">' +
         "</div></div>" +
+        '<div class="studio-fold" data-fold>' +
         scheduleFields(n) +
         '<div class="studio-lessons" data-lessons data-module="' + n + '">' +
         '<p class="module-sub-label">Lessons <span class="field-help" ' +
@@ -311,7 +350,7 @@
         addSection(n) +
         '<div class="module-texts" data-text-blocks></div>' +
         '<button type="button" class="btn btn--quiet btn--sm" data-text-add>' +
-        "Add a written extract</button></div>";
+        "Add a written extract</button></div></div>";
       list.appendChild(row);
       renumber();
     });
@@ -332,6 +371,8 @@
           '<div class="studio-lesson__head">' +
           '<span class="studio-lessons__num" data-lesson-num>Lesson ' + n + '</span>' +
           '<span class="studio-order">' +
+          '<button type="button" class="btn btn--quiet btn--sm" data-fold-toggle ' +
+          'aria-expanded="true">Close</button>' +
           '<button type="button" class="btn btn--quiet btn--sm" data-lesson-up ' +
           'title="Move up" aria-label="Move this lesson up">\u2191</button>' +
           '<button type="button" class="btn btn--quiet btn--sm" data-lesson-down ' +
@@ -345,9 +386,11 @@
           "data-lesson-from>" +
           '<input type="text" name="mod' + mod + '_lesson_title" maxlength="160" ' +
           'placeholder="Lesson title">' +
+          '<div class="studio-fold" data-fold>' +
           '<textarea name="mod' + mod + '_lesson_desc" rows="3" maxlength="8000" ' +
           'placeholder="Description or text extract for this lesson (optional)."></textarea>' +
-          (canChunk ? lessonUploader(mod, n) : lessonFileField(mod, n));
+          (canChunk ? lessonUploader(mod, n) : lessonFileField(mod, n)) +
+          "</div>";
         holder.appendChild(block);
         refreshLessons(lrow);
         var field = block.querySelector('input[type="text"]');

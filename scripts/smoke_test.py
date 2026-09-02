@@ -5732,7 +5732,26 @@ ok("A lesson removed leaves its files in the module, not deleted",
                               ["gamma.pdf", "two.pdf"]),
    f"got {_lesson_map(_order_id)}")
 
-_obody = admin.get(f"/admin/products/{_order_id}/edit").get_data(as_text=True)
+# The editor is long, so each section, module and lesson folds away. What each
+# one is called stays on show, and everything folded still saves.
+_fbody = admin.get(f"/admin/products/{_order_id}/edit").get_data(as_text=True)
+ok("Every numbered section can be folded away",
+   _fbody.count('<details class="admin-panel studio-card studio-section" open>')
+   >= 4 and "<section class=\"admin-panel studio-card studio-section\">"
+   not in _fbody,
+   "some sections are still fixed open")
+ok("A module keeps its name and note on show, and folds the rest",
+   'data-fold-toggle' in _fbody
+   and '<div class="studio-fold" data-fold hidden>' in _fbody
+   and 'name="mod1_title"' in _fbody and 'name="mod1_desc"' in _fbody)
+_folded = re.search(r'<div class="studio-fold" data-fold hidden>(.*?)'
+                    r'name="mod1_release_date"', _fbody, re.S)
+ok("With the settings and files inside the folded part",
+   bool(_folded), "the module body isn't in the fold")
+ok("A field the browser rejects opens its fold rather than failing silently",
+   '"invalid"' in client.get("/static/js/admin.js").get_data(as_text=True))
+
+_obody = _fbody
 ok("The editor offers the arrows and a remove on both",
    all(a in _obody for a in ("data-module-up", "data-module-down",
                              "data-module-remove", "data-lesson-up",

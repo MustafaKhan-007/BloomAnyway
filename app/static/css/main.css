@@ -9368,6 +9368,33 @@ a.at-handle:hover { text-decoration: underline; }
   margin-bottom: 14px; padding: 14px; border-radius: 12px;
   border: 1px solid rgba(61, 20, 49, 0.12); background: rgba(255, 255, 255, 0.6);
 }
+/* Each numbered section folds away; its heading and one-line summary stay. */
+.studio-section > .studio-section__head {
+  list-style: none;
+  cursor: pointer;
+  display: block;
+  margin: 0;
+}
+.studio-section > .studio-section__head::-webkit-details-marker { display: none; }
+.studio-section > .studio-section__head h2 {
+  display: flex; align-items: center; gap: 10px;
+}
+.studio-section > .studio-section__head h2::after {
+  content: "\25BE";
+  margin-left: auto;
+  font-size: 15px;
+  color: var(--ink-soft);
+  transition: transform 150ms ease;
+}
+.studio-section:not([open]) > .studio-section__head h2::after {
+  transform: rotate(-90deg);
+}
+.studio-section:not([open]) > .studio-section__head .studio-section__lede {
+  margin-bottom: 0;
+}
+.studio-section > .studio-section__head:hover h2 { color: var(--plum); }
+/* A module or lesson keeps its name on show and folds the rest away. */
+.studio-fold { display: contents; }
 .studio-modules__head {
   display: flex; align-items: center; justify-content: space-between;
   gap: 10px; flex-wrap: wrap; margin-bottom: 10px;

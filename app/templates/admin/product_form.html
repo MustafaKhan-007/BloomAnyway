@@ -72,9 +72,11 @@
   <form id="product-form" method="post" enctype="multipart/form-data" class="studio-product-form__main">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-    <section class="admin-panel studio-card studio-section">
-      <h2>1. Basics</h2>
-      <p class="field-help studio-section__lede">Name, track, and how it appears on the catalogue card.</p>
+    <details class="admin-panel studio-card studio-section" open>
+      <summary class="studio-section__head">
+        <h2>1. Basics</h2>
+        <p class="field-help studio-section__lede">Name, track, and how it appears on the catalogue card.</p>
+      </summary>
       <div class="form-row">
         <div class="field" style="flex:2;">
           <label for="title">Title</label>
@@ -186,11 +188,13 @@
           </p>
         </div>
       </div>
-    </section>
+    </details>
 
-    <section class="admin-panel studio-card studio-section">
-      <h2>2. Pricing &amp; checkout</h2>
-      <p class="field-help studio-section__lede">Price shown on the product page. Paste the Stripe Price ID so checkout works.</p>
+    <details class="admin-panel studio-card studio-section" open>
+      <summary class="studio-section__head">
+        <h2>2. Pricing &amp; checkout</h2>
+        <p class="field-help studio-section__lede">Price shown on the product page. Paste the Stripe Price ID so checkout works.</p>
+      </summary>
       <div class="form-row">
         <div class="field">
           <label for="price">Price (USD)</label>
@@ -291,11 +295,13 @@
           {% endif %}
         </div>
       </div>
-    </section>
+    </details>
 
-    <section class="admin-panel studio-card studio-section">
-      <h2>3. Product page copy</h2>
-      <p class="field-help studio-section__lede">Shown on the public product page after someone clicks View.</p>
+    <details class="admin-panel studio-card studio-section" open>
+      <summary class="studio-section__head">
+        <h2>3. Product page copy</h2>
+        <p class="field-help studio-section__lede">Shown on the public product page after someone clicks View.</p>
+      </summary>
       <div class="field">
         <label for="description">About this product</label>
         <textarea id="description" name="description" rows="5"
@@ -405,6 +411,8 @@
             <div class="studio-modules__head">
               <span class="studio-modules__num" data-module-num>Module {{ row.number }}</span>
               <span class="studio-order">
+                <button type="button" class="btn btn--quiet btn--sm" data-fold-toggle
+                        aria-expanded="false">Open</button>
                 <button type="button" class="btn btn--quiet btn--sm" data-module-up
                         title="Move up" aria-label="Move this module up">&uarr;</button>
                 <button type="button" class="btn btn--quiet btn--sm" data-module-down
@@ -427,6 +435,7 @@
               </div>
             </div>
 
+            <div class="studio-fold" data-fold hidden>
             <div class="form-row studio-modules__when" data-drip-only="dates">
               <div class="field">
                 <label for="mod{{ row.number }}_release_date">Comes out on</label>
@@ -466,6 +475,8 @@
                   <div class="studio-lesson__head">
                     <span class="studio-lessons__num" data-lesson-num>Lesson {{ loop.index }}</span>
                     <span class="studio-order">
+                      <button type="button" class="btn btn--quiet btn--sm" data-fold-toggle
+                              aria-expanded="false">Open</button>
                       <button type="button" class="btn btn--quiet btn--sm" data-lesson-up
                               title="Move up" aria-label="Move this lesson up">&uarr;</button>
                       <button type="button" class="btn btn--quiet btn--sm" data-lesson-down
@@ -477,6 +488,7 @@
                          value="{{ loop.index }}" data-lesson-from>
                   <input type="text" name="mod{{ row.number }}_lesson_title" maxlength="160"
                          value="{{ lesson.title }}" placeholder="Lesson title">
+                  <div class="studio-fold" data-fold hidden>
                   <textarea name="mod{{ row.number }}_lesson_desc" rows="3" maxlength="8000"
                             placeholder="Description or text extract for this lesson — buyers read this on the lesson (optional).">{{ lesson.description }}</textarea>
                   {% if not is_new %}
@@ -512,6 +524,7 @@
                     </p>
                   </div>
                   {% endif %}
+                  </div>
                 </div>
                 {% endfor %}
               </div>
@@ -559,6 +572,7 @@
                 Add a written extract
               </button>
             </div>
+            </div>
           </div>
           {% endfor %}
         </div>
@@ -566,11 +580,13 @@
           Add another module
         </button>
       </div>
-    </section>
+    </details>
 
-    <section class="admin-panel studio-card studio-section">
-      <h2>4. Cover &amp; teasers</h2>
-      <p class="field-help studio-section__lede">Cover appears on cards. Teasers show on the product page gallery.</p>
+    <details class="admin-panel studio-card studio-section" open>
+      <summary class="studio-section__head">
+        <h2>4. Cover &amp; teasers</h2>
+        <p class="field-help studio-section__lede">Cover appears on cards. Teasers show on the product page gallery.</p>
+      </summary>
       {% if is_new %}
       <div class="studio-cover-layout">
         <div class="studio-cover-layout__fields">
@@ -623,12 +639,14 @@
         </div>
       </div>
       {% endif %}
-    </section>
+    </details>
 
     {% if is_new %}
-    <section class="admin-panel studio-card studio-section">
-      <h2>5. Reading file (optional)</h2>
-      <p class="field-help studio-section__lede">Buyers open this in My space after purchase. You can also add files later.</p>
+    <details class="admin-panel studio-card studio-section" open>
+      <summary class="studio-section__head">
+        <h2>5. Reading file (optional)</h2>
+        <p class="field-help studio-section__lede">Buyers open this in My space after purchase. You can also add files later.</p>
+      </summary>
       <div class="form-row">
         <div class="field" style="flex:2;">
           <label for="asset">File</label>
@@ -640,7 +658,7 @@
           <input type="text" id="asset_title" name="asset_title" maxlength="160" placeholder="Main workbook">
         </div>
       </div>
-    </section>
+    </details>
     {% endif %}
 
     <div class="studio-product-form__save">
@@ -654,12 +672,14 @@
 
   {% if not is_new %}
   {% set loose = product.top_level_assets() | rejectattr('module_index') | list %}
-  <section class="admin-panel studio-card studio-section">
-    <h2>5. Files outside the modules</h2>
-    <p class="field-help studio-section__lede">
+  <details class="admin-panel studio-card studio-section" open>
+    <summary class="studio-section__head">
+      <h2>5. Files outside the modules</h2>
+      <p class="field-help studio-section__lede">
       Anything here is open to a buyer from day one, even on a drip schedule —
       a welcome PDF, say. Module contents live with their module above.
     </p>
+    </summary>
     {% if loose %}
     <ul class="module-items">
       {% for a in loose %}
@@ -691,7 +711,7 @@
         </div>
       </form>
     </noscript>
-  </section>
+  </details>
 
   <form id="del-product" method="post" action="{{ url_for('admin.product_delete', product_id=product.id) }}"
         hidden
