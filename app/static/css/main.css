@@ -1812,46 +1812,12 @@ html.is-page-loading { cursor: progress; }
   padding-top: 8px;
   overflow: hidden;
 }
-/* Canvas + interactive form fields share one positioned box so the fields
-   line up exactly over the rendered page. */
-.course-reader__pdf-stack { position: relative; flex: 0 0 auto; }
-#reader-annotation-layer.annotationLayer {
-  position: absolute; inset: 0; overflow: hidden;
-  transform-origin: 0 0; z-index: 2;
+/* Under the page rather than beside it: the wrap centres the page itself. */
+.course-reader__pdf-note {
+  flex: 0 0 auto;
+  margin: 8px 0 0;
+  text-align: center;
 }
-.annotationLayer { pointer-events: none; }
-.annotationLayer section { position: absolute; pointer-events: auto; box-sizing: border-box; text-align: initial; }
-.annotationLayer .textWidgetAnnotation input,
-.annotationLayer .textWidgetAnnotation textarea,
-.annotationLayer .choiceWidgetAnnotation select,
-.annotationLayer .buttonWidgetAnnotation.checkBox input,
-.annotationLayer .buttonWidgetAnnotation.radioButton input {
-  background-color: rgba(102, 68, 122, 0.06);
-  border: 1px solid rgba(61, 20, 49, 0.45);
-  box-sizing: border-box;
-  font: message-box; font-size: calc(10px * var(--scale-factor, 1));
-  height: 100%; width: 100%; margin: 0; padding: 0 3px; vertical-align: top;
-  color: #1a1020;
-}
-.annotationLayer .textWidgetAnnotation textarea { resize: none; }
-.annotationLayer .buttonWidgetAnnotation.checkBox input,
-.annotationLayer .buttonWidgetAnnotation.radioButton input {
-  appearance: none; -webkit-appearance: none; padding: 0; cursor: pointer;
-}
-.annotationLayer .buttonWidgetAnnotation.checkBox input:checked::before,
-.annotationLayer .buttonWidgetAnnotation.checkBox input:checked::after,
-.annotationLayer .buttonWidgetAnnotation.radioButton input:checked::before {
-  background-color: #3d1431; content: ""; display: block;
-  position: absolute; height: 80%; width: 80%; inset: 10%;
-}
-.annotationLayer .buttonWidgetAnnotation.radioButton input:checked::before { border-radius: 50%; }
-.annotationLayer input:focus, .annotationLayer textarea:focus, .annotationLayer select:focus {
-  outline: 2px solid var(--plum, #7A2E62); background-color: #fff;
-}
-.annotationLayer .textWidgetAnnotation input:hover,
-.annotationLayer .textWidgetAnnotation textarea:hover { background-color: rgba(102, 68, 122, 0.12); }
-/* Don't invert the interactive fields in dark mode — keep them legible. */
-.course-reader-page[data-theme="dark"] #reader-annotation-layer { filter: invert(1) hue-rotate(180deg); }
 
 #reader-pdf-canvas {
   display: block;

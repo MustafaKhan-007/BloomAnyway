@@ -20,15 +20,6 @@
   var chipTotal = document.getElementById("reader-chip-total");
   var statusEl = document.getElementById("reader-pdf-status");
   var canvas = document.getElementById("reader-pdf-canvas");
-  var annotationLayerDiv = document.getElementById("reader-annotation-layer");
-  var pdfStack = document.getElementById("reader-pdf-stack");
-  var formDataUrl = root.getAttribute("data-formdata-url") || "";
-  var formState = {};  // {annotationId: {value} | {checked}} across all pages
-  try {
-    formState = JSON.parse(root.getAttribute("data-form-data") || "{}") || {};
-  } catch (e) {
-    formState = {};
-  }
   var toc = document.getElementById("reader-toc");
   var tocLoading = document.getElementById("reader-toc-loading");
   var tocDrawer = document.getElementById("reader-toc-drawer");
@@ -447,7 +438,6 @@
         }
         state.pdf = pdf;
         state.total = pdf.numPages || 0;
-        setupFormSaving();
         if (state.page > state.total && state.total > 0) state.page = state.total;
         syncPageUi();
         buildToc();
@@ -529,13 +519,12 @@
         var ctx = canvas.getContext("2d");
         var transform =
           outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null;
-        // ENABLE_FORMS keeps the canvas from painting the form widgets — those
-        // are drawn as real, interactive inputs in the annotation layer instead.
+        // The default paints annotations, boxes to fill in included, straight
+        // onto the page. They were kept off it while they were being drawn as
+        // real inputs over the top, which would now leave a form looking blank.
         return page
           .render({
             canvasContext: ctx, viewport: viewport, transform: transform,
-            annotationMode: (pdfjsLib.AnnotationMode
-              && pdfjsLib.AnnotationMode.ENABLE_FORMS) || 2,
           })
           .promise.then(function () {
             if (statusEl) statusEl.textContent = "";
@@ -546,122 +535,8 @@
                 }).join(" ").toLowerCase();
               }).catch(function () {});
             }
-            return renderFormLayer(page, viewport, cssWidth, cssHeight, scale);
           });
       });
-    }
-
-    /* Interactive AcroForm fields: PDF.js draws real inputs/checkboxes over the
-       page canvas, kept aligned to it, and edits flow into annotationStorage. */
-    function renderFormLayer(page, viewport, cssWidth, cssHeight, scale) {
-      if (!annotationLayerDiv || !pdfStack || !pdfjsLib.AnnotationLayer) {
-        return;
-      }
-      pdfStack.style.width = cssWidth + "px";
-      pdfStack.style.height = cssHeight + "px";
-      annotationLayerDiv.innerHTML = "";
-      annotationLayerDiv.style.setProperty("--scale-factor", String(scale));
-      return page.getAnnotations({ intent: "display" }).then(function (anns) {
-        var forms = (anns || []).filter(function (a) {
-          return a.subtype === "Widget";
-        });
-        if (!forms.length) {
-          annotationLayerDiv.hidden = true;
-          pdfStack.classList.remove("has-forms");
-          return;
-        }
-        annotationLayerDiv.hidden = false;
-        pdfStack.classList.add("has-forms");
-        var flip = viewport.clone({ dontFlip: true });
-        var layer = new pdfjsLib.AnnotationLayer({
-          div: annotationLayerDiv,
-          annotations: anns,
-          page: page,
-          viewport: flip,
-          annotationStorage: state.pdf.annotationStorage,
-          renderForms: true,
-        });
-        return layer.render({ viewport: flip, annotations: anns })
-          .then(applySavedForm);
-      }).catch(function (err) {
-        // The page itself is drawn and readable, so this stays a note in the
-        // console rather than an error over the top of it — but it is the only
-        // trace of why a form's boxes never turned up.
-        if (window.console && console.warn) {
-          console.warn("reader: form fields could not be drawn —",
-                       (err && err.name) || "", (err && err.message) || "", err);
-        }
-      });
-    }
-
-    /* Each form widget is a <section data-annotation-id> with one control; the
-       id is stable per document, so it's the key we save answers under. */
-    function fieldControl(section) {
-      return section.querySelector("input, textarea, select");
-    }
-
-    function collectForm() {
-      var out = {};
-      annotationLayerDiv.querySelectorAll("section[data-annotation-id]")
-        .forEach(function (sec) {
-          var el = fieldControl(sec);
-          if (!el) return;
-          var id = sec.getAttribute("data-annotation-id");
-          if (el.type === "checkbox" || el.type === "radio") {
-            out[id] = { checked: !!el.checked };
-          } else {
-            out[id] = { value: el.value || "" };
-          }
-        });
-      return out;
-    }
-
-    // Put previously-saved answers back onto the fields currently on screen.
-    function applySavedForm() {
-      annotationLayerDiv.querySelectorAll("section[data-annotation-id]")
-        .forEach(function (sec) {
-          var saved = formState[sec.getAttribute("data-annotation-id")];
-          if (!saved) return;
-          var el = fieldControl(sec);
-          if (!el) return;
-          if (el.type === "checkbox" || el.type === "radio") {
-            if (typeof saved.checked === "boolean" && el.checked !== saved.checked) {
-              el.checked = saved.checked;
-              el.dispatchEvent(new Event("change", { bubbles: true }));
-            }
-          } else if (saved.value != null && el.value !== saved.value) {
-            el.value = saved.value;
-            el.dispatchEvent(new Event("input", { bubbles: true }));
-          }
-        });
-    }
-
-    /* Save what the buyer types, debounced, so their workbook answers persist
-       across pages and sessions. Read straight off the fields (not pdf.js's
-       internal storage, which doesn't round-trip reliably here). */
-    function setupFormSaving() {
-      if (!annotationLayerDiv || !formDataUrl) return;
-      var timer = null;
-      function flush() {
-        // Merge this page's fields over what other pages saved earlier.
-        var page = collectForm();
-        Object.keys(page).forEach(function (k) { formState[k] = page[k]; });
-        fetch(formDataUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-CSRFToken": csrf,
-            "X-Requested-With": "fetch",
-          },
-          body: JSON.stringify({ form_data: formState }),
-        }).catch(function () { /* transient — next edit tries again */ });
-      }
-      function schedule(ms) {
-        if (timer) window.clearTimeout(timer);
-        timer = window.setTimeout(flush, ms);
-      }
-      annotationLayerDiv.addEventListener("input", function () { schedule(900); });
-      annotationLayerDiv.addEventListener("change", function () { schedule(300); });
     }
 
     function go(to) {

@@ -172,28 +172,6 @@ def toggle_bookmark(
     return row, bookmarked
 
 
-def save_form_data(
-    *,
-    user_id: int,
-    purchase_id: int,
-    product_id: int | None,
-    form_data: dict,
-) -> CourseProgress:
-    """Persist a buyer's fillable-PDF answers for this purchase."""
-    row = get_progress(user_id, purchase_id)
-    if row is None:
-        row = CourseProgress(
-            user_id=user_id,
-            shop_purchase_id=purchase_id,
-            product_id=product_id,
-        )
-        db.session.add(row)
-    row.product_id = product_id or row.product_id
-    row.set_form_data(form_data if isinstance(form_data, dict) else {})
-    row.updated_at = utcnow()
-    return row
-
-
 def h5p_cache_dir(asset_id: int) -> Path:
     root = Path(current_app.instance_path) / "h5p_cache" / str(asset_id)
     return root

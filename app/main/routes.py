@@ -1087,7 +1087,6 @@ def course_reader(purchase_id):
         next_locked=drip_svc.next_locked(modules),
         progress=progress,
         bookmarks=bookmarks,
-        form_data=(progress.form_data() if progress else {}),
         download_url=download_url,
         start_page=(progress.current_page if resuming and progress.current_page else 1),
         start_percent=(progress.percent if resuming else 0),
@@ -1249,30 +1248,6 @@ def course_bookmarks(purchase_id):
         "bookmarked": bookmarked,
         "bookmarks": row.bookmarks(),
     }
-
-
-@bp.route("/account/courses/<int:purchase_id>/formdata", methods=["POST"])
-@login_required
-def course_form_data(purchase_id):
-    """Save what a buyer typed into a fillable course PDF, for this purchase."""
-    from ..services import course_reader as reader_svc
-
-    purchase = reader_svc.owned_purchase(current_user, purchase_id)
-    if purchase is None:
-        abort(404)
-    product = reader_svc.catalog_product_for_purchase(purchase)
-    payload = request.get_json(silent=True) or {}
-    form_data = payload.get("form_data")
-    if not isinstance(form_data, dict):
-        return {"ok": False, "error": "bad form data"}, 400
-    reader_svc.save_form_data(
-        user_id=current_user.id,
-        purchase_id=purchase.id,
-        product_id=product.id if product else None,
-        form_data=form_data,
-    )
-    db.session.commit()
-    return {"ok": True}
 
 
 @bp.route("/media/site/<key>")

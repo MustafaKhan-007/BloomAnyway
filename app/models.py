@@ -1060,9 +1060,6 @@ class CourseProgress(db.Model):
     total_pages = db.Column(db.Integer, nullable=False, default=0)
     percent = db.Column(db.Integer, nullable=False, default=0)
     bookmarks_json = db.Column(db.Text)  # JSON list of page numbers
-    #: Answers typed into a fillable PDF: {form-field id: value}. Kept per
-    #: purchase so a workbook opens with the buyer's own work still in it.
-    form_data_json = db.Column(db.Text)
     # Which module the saved position belongs to, so switching modules in a
     # drip-fed course doesn't drop the reader mid-way through another file.
     module_index = db.Column(db.Integer)
@@ -1098,20 +1095,6 @@ class CourseProgress(db.Model):
         cleaned.sort()
         self.bookmarks_json = json.dumps(cleaned) if cleaned else None
 
-    def form_data(self) -> dict:
-        try:
-            raw = json.loads(self.form_data_json) if self.form_data_json else {}
-        except (TypeError, ValueError):
-            return {}
-        return raw if isinstance(raw, dict) else {}
-
-    def set_form_data(self, data) -> None:
-        if not isinstance(data, dict) or not data:
-            self.form_data_json = None
-            return
-        # Cap the stored blob so a runaway payload can't bloat the row.
-        blob = json.dumps(data)[:200_000]
-        self.form_data_json = blob
 
 
 class MembershipPlan(db.Model):

@@ -12,10 +12,6 @@
          data-asset-kind="{{ asset.kind }}"
          data-file-url="{{ url_for('main.course_file', purchase_id=purchase.id, asset_id=asset.id) }}"
          data-progress-url="{{ url_for('main.course_progress', purchase_id=purchase.id, module=active_module or None) }}"
-         {% if asset.kind == 'pdf' %}
-         data-formdata-url="{{ url_for('main.course_form_data', purchase_id=purchase.id) }}"
-         data-form-data='{{ (form_data or {})|tojson }}'
-         {% endif %}
          {% if download_url %}data-download-url="{{ download_url }}"{% endif %}
          {% if asset.kind == 'h5p' %}
          data-h5p-path="/account/courses/{{ purchase.id }}/h5p/{{ asset.id }}"
@@ -227,14 +223,13 @@
                id="reader-viewer">
           {% if asset.kind == 'pdf' %}
           <div class="course-reader__pdf-wrap">
-            <div class="course-reader__pdf-stack" id="reader-pdf-stack">
-              <canvas id="reader-pdf-canvas"></canvas>
-              {# Interactive form fields (if the PDF is fillable) are drawn here,
-                 aligned over the page canvas. #}
-              <div class="annotationLayer" id="reader-annotation-layer" hidden></div>
-            </div>
+            <canvas id="reader-pdf-canvas"></canvas>
             <p class="field-help" id="reader-pdf-status">Loading pages…</p>
           </div>
+          <p class="field-help course-reader__pdf-note">
+            Reading only here. If this one has boxes to fill in, download it and
+            use them, or print it and write on the paper.
+          </p>
 
           {% elif asset.kind == 'h5p' %}
           <div id="reader-h5p" class="course-reader__h5p" aria-live="polite">

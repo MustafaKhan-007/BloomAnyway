@@ -5934,8 +5934,29 @@ ok("And offers to hand the file to the browser's own reader",
    "Open it in a new tab instead" in _reader_js)
 ok("A LiveCycle form is recognised rather than drawn blank",
    "isPureXfa" in _reader_js and "enableXfa" in _reader_js)
-ok("Why a form's boxes didn't draw is left in the console, not swallowed",
-   "form fields could not be drawn" in _reader_js)
+
+# Fillable PDFs are read here and filled in elsewhere. Drawing real boxes over
+# the page never worked, so it is gone: the page is painted as it comes,
+# boxes and all, with a line saying where to actually fill them in.
+ok("Nothing is left of the fields-over-the-page reader",
+   not any(word in _reader_js for word in
+           ("AnnotationLayer", "annotationLayer", "renderFormLayer",
+            "ENABLE_FORMS", "formState", "setupFormSaving")),
+   "some of it is still there")
+_css_now = client.get("/static/css/main.css").get_data(as_text=True)
+ok("Nor of the styling that dressed them",
+   "annotationLayer" not in _css_now and "pdf-stack" not in _css_now)
+ok("Nowhere to post answers to any more",
+   app.test_client().post("/account/courses/1/formdata",
+                          json={"form_data": {}}).status_code == 404)
+with app.app_context():
+    from app.models import CourseProgress as _Progress
+    ok("And nothing left on the reading record to hold them",
+       "form_data_json" not in [c.name for c in _Progress.__table__.columns])
+ok("A PDF says where to fill one in instead",
+   "print it and write on the paper" in pathlib.Path(
+       "app/templates/main/course_reader.html").read_text(),
+   "no note under the page")
 ok("A file that isn't there says so, rather than blaming the connection",
    "isn't on the server any more" in _reader_js
    and "MissingPDFException" in _reader_js)
