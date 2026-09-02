@@ -5748,8 +5748,25 @@ _folded = re.search(r'<div class="studio-fold" data-fold hidden>(.*?)'
                     r'name="mod1_release_date"', _fbody, re.S)
 ok("With the settings and files inside the folded part",
    bool(_folded), "the module body isn't in the fold")
+_admin_js = client.get("/static/js/admin.js").get_data(as_text=True)
 ok("A field the browser rejects opens its fold rather than failing silently",
-   '"invalid"' in client.get("/static/js/admin.js").get_data(as_text=True))
+   '"invalid"' in _admin_js)
+ok("What was left open is remembered, per page, across a refresh or a save",
+   "ba:folds:" in _admin_js and "localStorage" in _admin_js
+   and 'addEventListener("toggle"' in _admin_js)
+
+# The two sections both numbered 5 never appear together — one is only on a
+# product being created, the other only on one that exists — so each page
+# counts from 1 with no gap and no repeat.
+_new_heads = re.findall(r"<h2>(\d+)\.", admin.get("/admin/products/new")
+                        .get_data(as_text=True))
+_edit_heads = re.findall(r"<h2>(\d+)\.", _fbody)
+ok("The sections number straight through on a new product",
+   _new_heads == [str(i) for i in range(1, len(_new_heads) + 1)],
+   f"got {_new_heads}")
+ok("And on one being edited",
+   _edit_heads == [str(i) for i in range(1, len(_edit_heads) + 1)],
+   f"got {_edit_heads}")
 
 _obody = _fbody
 ok("The editor offers the arrows and a remove on both",

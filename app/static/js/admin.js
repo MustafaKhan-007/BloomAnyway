@@ -4,20 +4,77 @@
 
   /* ---- folds: a module or lesson shows its name, and opens for the rest ---- */
   (function () {
-    function setFold(btn, open) {
-      var fold = btn.closest("[data-module-row], [data-lesson-row]");
-      fold = fold && fold.querySelector("[data-fold]");
+    var sections = document.querySelectorAll("details.studio-section");
+    if (!sections.length && !document.querySelector("[data-fold-toggle]")) return;
+
+    // What was left open is remembered per page, so saving and coming back
+    // lands on the same view rather than everything springing shut again.
+    var STORE = "ba:folds:" + window.location.pathname;
+
+    function remembered() {
+      try {
+        return JSON.parse(window.localStorage.getItem(STORE) || "{}") || {};
+      } catch (err) {
+        return {};
+      }
+    }
+
+    function remember(key, open) {
+      if (!key) return;
+      var all = remembered();
+      all[key] = open;
+      try {
+        window.localStorage.setItem(STORE, JSON.stringify(all));
+      } catch (err) { /* private mode / full — folding still works */ }
+    }
+
+    // Rows are known by where they sit, so a module moved keeps the state of
+    // the place rather than dragging its own around.
+    function keyFor(row) {
+      var mods = Array.prototype.slice.call(
+        document.querySelectorAll("[data-module-row]"));
+      var mod = row.closest("[data-module-row]");
+      var m = mods.indexOf(mod) + 1;
+      if (!row.hasAttribute("data-lesson-row")) return m ? "m" + m : "";
+      var lessons = Array.prototype.slice.call(
+        mod.querySelectorAll("[data-lesson-row]"));
+      return "m" + m + "l" + (lessons.indexOf(row) + 1);
+    }
+
+    function setFold(btn, open, keep) {
+      var row = btn.closest("[data-module-row], [data-lesson-row]");
+      var fold = row && row.querySelector("[data-fold]");
       if (!fold) return;
       fold.hidden = !open;
       btn.setAttribute("aria-expanded", open ? "true" : "false");
       btn.textContent = open ? "Close" : "Open";
+      if (keep) remember(keyFor(row), open);
     }
 
     document.addEventListener("click", function (e) {
       var btn = e.target.closest("[data-fold-toggle]");
       if (!btn) return;
-      setFold(btn, btn.getAttribute("aria-expanded") !== "true");
+      setFold(btn, btn.getAttribute("aria-expanded") !== "true", true);
     });
+
+    Array.prototype.forEach.call(sections, function (panel, i) {
+      panel.addEventListener("toggle", function () {
+        remember("s" + i, panel.open);
+      });
+    });
+
+    (function restore() {
+      var all = remembered();
+      Array.prototype.forEach.call(sections, function (panel, i) {
+        if (("s" + i) in all) panel.open = !!all["s" + i];
+      });
+      document.querySelectorAll("[data-fold-toggle]").forEach(function (btn) {
+        var row = btn.closest("[data-module-row], [data-lesson-row]");
+        if (!row) return;
+        var key = keyFor(row);
+        if (key in all) setFold(btn, !!all[key], false);
+      });
+    })();
 
     // A field the browser refuses to accept has to be on screen for it to say
     // so — otherwise saving fails with nothing visibly wrong anywhere.
