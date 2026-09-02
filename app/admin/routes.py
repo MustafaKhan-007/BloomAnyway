@@ -313,6 +313,47 @@ def _lesson_numbers(form, row_number: int) -> dict[int, int]:
     return out
 
 
+def _move_module_content(product: Product, module_moves: dict[int, int],
+                         lesson_moves: dict[int, dict[int, int]],
+                         old_module_count: int) -> None:
+    """Carry each module's files to wherever its row has been moved to.
+
+    Files are pinned to a module by number, while the rows on the form are
+    positional, so without this a module dragged up the list arrives holding
+    whatever used to sit in its new slot.
+
+    A module that is gone takes its files with it, which is what removing it
+    means — and better than the alternative of leaving them attached to no
+    module, where they read as content open to every buyer from day one. A
+    lesson that is gone only loses its own grouping: the files stay in the
+    module, which is still there to hold them.
+    """
+    from ..services import assets as asset_svc
+
+    # Read every position first: reassigning while walking would move a file
+    # twice when two modules swap places.
+    placed = [(a, a.module_index, a.lesson_index) for a in product.assets]
+    dropped = 0
+    for asset, old_module, old_lesson in placed:
+        if not old_module:
+            continue
+        if old_module > old_module_count and old_module not in module_moves:
+            continue  # newer than this form's idea of the product; leave it
+        new_module = module_moves.get(old_module)
+        if new_module is None:
+            if asset.parent_asset_id is None:
+                asset_svc.delete_file(asset)
+                db.session.delete(asset)
+                dropped += 1
+            continue
+        asset.module_index = new_module
+        moved = lesson_moves.get(new_module) or {}
+        asset.lesson_index = moved.get(old_lesson) if old_lesson else None
+    if dropped:
+        flash(f"{dropped} file{'' if dropped == 1 else 's'} went with the "
+              "module you removed.", "info")
+
+
 def _apply_product_fields(product: Product, form) -> dict[int, int]:
     """Map studio form fields onto a Product (caller commits).
 
@@ -346,6 +387,14 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
     product.audience = (form.get("audience") or "").strip() or None
     product.contents_text = (form.get("contents") or "").strip() or None
 
+    # Where each row's content lives now, so it can be carried to wherever the
+    # row has been moved to. Rows the editor didn't stamp (an older page, or a
+    # caller posting fields directly) leave this empty and nothing is moved.
+    old_module_count = len(product.curriculum())
+    tracked = any(f"mod{i}_from" in form for i in range(1, MAX_MODULES + 1))
+    module_moves: dict[int, int] = {}
+    lesson_moves: dict[int, dict[int, int]] = {}
+
     curriculum_rows = []
     module_numbers: dict[int, int] = {}
     for i in range(1, MAX_MODULES + 1):
@@ -357,12 +406,20 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
         # fields so an owner can add as many as they like.
         lesson_titles = form.getlist(f"mod{i}_lesson_title")
         lesson_descs = form.getlist(f"mod{i}_lesson_desc")
+        lesson_froms = form.getlist(f"mod{i}_lesson_from")
+        number = len(curriculum_rows) + 1
+        old = (form.get(f"mod{i}_from") or "").strip()
+        if old.isdigit():
+            module_moves[int(old)] = number
         lessons = []
         for pos in sorted(_lesson_numbers(form, i)):
             j = pos - 1
             lt = (lesson_titles[j] or "").strip()
             ld = (lesson_descs[j] if j < len(lesson_descs) else "").strip()
             lessons.append({"title": lt[:160], "description": ld[:8000]})
+            was = (lesson_froms[j] if j < len(lesson_froms) else "").strip()
+            if was.isdigit():
+                lesson_moves.setdefault(number, {})[int(was)] = len(lessons)
         # Each module's own place in the schedule. Only one of these is read
         # when the course runs, depending on the mode, but both are kept so
         # switching modes to compare and switching back loses nothing.
@@ -380,6 +437,9 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
         })
         module_numbers[i] = len(curriculum_rows)
     product.set_curriculum(curriculum_rows)
+    if tracked:
+        _move_module_content(product, module_moves, lesson_moves,
+                             old_module_count)
 
     product.drip_enabled = bool(form.get("drip"))
     days = (form.get("drip_interval_days") or "").strip()

@@ -5582,6 +5582,128 @@ with app.app_context():
             db.session.delete(_a)
     db.session.commit()
 
+# Modules and lessons can be reordered and removed. What a row holds is pinned
+# to it by number while the rows on the form are positional, so a row that
+# moves has to take its files with it — otherwise a module dragged up the list
+# arrives holding whatever used to sit in its new slot.
+_order_base = {
+    "title": "Order Test", "track": "building", "types": "course",
+    "promise": "x", "price": "10.00", "stripe": "price_order", "live": "1",
+}
+_pdf = b"%PDF-1.4 x\n%%EOF\n"
+r = admin.post("/admin/products/new", data=_MultiDict([
+    *_order_base.items(),
+    ("mod1_title", "Alpha"), ("mod2_title", "Beta"), ("mod3_title", "Gamma"),
+    ("mod1_file", (BytesIO(_pdf), "alpha.pdf")),
+    ("mod2_file", (BytesIO(_pdf), "beta.pdf")),
+    ("mod3_file", (BytesIO(_pdf), "gamma.pdf")),
+]), content_type="multipart/form-data", follow_redirects=True)
+
+
+def _module_map(product_id):
+    with app.app_context():
+        return [(row["title"], [a.filename for a in row["contents"]])
+                for row in db.session.get(Product, product_id).modules()]
+
+
+with app.app_context():
+    _order_id = Product.query.filter_by(slug="order-test").first().id
+ok("Each module starts with its own file",
+   _module_map(_order_id) == [("Alpha", ["alpha.pdf"]), ("Beta", ["beta.pdf"]),
+                              ("Gamma", ["gamma.pdf"])],
+   f"got {_module_map(_order_id)}")
+
+r = admin.post(f"/admin/products/{_order_id}/edit", data=_MultiDict([
+    *_order_base.items(), ("slug", "order-test"),
+    ("mod1_from", "3"), ("mod1_title", "Gamma"),
+    ("mod2_from", "1"), ("mod2_title", "Alpha"),
+    ("mod3_from", "2"), ("mod3_title", "Beta"),
+]), content_type="multipart/form-data", follow_redirects=True)
+ok("A module moved up the list takes its files with it",
+   _module_map(_order_id) == [("Gamma", ["gamma.pdf"]), ("Alpha", ["alpha.pdf"]),
+                              ("Beta", ["beta.pdf"])],
+   f"got {_module_map(_order_id)}")
+
+r = admin.post(f"/admin/products/{_order_id}/edit", data=_MultiDict([
+    *_order_base.items(), ("slug", "order-test"),
+    ("mod1_from", "1"), ("mod1_title", "Gamma"),
+    ("mod2_from", "3"), ("mod2_title", "Beta"),
+]), content_type="multipart/form-data", follow_redirects=True)
+ok("A module removed takes its files rather than leaving them loose",
+   _module_map(_order_id) == [("Gamma", ["gamma.pdf"]), ("Beta", ["beta.pdf"])],
+   f"got {_module_map(_order_id)}")
+with app.app_context():
+    ok("So nothing is left behind open to every buyer from day one",
+       not [a for a in db.session.get(Product, _order_id).assets
+            if not a.module_index])
+
+r = admin.post(f"/admin/products/{_order_id}/edit", data=_MultiDict([
+    *_order_base.items(), ("slug", "order-test"),
+    ("mod1_from", "1"), ("mod1_title", "Gamma"),
+    ("mod2_from", "2"), ("mod2_title", "Beta"),
+    ("mod3_from", ""), ("mod3_title", "Delta"),
+]), content_type="multipart/form-data", follow_redirects=True)
+ok("A module added comes up empty rather than borrowing another's files",
+   _module_map(_order_id) == [("Gamma", ["gamma.pdf"]), ("Beta", ["beta.pdf"]),
+                              ("Delta", [])],
+   f"got {_module_map(_order_id)}")
+
+# Lessons move the same way, but removing one only loses the grouping: the
+# module is still there to hold what was inside it.
+r = admin.post(f"/admin/products/{_order_id}/edit", data=_MultiDict([
+    *_order_base.items(), ("slug", "order-test"),
+    ("mod1_from", "1"), ("mod1_title", "Gamma"),
+    ("mod1_lesson_from", ""), ("mod1_lesson_title", "First"),
+    ("mod1_lesson_from", ""), ("mod1_lesson_title", "Second"),
+    ("mod1_lesson1_file", (BytesIO(_pdf), "one.pdf")),
+    ("mod1_lesson2_file", (BytesIO(_pdf), "two.pdf")),
+]), content_type="multipart/form-data", follow_redirects=True)
+
+
+def _lesson_map(product_id):
+    with app.app_context():
+        row = db.session.get(Product, product_id).modules()[0]
+        return ([(les["title"], [a.filename for a in les["contents"]])
+                 for les in row["lessons"]],
+                [a.filename for a in row["intro"]])
+
+
+ok("Lessons start holding their own files",
+   _lesson_map(_order_id) == ([("First", ["one.pdf"]), ("Second", ["two.pdf"])],
+                              ["gamma.pdf"]),
+   f"got {_lesson_map(_order_id)}")
+r = admin.post(f"/admin/products/{_order_id}/edit", data=_MultiDict([
+    *_order_base.items(), ("slug", "order-test"),
+    ("mod1_from", "1"), ("mod1_title", "Gamma"),
+    ("mod1_lesson_from", "2"), ("mod1_lesson_title", "Second"),
+    ("mod1_lesson_from", "1"), ("mod1_lesson_title", "First"),
+]), content_type="multipart/form-data", follow_redirects=True)
+ok("A lesson moved up takes its files with it too",
+   _lesson_map(_order_id) == ([("Second", ["two.pdf"]), ("First", ["one.pdf"])],
+                              ["gamma.pdf"]),
+   f"got {_lesson_map(_order_id)}")
+r = admin.post(f"/admin/products/{_order_id}/edit", data=_MultiDict([
+    *_order_base.items(), ("slug", "order-test"),
+    ("mod1_from", "1"), ("mod1_title", "Gamma"),
+    ("mod1_lesson_from", "2"), ("mod1_lesson_title", "First"),
+]), content_type="multipart/form-data", follow_redirects=True)
+ok("A lesson removed leaves its files in the module, not deleted",
+   _lesson_map(_order_id) == ([("First", ["one.pdf"])],
+                              ["gamma.pdf", "two.pdf"]),
+   f"got {_lesson_map(_order_id)}")
+
+_obody = admin.get(f"/admin/products/{_order_id}/edit").get_data(as_text=True)
+ok("The editor offers the arrows and a remove on both",
+   all(a in _obody for a in ("data-module-up", "data-module-down",
+                             "data-module-remove", "data-lesson-up",
+                             "data-lesson-down", "data-lesson-remove")))
+ok("And stamps each row with where its content lives now",
+   'name="mod1_from"' in _obody and 'name="mod1_lesson_from"' in _obody)
+with app.app_context():
+    _svc = __import__("app.services.catalog", fromlist=["catalog"])
+    _svc._purge_product(db.session.get(Product, _order_id))
+    db.session.commit()
+
 # When a PDF still won't open, the reader has to say why and leave a way in.
 _reader_js = client.get("/static/js/course-reader.js").get_data(as_text=True)
 ok("The reader names what went wrong instead of one blanket sentence",

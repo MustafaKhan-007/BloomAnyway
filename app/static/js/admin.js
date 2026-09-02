@@ -96,8 +96,10 @@
     var canChunk = !!root.getAttribute("data-upload-begin");
     // Field suffixes that carry the module number. Text extracts and lessons
     // repeat, so they are renamed together rather than one input at a time.
+    // Only the names are rewritten. "from" carries where a row's content sits
+    // today, which is exactly what must not change when the row moves.
     var parts = ["title", "desc", "file", "up", "text_title", "text_body",
-                 "lesson_title", "lesson_desc",
+                 "lesson_title", "lesson_desc", "lesson_from", "from",
                  "release_date", "release_time", "gap_days"];
 
     function optionEl(value, label) {
@@ -176,6 +178,8 @@
       var rows = list.querySelectorAll("[data-module-row]");
       rows.forEach(function (row, i) {
         var n = i + 1;
+        var head = row.querySelector("[data-module-num]");
+        if (head) head.textContent = "Module " + n;
         row.querySelectorAll("label").forEach(function (lab) {
           lab.innerHTML = lab.innerHTML.replace(/Module\s+\d+/i, "Module " + n);
         });
@@ -269,6 +273,17 @@
       row.className = "studio-modules__row";
       row.setAttribute("data-module-row", "");
       row.innerHTML =
+        '<div class="studio-modules__head">' +
+        '<span class="studio-modules__num" data-module-num>Module ' + n + "</span>" +
+        '<span class="studio-order">' +
+        '<button type="button" class="btn btn--quiet btn--sm" data-module-up ' +
+        'title="Move up" aria-label="Move this module up">\u2191</button>' +
+        '<button type="button" class="btn btn--quiet btn--sm" data-module-down ' +
+        'title="Move down" aria-label="Move this module down">\u2193</button>' +
+        '<button type="button" class="btn btn--quiet btn--sm" data-module-remove>' +
+        "Remove</button></span></div>" +
+        // Empty: this row holds nothing yet, so there is nothing to carry.
+        '<input type="hidden" name="mod' + n + '_from" value="" data-module-from>' +
         '<div class="form-row">' +
         '<div class="field">' +
         '<label for="mod' + n + '_title">Module ' + n + " title</label>" +
@@ -316,8 +331,18 @@
         block.innerHTML =
           '<div class="studio-lesson__head">' +
           '<span class="studio-lessons__num" data-lesson-num>Lesson ' + n + '</span>' +
+          '<span class="studio-order">' +
+          '<button type="button" class="btn btn--quiet btn--sm" data-lesson-up ' +
+          'title="Move up" aria-label="Move this lesson up">\u2191</button>' +
+          '<button type="button" class="btn btn--quiet btn--sm" data-lesson-down ' +
+          'title="Move down" aria-label="Move this lesson down">\u2193</button>' +
           '<button type="button" class="btn btn--quiet btn--sm" data-lesson-remove>Remove</button>' +
+          "</span>" +
           '</div>' +
+          // Empty, but present: the titles and these are read as two lists
+          // side by side, so a missing one would shift every lesson below it.
+          '<input type="hidden" name="mod' + mod + '_lesson_from" value="" ' +
+          "data-lesson-from>" +
           '<input type="text" name="mod' + mod + '_lesson_title" maxlength="160" ' +
           'placeholder="Lesson title">' +
           '<textarea name="mod' + mod + '_lesson_desc" rows="3" maxlength="8000" ' +
@@ -325,7 +350,7 @@
           (canChunk ? lessonUploader(mod, n) : lessonFileField(mod, n));
         holder.appendChild(block);
         refreshLessons(lrow);
-        var field = block.querySelector("input");
+        var field = block.querySelector('input[type="text"]');
         if (field) field.focus();
         return;
       }
@@ -336,6 +361,44 @@
         if (blk2) blk2.remove();
         if (lrow2) refreshLessons(lrow2);
         return;
+      }
+      // Moving a row moves everything written and uploaded inside it, because
+      // the row is the thing being reordered rather than its heading.
+      var lessonMove = e.target.closest("[data-lesson-up], [data-lesson-down]");
+      if (lessonMove) {
+        var block3 = lessonMove.closest("[data-lesson-row]");
+        var lrow3 = lessonMove.closest("[data-module-row]");
+        if (!block3 || !lrow3) return;
+        var up = lessonMove.hasAttribute("data-lesson-up");
+        var beside = up ? block3.previousElementSibling
+          : block3.nextElementSibling;
+        if (!beside || !beside.hasAttribute("data-lesson-row")) return;
+        if (up) beside.parentNode.insertBefore(block3, beside);
+        else beside.parentNode.insertBefore(beside, block3);
+        refreshLessons(lrow3);
+        lessonMove.focus();
+        return;
+      }
+      var modMove = e.target.closest("[data-module-up], [data-module-down]");
+      if (modMove) {
+        var mrow = modMove.closest("[data-module-row]");
+        if (!mrow) return;
+        var upward = modMove.hasAttribute("data-module-up");
+        var neighbour = upward ? mrow.previousElementSibling
+          : mrow.nextElementSibling;
+        if (!neighbour || !neighbour.hasAttribute("data-module-row")) return;
+        if (upward) neighbour.parentNode.insertBefore(mrow, neighbour);
+        else neighbour.parentNode.insertBefore(neighbour, mrow);
+        renumber();
+        modMove.focus();
+        return;
+      }
+      var modRemove = e.target.closest("[data-module-remove]");
+      if (modRemove) {
+        var gone = modRemove.closest("[data-module-row]");
+        if (!gone) return;
+        gone.remove();
+        renumber();
       }
     });
 

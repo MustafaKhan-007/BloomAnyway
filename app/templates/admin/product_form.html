@@ -328,6 +328,12 @@
           Each module can hold as many videos, documents and written extracts as
           you want, worked through in the order they appear.
         </p>
+        <p class="field-help" style="margin:0 0 12px;">
+          Use the arrows to move a module or lesson up and down; whatever is
+          inside travels with it. Removing a module removes its files too, and
+          removing a lesson leaves its files in the module. Nothing is saved
+          until you press Save changes, so leaving the page undoes it all.
+        </p>
         <div class="form-row studio-modules__drip">
           <div class="field" style="flex:2;">
             <label class="checkline" style="margin:0;">
@@ -396,6 +402,18 @@
         <div data-modules-list>
           {% for row in modules %}
           <div class="studio-modules__row" data-module-row>
+            <div class="studio-modules__head">
+              <span class="studio-modules__num" data-module-num>Module {{ row.number }}</span>
+              <span class="studio-order">
+                <button type="button" class="btn btn--quiet btn--sm" data-module-up
+                        title="Move up" aria-label="Move this module up">&uarr;</button>
+                <button type="button" class="btn btn--quiet btn--sm" data-module-down
+                        title="Move down" aria-label="Move this module down">&darr;</button>
+                <button type="button" class="btn btn--quiet btn--sm" data-module-remove>Remove</button>
+              </span>
+            </div>
+            <input type="hidden" name="mod{{ row.number }}_from"
+                   value="{{ row.number if not is_new else '' }}" data-module-from>
             <div class="form-row">
               <div class="field">
                 <label for="mod{{ row.number }}_title">Module {{ row.number }} title</label>
@@ -447,8 +465,16 @@
                 <div class="studio-lesson" data-lesson-row>
                   <div class="studio-lesson__head">
                     <span class="studio-lessons__num" data-lesson-num>Lesson {{ loop.index }}</span>
-                    <button type="button" class="btn btn--quiet btn--sm" data-lesson-remove>Remove</button>
+                    <span class="studio-order">
+                      <button type="button" class="btn btn--quiet btn--sm" data-lesson-up
+                              title="Move up" aria-label="Move this lesson up">&uarr;</button>
+                      <button type="button" class="btn btn--quiet btn--sm" data-lesson-down
+                              title="Move down" aria-label="Move this lesson down">&darr;</button>
+                      <button type="button" class="btn btn--quiet btn--sm" data-lesson-remove>Remove</button>
+                    </span>
                   </div>
+                  <input type="hidden" name="mod{{ row.number }}_lesson_from"
+                         value="{{ loop.index }}" data-lesson-from>
                   <input type="text" name="mod{{ row.number }}_lesson_title" maxlength="160"
                          value="{{ lesson.title }}" placeholder="Lesson title">
                   <textarea name="mod{{ row.number }}_lesson_desc" rows="3" maxlength="8000"
