@@ -5978,6 +5978,23 @@ ok("And the page says nothing of the sort on an ordinary visit",
    "the receipt has the file with it"
    not in client.get("/courses/drip-course").get_data(as_text=True))
 
+# A long message shouldn't make its inbox row taller than the screen.
+_inbox_body = admin.get("/admin/inbox").get_data(as_text=True)
+ok("Inbox messages are cut to a few lines, with the rest a click away",
+   'class="inbox-note" data-clamp' in _inbox_body,
+   "nothing marked to shorten")
+ok("So are the notes on a report",
+   'class="inbox-report__note" data-clamp' in _inbox_body
+   or "report_rows" not in _inbox_body)
+_admin_js3 = client.get("/static/js/admin.js").get_data(as_text=True)
+ok("The button only turns up when something is actually cut off",
+   "scrollHeight > box.clientHeight" in _admin_js3
+   and "Show more" in _admin_js3 and "Show less" in _admin_js3)
+_css_clamp = client.get("/static/css/main.css").get_data(as_text=True)
+ok("And opening one shows the whole of it",
+   "-webkit-line-clamp: 4" in _css_clamp
+   and ".is-clamped.is-open" in _css_clamp)
+
 # A guide should arrive, not wait to be found: the receipt carries the PDF.
 from werkzeug.datastructures import FileStorage as _FileStorage  # noqa: E402
 with app.app_context():

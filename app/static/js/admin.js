@@ -2,6 +2,53 @@
 (function () {
   "use strict";
 
+  /* ---- long messages: a few lines, with the rest a click away ---- */
+  (function () {
+    var boxes = document.querySelectorAll("[data-clamp]");
+    if (!boxes.length) return;
+
+    function fit(box) {
+      var btn = box.nextElementSibling;
+      var has = btn && btn.classList.contains("clamp-more");
+      // Measure while clamped: taller than it is allowed to be means there is
+      // more underneath. Nothing is added to what already fits.
+      box.classList.add("is-clamped");
+      var over = box.scrollHeight > box.clientHeight + 2;
+      if (!over) {
+        box.classList.remove("is-clamped");
+        if (has) btn.remove();
+        return;
+      }
+      if (has) return;
+      var more = document.createElement("button");
+      more.type = "button";
+      more.className = "clamp-more";
+      more.textContent = "Show more";
+      more.setAttribute("aria-expanded", "false");
+      more.addEventListener("click", function () {
+        var open = box.classList.toggle("is-open");
+        more.textContent = open ? "Show less" : "Show more";
+        more.setAttribute("aria-expanded", open ? "true" : "false");
+      });
+      box.parentNode.insertBefore(more, box.nextSibling);
+    }
+
+    function sweep() {
+      Array.prototype.forEach.call(boxes, function (box) {
+        if (!box.classList.contains("is-open")) fit(box);
+      });
+    }
+
+    sweep();
+    var again = null;
+    window.addEventListener("resize", function () {
+      // A narrower window wraps the words differently, so what fitted before
+      // may not now.
+      if (again) window.clearTimeout(again);
+      again = window.setTimeout(sweep, 150);
+    });
+  })();
+
   /* ---- formatting buttons over the writing boxes ---- */
   (function () {
     var LINK_ICON =

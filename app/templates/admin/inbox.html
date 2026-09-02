@@ -42,7 +42,9 @@
             <div class="field-help"><a href="mailto:{{ m.email }}">{{ m.email }}</a></div>
             {% if m.status == 'reviewed' %}<div class="field-help">reviewed</div>{% endif %}
           </td>
-          <td class="inbox-cell--note">{{ m.body }}</td>
+          <td class="inbox-cell--note">
+            <div class="inbox-note" data-clamp>{{ m.body }}</div>
+          </td>
           <td class="inbox-cell--actions">
             <a class="btn btn--secondary btn--sm"
                href="{{ url_for('admin.inbox_message_reply', message_id=m.id) }}">Reply</a>
@@ -77,7 +79,9 @@
             {% if row.status == 'reviewed' %}<div class="field-help">reviewed</div>{% endif %}
           </td>
           <td>{% if row.stars %}{{ '★' * row.stars }}{{ '☆' * (5 - row.stars) }}{% else %}—{% endif %}</td>
-          <td class="inbox-cell--note">{{ row.body }}</td>
+          <td class="inbox-cell--note">
+            <div class="inbox-note" data-clamp>{{ row.body }}</div>
+          </td>
           <td><code class="inbox-path">{{ row.page_path or '—' }}</code></td>
           <td>
             {% if row.author %}{{ row.author.public_name() }}{% elif row.contact_email %}{{ row.contact_email }}{% else %}Guest{% endif %}
@@ -138,7 +142,7 @@
               {% endif %}
             </p>
             {% if item.snippet %}
-            <p class="inbox-report__snippet">{{ item.snippet }}</p>
+            <p class="inbox-report__snippet" data-clamp>{{ item.snippet }}</p>
             {% endif %}
           </div>
 
@@ -149,9 +153,9 @@
             {% endif %}
             {% if note_lines|length > 1 %}
             <p class="inbox-report__context">{{ note_lines[0] }}</p>
-            <p class="inbox-report__note">{{ note_lines[1:]|join('\n') }}</p>
+            <p class="inbox-report__note" data-clamp>{{ note_lines[1:]|join('\n') }}</p>
             {% elif r.note %}
-            <p class="inbox-report__note">{{ r.note }}</p>
+            <p class="inbox-report__note" data-clamp>{{ r.note }}</p>
             {% else %}
             <p class="inbox-report__note">—</p>
             {% endif %}
@@ -162,7 +166,7 @@
             {% if r.auto_reason and r.target_type != 'user' %}
             <p class="inbox-report__value"><strong>Resolved</strong> — {{ r.auto_reason }}</p>
             {% elif r.owner_note %}
-            <p class="inbox-report__note">{{ r.owner_note }}</p>
+            <p class="inbox-report__note" data-clamp>{{ r.owner_note }}</p>
             {% else %}
             <p class="inbox-report__value">—</p>
             {% endif %}
