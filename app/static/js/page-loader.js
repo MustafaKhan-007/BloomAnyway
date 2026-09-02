@@ -108,8 +108,35 @@
       saveTimer = setTimeout(save, 120);
     }
 
+    // Whether the person is in a field right now. On a phone, opening the
+    // keyboard scrolls the page, and scrolling it back from under them cancels
+    // that — the keyboard flashes up and drops straight back down, so the
+    // field can't be typed in. Where they left off last time never matters
+    // more than the field they are in now.
+    function typing() {
+      var el = document.activeElement;
+      if (!el || el === document.body) return false;
+      var tag = (el.tagName || "").toLowerCase();
+      return tag === "input" || tag === "textarea" || tag === "select"
+        || el.isContentEditable === true;
+    }
+
+    // Restoring runs a few times, because the page is still settling and one
+    // scroll often doesn't stick. Any of those can land after a tap, so each
+    // repeat checks again, and the first touch of the page calls the whole
+    // thing off: they are driving now.
+    var touched = false;
+    function handOver() { touched = true; }
+    ["pointerdown", "touchstart", "keydown", "wheel"].forEach(function (evt) {
+      window.addEventListener(evt, handOver, { passive: true });
+    });
+    // Coming back to a page held in memory is a fresh arrival, so it is owed
+    // its scroll position again. Registered here, before the listener that
+    // does the restoring, so the flag is clear by the time that runs.
+    window.addEventListener("pageshow", function () { touched = false; });
+
     function restore() {
-      if (window.location.hash) return;
+      if (window.location.hash || touched || typing()) return;
       var raw;
       try {
         raw = sessionStorage.getItem(currentKey());
@@ -121,6 +148,7 @@
       if (!isFinite(y) || y < 1) return;
 
       var apply = function () {
+        if (touched || typing()) return;
         window.scrollTo(0, y);
       };
       apply();

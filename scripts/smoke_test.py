@@ -4233,6 +4233,19 @@ _full_width_actions = [
 ok("On a phone the buttons get the whole card width, not the sliver beside the cover",
    bool(_full_width_actions), f"rules={_full_width_actions}")
 
+# Putting the page back where someone left it runs a few times while the page
+# settles. On a phone those land after a tap, and scrolling out from under a
+# field that has just been tapped closes the keyboard again before a word can
+# be typed.
+_loader = client.get("/static/js/page-loader.js").get_data(as_text=True)
+ok("The scroll it remembers is never restored over someone in a field",
+   bool(re.search(r"if \(touched \|\| typing\(\)\) return;\s*window\.scrollTo",
+                  _loader)),
+   "the restore scrolls unconditionally")
+ok("And touching the page at all hands it over to them",
+   all(evt in _loader for evt in ("pointerdown", "touchstart", "keydown"))
+   and "if (window.location.hash || touched || typing()) return;" in _loader)
+
 for path, needle in (("/privacy", "What we collect"),
                      ("/terms", "Full Bloom"),
                      ("/refunds", "14 days")):
