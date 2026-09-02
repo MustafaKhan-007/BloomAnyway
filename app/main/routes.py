@@ -250,6 +250,23 @@ def course_detail(slug):
             abort(404)
         is_preview = True
 
+    # Back from paying without an account. Finish the order off the session id
+    # rather than waiting on the webhook, so the receipt and its file are on
+    # their way before the page even loads.
+    if (request.args.get("bought") or "").strip() and not is_preview:
+        session_id = (request.args.get("session_id") or "").strip()
+        if session_id and pay.configured():
+            try:
+                pay.fulfill_checkout_session_id(session_id)
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+                log.exception("product page: could not finish checkout %s",
+                              session_id)
+        flash("Thank you — that's yours. Check your email: the receipt has the "
+              "file with it. Make an account with the same address and it will "
+              "be waiting in My space as well.", "success")
+
     owned_purchase_id = None
     if current_user.is_authenticated and not is_preview:
         from ..services import course_reader as reader_svc
@@ -285,10 +302,20 @@ def checkout_product(slug):
         return redirect(url_for("main.courses"))
     email = current_user.email if current_user.is_authenticated else None
     name = current_user.public_name() if current_user.is_authenticated else None
+    # Somewhere to land afterwards. Signed in, that is their library. Not
+    # signed in, there is no library to open and /account would only bounce
+    # them to a sign-in page, so they come back to the product they just
+    # bought and are told it is on its way by email.
+    if current_user.is_authenticated:
+        landing = url_for("main.account", tab="saved", purchased=1,
+                          _external=True)
+    else:
+        landing = url_for("main.course_detail", slug=product.slug, bought=1,
+                          _external=True)
     try:
         url = pay.create_checkout_session(
             product_id=pid,
-            return_url=url_for("main.account", tab="saved", purchased=1, _external=True),
+            return_url=landing,
             customer_email=email,
             customer_name=name,
             metadata={"slug": product.slug, "kind": "product"},

@@ -5945,6 +5945,39 @@ ok("Counting the stars, so italic comes off bold without taking one with it",
 ok("Bullets have always come back off, and still do",
    "bulleted ? line.replace" in _admin_js2)
 
+# Where paying leaves you depends on whether there is anywhere to land. Signed
+# in, that is the library. Not signed in, /account would only bounce to a
+# sign-in page, so it is the product again with word that it is on its way.
+_landing = {}
+_real_checkout = pay.create_checkout_session
+_real_configured = pay.configured
+pay.configured = lambda: True
+pay.create_checkout_session = lambda **kw: (
+    _landing.update(kw) or "https://stripe.test/pay")
+try:
+    app.test_client().get("/checkout/product/drip-course")
+    ok("A guest is sent back to the product they bought",
+       "/courses/drip-course" in _landing.get("return_url", "")
+       and "bought=1" in _landing.get("return_url", ""),
+       f"got {_landing.get('return_url')}")
+    drip_client.get("/checkout/product/drip-course")
+    ok("Someone with an account lands in their library",
+       "/account" in _landing.get("return_url", "")
+       and "tab=saved" in _landing.get("return_url", ""),
+       f"got {_landing.get('return_url')}")
+finally:
+    pay.create_checkout_session = _real_checkout
+    pay.configured = _real_configured
+
+_landed = client.get("/courses/drip-course?bought=1",
+                     follow_redirects=True).get_data(as_text=True)
+ok("Landing there says the file is coming by email",
+   "the receipt has the file with it" in _landed
+   and "waiting in My space" in _landed)
+ok("And the page says nothing of the sort on an ordinary visit",
+   "the receipt has the file with it"
+   not in client.get("/courses/drip-course").get_data(as_text=True))
+
 # A guide should arrive, not wait to be found: the receipt carries the PDF.
 from werkzeug.datastructures import FileStorage as _FileStorage  # noqa: E402
 with app.app_context():
