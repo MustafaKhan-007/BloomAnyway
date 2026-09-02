@@ -360,6 +360,15 @@ class VerificationCode(db.Model):
                 and self.attempts < self.MAX_ATTEMPTS)
 
 
+#: The three ways a drip-fed course can be scheduled, and how each is described
+#: to the owner choosing between them.
+DRIP_MODES: dict[str, str] = {
+    "interval": "Every module the same gap apart",
+    "dates": "Each module on its own date",
+    "gaps": "Each module its own wait after the one before",
+}
+
+
 class Product(db.Model):
     __tablename__ = "products"
 
@@ -418,9 +427,13 @@ class Product(db.Model):
     # ``drip_interval_days`` after the one before it (counted from purchase).
     drip_enabled = db.Column(db.Boolean, nullable=False, default=False)
     drip_interval_days = db.Column(db.Integer, nullable=False, default=7)
-    #: Fixed release for module one. Set it and the whole schedule runs off the
-    #: calendar for everybody at once, rather than from each buyer's own start,
-    #: which is what a launch with a date on it needs.
+    #: How the schedule is worked out — see ``DRIP_MODES``. "interval" spaces
+    #: every module the same; "dates" gives each its own day on the calendar;
+    #: "gaps" gives each its own wait after the one before, from purchase.
+    drip_mode = db.Column(db.String(12), nullable=False, default="interval")
+    #: Fixed release for module one, in interval and gap mode. Set it and the
+    #: schedule runs off the calendar for everybody at once, rather than from
+    #: each buyer's own start, which is what a launch with a date on it needs.
     drip_starts_at = db.Column(db.DateTime)
 
     #: When this stops being sold. Past this it stays on the shelf to read
@@ -542,6 +555,26 @@ class Product(db.Model):
             })
         return out
 
+    @staticmethod
+    def _clean_release(raw) -> str:
+        """A module's own release moment, kept as plain ISO text in the JSON."""
+        text = str(raw or "").strip()
+        if not text:
+            return ""
+        try:
+            datetime.fromisoformat(text)
+        except ValueError:
+            return ""
+        return text[:32]
+
+    @staticmethod
+    def _clean_gap(raw) -> int:
+        """Days between this module and the one before it (0 = same moment)."""
+        try:
+            return max(0, min(365, int(raw)))
+        except (TypeError, ValueError):
+            return 0
+
     def curriculum(self) -> list[dict]:
         try:
             raw = json.loads(self.curriculum_json) if self.curriculum_json else []
@@ -560,6 +593,10 @@ class Product(db.Model):
                 "title": title[:160],
                 "description": str(row.get("description") or "").strip()[:500],
                 "lessons": self._clean_lessons(row.get("lessons")),
+                # Only read in the drip mode they belong to; kept either way so
+                # switching modes to look and switching back loses nothing.
+                "release_at": self._clean_release(row.get("release_at")),
+                "gap_days": self._clean_gap(row.get("gap_days")),
             })
         return out
 
@@ -575,10 +612,17 @@ class Product(db.Model):
                 "title": title[:160],
                 "description": str(row.get("description") or "").strip()[:500],
                 "lessons": self._clean_lessons(row.get("lessons")),
+                "release_at": self._clean_release(row.get("release_at")),
+                "gap_days": self._clean_gap(row.get("gap_days")),
             })
         self.curriculum_json = json.dumps(cleaned) if cleaned else None
 
     # --- modules, drip-feed and the membership perk ---------------------------
+    def drip_mode_key(self) -> str:
+        """Which of the three schedules this product is on."""
+        mode = (self.drip_mode or "").strip().lower()
+        return mode if mode in DRIP_MODES else "interval"
+
     def drip_days(self) -> int:
         """Days between module releases (1–365)."""
         try:
@@ -649,6 +693,11 @@ class Product(db.Model):
                     "description": meta["description"],
                     "contents": litems,
                 })
+            try:
+                release = (datetime.fromisoformat(row["release_at"])
+                           if row.get("release_at") else None)
+            except ValueError:
+                release = None
             rows.append({
                 "number": i,
                 "title": row["title"],
@@ -657,6 +706,8 @@ class Product(db.Model):
                 "intro": intro,
                 "lessons": lessons,
                 "asset": contents[0] if contents else None,
+                "release_at": release,
+                "gap_days": row.get("gap_days") or 0,
             })
         return rows
 

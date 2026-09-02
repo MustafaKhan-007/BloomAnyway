@@ -9337,6 +9337,15 @@ a.at-handle:hover { text-decoration: underline; }
   margin-bottom: 14px; padding: 14px; border-radius: 12px;
   border: 1px solid rgba(61, 20, 49, 0.12); background: rgba(255, 255, 255, 0.6);
 }
+.drip-modes { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.drip-modes .checkline { margin: 0; }
+/* A module's own place in the schedule, set apart from what it contains. */
+.studio-modules__when {
+  margin: 0 0 10px;
+  padding: 10px 12px 2px;
+  border-radius: 10px;
+  background: rgba(61, 20, 49, 0.04);
+}
 
 /* What a module holds: any number of videos, documents and written extracts. */
 .module-items { list-style: none; margin: 4px 0 12px; padding: 0; display: grid; gap: 6px; }

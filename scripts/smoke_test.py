@@ -5194,6 +5194,127 @@ with app.app_context():
     ok("And clearing the field puts it back to starting when they buy",
        db.session.get(Product, drip_prod_id).drip_starts_at is None)
 
+# One gap for everything doesn't suit every course, so the schedule can also
+# be a date per module, or a wait per module counted from each buyer's start.
+with app.app_context():
+    from app.services import drip as drip_svc
+    _sched = Product(slug="three-ways", title="Three Ways", type="course",
+                     status="published", track="building", promise="x",
+                     price_cents=1000, stripe_price_id="price_3ways",
+                     drip_enabled=True, drip_interval_days=14)
+    db.session.add(_sched)
+    db.session.commit()
+    _sched_id = _sched.id
+    _now = utcnow()
+
+    def _open_modules(product, bought, now=None):
+        return [row["number"]
+                for row in drip_svc.module_rows(product, bought, now=now or _now)
+                if row["unlocked"]]
+
+    _sched.drip_mode = "interval"
+    _sched.set_curriculum([{"title": f"Module {i}"} for i in (1, 2, 3)])
+    db.session.commit()
+    ok("One interval spaces every module the same",
+       _open_modules(_sched, _now - timedelta(days=20)) == [1, 2]
+       and _open_modules(_sched, _now - timedelta(days=1)) == [1],
+       f"got {_open_modules(_sched, _now - timedelta(days=20))}")
+
+    _sched.drip_mode = "dates"
+    _sched.set_curriculum([
+        {"title": "One", "release_at": (_now - timedelta(days=10)).isoformat()},
+        {"title": "Two", "release_at": (_now - timedelta(days=2)).isoformat()},
+        {"title": "Three", "release_at": (_now + timedelta(days=6)).isoformat()},
+    ])
+    db.session.commit()
+    ok("Dates open the same modules whenever someone bought",
+       _open_modules(_sched, _now - timedelta(days=1)) == [1, 2]
+       and _open_modules(_sched, _now - timedelta(days=400)) == [1, 2],
+       f"got {_open_modules(_sched, _now - timedelta(days=1))}")
+
+    _sched.set_curriculum([
+        {"title": "One", "release_at": (_now - timedelta(days=10)).isoformat()},
+        {"title": "Two"},
+        {"title": "Three", "release_at": (_now + timedelta(days=6)).isoformat()},
+    ])
+    db.session.commit()
+    ok("A module left without a date comes out with the one above it",
+       _open_modules(_sched, _now - timedelta(days=1)) == [1, 2])
+
+    _sched.set_curriculum([
+        {"title": "One", "release_at": (_now + timedelta(days=10)).isoformat()},
+        {"title": "Two", "release_at": (_now - timedelta(days=5)).isoformat()},
+    ])
+    db.session.commit()
+    ok("And a later module dated early still waits for the one above",
+       _open_modules(_sched, _now) == [])
+
+    _sched.drip_mode = "gaps"
+    _sched.set_curriculum([
+        {"title": "One", "gap_days": 0},
+        {"title": "Two", "gap_days": 5},
+        {"title": "Three", "gap_days": 14},
+    ])
+    db.session.commit()
+    ok("Each module can instead wait its own stretch after the one above",
+       _open_modules(_sched, _now) == [1]
+       and _open_modules(_sched, _now - timedelta(days=6)) == [1, 2]
+       and _open_modules(_sched, _now - timedelta(days=20)) == [1, 2, 3],
+       f"got {_open_modules(_sched, _now - timedelta(days=6))}")
+    ok("Which still counts from each buyer's own start",
+       _open_modules(_sched, _now - timedelta(days=4)) == [1])
+
+    _pinned = _types.SimpleNamespace(module_index=3)
+    ok("A file in a module still waiting is refused on the same schedule",
+       not drip_svc.asset_unlocked(_sched, _pinned, _now)
+       and drip_svc.asset_unlocked(_sched, _pinned, _now - timedelta(days=20)))
+
+# The mode and each module's own timing are set in Studio.
+from werkzeug.datastructures import MultiDict as _MultiDict  # noqa: E402
+
+_sched_fields = {
+    "title": "Three Ways", "track": "building", "types": "course",
+    "promise": "x", "price": "10.00", "stripe": "price_3ways", "live": "1",
+    "slug": "three-ways", "drip": "1", "drip_interval_days": "14",
+    "mod1_title": "One", "mod2_title": "Two", "mod3_title": "Three",
+}
+r = admin.post(f"/admin/products/{_sched_id}/edit",
+               data=_MultiDict(dict(_sched_fields, **{
+                   "drip_mode": "dates",
+                   "mod1_release_date": "2027-01-05", "mod1_release_time": "09:00",
+                   "mod2_release_date": "2027-01-19", "mod2_release_time": "09:00",
+                   "mod3_release_date": "2027-02-02", "mod3_release_time": "18:30",
+               }).items()),
+               content_type="multipart/form-data", follow_redirects=True)
+with app.app_context():
+    _rows = db.session.get(Product, _sched_id).curriculum()
+    ok("Studio saves a date per module",
+       r.status_code == 200
+       and db.session.get(Product, _sched_id).drip_mode_key() == "dates"
+       and [row["release_at"][:10] for row in _rows]
+       == ["2027-01-05", "2027-01-19", "2027-02-02"],
+       f"got {[row['release_at'] for row in _rows]}")
+r = admin.post(f"/admin/products/{_sched_id}/edit",
+               data=_MultiDict(dict(_sched_fields, **{
+                   "drip_mode": "gaps",
+                   "mod1_gap_days": "0", "mod2_gap_days": "5", "mod3_gap_days": "14",
+                   "mod1_release_date": "2027-01-05", "mod1_release_time": "09:00",
+                   "mod2_release_date": "2027-01-19", "mod2_release_time": "09:00",
+                   "mod3_release_date": "2027-02-02", "mod3_release_time": "18:30",
+               }).items()),
+               content_type="multipart/form-data", follow_redirects=True)
+with app.app_context():
+    _rows = db.session.get(Product, _sched_id).curriculum()
+    ok("And a wait per module, keeping the dates for if they switch back",
+       db.session.get(Product, _sched_id).drip_mode_key() == "gaps"
+       and [row["gap_days"] for row in _rows] == [0, 5, 14]
+       and all(row["release_at"] for row in _rows),
+       f"got {_rows}")
+_sbody = admin.get(f"/admin/products/{_sched_id}/edit").get_data(as_text=True)
+ok("The editor offers all three ways and the fields each one needs",
+   all(f'value="{m}"' in _sbody for m in ("interval", "dates", "gaps"))
+   and 'name="mod2_release_date"' in _sbody and 'name="mod2_gap_days"' in _sbody)
+
 # Off the shelves: still there to read about, no longer for sale, and everyone
 # who already bought it keeps it.
 r = admin.post(

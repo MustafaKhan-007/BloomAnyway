@@ -338,7 +338,7 @@
               Module 1 opens the moment they buy; each one after it waits its turn.
             </p>
           </div>
-          <div class="field">
+          <div class="field" data-drip-only="interval">
             <label for="drip_interval_days">Release one every</label>
             <div class="studio-accent-row">
               <input type="number" id="drip_interval_days" name="drip_interval_days"
@@ -349,7 +349,34 @@
             <p class="field-help">Counted from each buyer’s own purchase date.</p>
           </div>
         </div>
+        {% set drip_mode = product.drip_mode_key() %}
         <div class="form-row studio-modules__drip">
+          <div class="field" style="flex:1 1 100%;">
+            <span class="field__label">How they are spaced</span>
+            <div class="drip-modes" data-drip-modes>
+              {% for key, label in drip_modes.items() %}
+              <label class="checkline checkline--sm">
+                <input type="radio" name="drip_mode" value="{{ key }}"
+                       {{ 'checked' if drip_mode == key }}>
+                <span>{{ label }}</span>
+              </label>
+              {% endfor %}
+            </div>
+            <p class="field-help" data-drip-note="interval">
+              One gap, used between every module.
+            </p>
+            <p class="field-help" data-drip-note="dates">
+              Each module below gets its own date, the same for everybody. Leave
+              a module’s date empty and it comes out with the module above it.
+            </p>
+            <p class="field-help" data-drip-note="gaps">
+              Each module below waits its own number of days after the one above
+              it, counted from when each buyer bought. Module 2 five days after
+              module 1, module 3 a fortnight after module 2, and so on.
+            </p>
+          </div>
+        </div>
+        <div class="form-row studio-modules__drip" data-drip-only="interval gaps">
           <div class="field">
             <label for="drip_starts_date">Open module 1 on</label>
             <div class="studio-accent-row">
@@ -379,6 +406,35 @@
                 <label for="mod{{ row.number }}_desc">Short note</label>
                 <input type="text" id="mod{{ row.number }}_desc" name="mod{{ row.number }}_desc"
                        maxlength="500" value="{{ row.description or '' }}">
+              </div>
+            </div>
+
+            <div class="form-row studio-modules__when" data-drip-only="dates">
+              <div class="field">
+                <label for="mod{{ row.number }}_release_date">Comes out on</label>
+                <div class="studio-accent-row">
+                  <input type="date" id="mod{{ row.number }}_release_date"
+                         name="mod{{ row.number }}_release_date" data-module-release
+                         value="{{ row.release_at|localtime('%Y-%m-%d') if row.release_at else '' }}">
+                  <input type="time" id="mod{{ row.number }}_release_time"
+                         name="mod{{ row.number }}_release_time" data-module-release-time
+                         value="{{ row.release_at|localtime('%H:%M') if row.release_at else '09:00' }}">
+                </div>
+              </div>
+            </div>
+            <div class="form-row studio-modules__when" data-drip-only="gaps">
+              <div class="field">
+                <label for="mod{{ row.number }}_gap_days">Opens this long after the module above</label>
+                <div class="studio-accent-row">
+                  <input type="number" id="mod{{ row.number }}_gap_days"
+                         name="mod{{ row.number }}_gap_days" data-module-gap
+                         min="0" max="365" style="max-width:96px;"
+                         value="{{ row.gap_days or 0 }}">
+                  <span class="field-help" style="margin:0;">days</span>
+                </div>
+                {% if row.number == 1 %}
+                <p class="field-help">Module 1 opens at the start, so this is ignored for it.</p>
+                {% endif %}
               </div>
             </div>
 

@@ -97,7 +97,8 @@
     // Field suffixes that carry the module number. Text extracts and lessons
     // repeat, so they are renamed together rather than one input at a time.
     var parts = ["title", "desc", "file", "up", "text_title", "text_body",
-                 "lesson_title", "lesson_desc"];
+                 "lesson_title", "lesson_desc",
+                 "release_date", "release_time", "gap_days"];
 
     function optionEl(value, label) {
       var o = document.createElement("option");
@@ -201,6 +202,46 @@
         });
       });
       addBtn.hidden = rows.length >= max;
+      showMode();
+    }
+
+    // Only the fields the chosen schedule actually reads are on screen. The
+    // rest keep their values, so trying a mode and going back loses nothing.
+    function showMode() {
+      var picked = root.querySelector("[name='drip_mode']:checked");
+      var mode = picked ? picked.value : "interval";
+      root.querySelectorAll("[data-drip-only]").forEach(function (el) {
+        var wanted = (el.getAttribute("data-drip-only") || "").split(/\s+/);
+        el.hidden = wanted.indexOf(mode) === -1;
+      });
+      root.querySelectorAll("[data-drip-note]").forEach(function (el) {
+        el.hidden = el.getAttribute("data-drip-note") !== mode;
+      });
+    }
+
+    root.querySelectorAll("[name='drip_mode']").forEach(function (radio) {
+      radio.addEventListener("change", showMode);
+    });
+    showMode();
+
+    // A module's own place in the schedule. Both are written; which one is
+    // asked for depends on the mode, and showMode below hides the other.
+    function scheduleFields(n) {
+      return '<div class="form-row studio-modules__when" data-drip-only="dates">' +
+        '<div class="field"><label for="mod' + n + '_release_date">Comes out on' +
+        '</label><div class="studio-accent-row">' +
+        '<input type="date" id="mod' + n + '_release_date" name="mod' + n +
+        '_release_date" data-module-release>' +
+        '<input type="time" id="mod' + n + '_release_time" name="mod' + n +
+        '_release_time" data-module-release-time value="09:00">' +
+        "</div></div></div>" +
+        '<div class="form-row studio-modules__when" data-drip-only="gaps">' +
+        '<div class="field"><label for="mod' + n + '_gap_days">Opens this long ' +
+        'after the module above</label><div class="studio-accent-row">' +
+        '<input type="number" id="mod' + n + '_gap_days" name="mod' + n +
+        '_gap_days" data-module-gap min="0" max="365" style="max-width:96px;" value="0">' +
+        '<span class="field-help" style="margin:0;">days</span>' +
+        "</div></div></div>";
     }
 
     function addSection(n) {
@@ -239,6 +280,7 @@
         '<input type="text" id="mod' + n + '_desc" name="mod' + n +
         '_desc" maxlength="500" value="">' +
         "</div></div>" +
+        scheduleFields(n) +
         '<div class="studio-lessons" data-lessons data-module="' + n + '">' +
         '<p class="module-sub-label">Lessons <span class="field-help" ' +
         'style="font-weight:400;">— optional subsections that unlock together ' +

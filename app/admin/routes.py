@@ -19,8 +19,8 @@ from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 
 from ..extensions import db
-from ..models import (Announcement, ContactMessage, ContentReport, FaqItem,
-                      ForumComment,
+from ..models import (Announcement, ContactMessage, ContentReport, DRIP_MODES,
+                      FaqItem, ForumComment,
                       ForumPost, MEMBERSHIPS, MEMBERSHIP_LABELS, MarketplaceListing,
                       MembershipPlan,
                       PRODUCT_KINDS,
@@ -290,7 +290,8 @@ MAX_MODULES = 24
 
 
 def _blank_module(number: int) -> dict:
-    return {"number": number, "title": "", "description": "", "asset": None}
+    return {"number": number, "title": "", "description": "", "asset": None,
+            "release_at": None, "gap_days": 0}
 
 
 def _lesson_numbers(form, row_number: int) -> dict[int, int]:
@@ -319,6 +320,8 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
     the two can drift once an owner clears a module in the middle.
     """
     from ..services.catalog import slugify_title, unique_product_slug
+    # Dates on this form are typed on the owner's own calendar and stored UTC.
+    from ..services.timefmt import parse_owner_parts
 
     title = (form.get("title") or "").strip()[:160]
     if title:
@@ -360,10 +363,20 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
             lt = (lesson_titles[j] or "").strip()
             ld = (lesson_descs[j] if j < len(lesson_descs) else "").strip()
             lessons.append({"title": lt[:160], "description": ld[:8000]})
+        # Each module's own place in the schedule. Only one of these is read
+        # when the course runs, depending on the mode, but both are kept so
+        # switching modes to compare and switching back loses nothing.
+        release = parse_owner_parts(
+            (form.get(f"mod{i}_release_date") or "").strip(),
+            (form.get(f"mod{i}_release_time") or "").strip() or "09:00",
+            getattr(current_user, "timezone", None),
+        ) if (form.get(f"mod{i}_release_date") or "").strip() else None
         curriculum_rows.append({
             "title": t[:160],
             "description": (form.get(f"mod{i}_desc") or "").strip()[:500],
             "lessons": lessons,
+            "release_at": release.isoformat() if release else "",
+            "gap_days": (form.get(f"mod{i}_gap_days") or "").strip(),
         })
         module_numbers[i] = len(curriculum_rows)
     product.set_curriculum(curriculum_rows)
@@ -377,8 +390,8 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
             pass
     if not product.drip_interval_days:
         product.drip_interval_days = 7
-    # Read off the owner's own calendar; stored UTC like every other time here.
-    from ..services.timefmt import parse_owner_parts
+    mode = (form.get("drip_mode") or "").strip().lower()
+    product.drip_mode = mode if mode in DRIP_MODES else "interval"
     tz_name = getattr(current_user, "timezone", None)
     starts_date = (form.get("drip_starts_date") or "").strip()
     if starts_date:
@@ -748,6 +761,7 @@ def product_new():
         is_new=True,
         modules=[_blank_module(1), _blank_module(2)],
         max_modules=MAX_MODULES,
+        drip_modes=DRIP_MODES,
         product_kinds=PRODUCT_KINDS,
         **_upload_limits(),
     )
@@ -810,6 +824,7 @@ def product_edit(product_id):
         is_new=False,
         modules=modules,
         max_modules=MAX_MODULES,
+        drip_modes=DRIP_MODES,
         product_kinds=PRODUCT_KINDS,
         blockers=product.publish_blockers(),
         **_upload_limits(),

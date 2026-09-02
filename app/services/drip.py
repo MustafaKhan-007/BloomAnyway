@@ -30,6 +30,59 @@ def schedule_start(product, started_at: datetime | None) -> datetime | None:
     return fixed or started_at
 
 
+def _parse_release(text) -> datetime | None:
+    try:
+        return datetime.fromisoformat(str(text)) if text else None
+    except ValueError:
+        return None
+
+
+def unlock_times(product, anchor: datetime | None) -> list[datetime | None]:
+    """When each module opens, in order, for a buyer anchored at ``anchor``.
+
+    Three ways to space them, chosen per product:
+
+    * ``interval`` — the same gap between every one.
+    * ``dates`` — each module has its own day on the calendar, the same for
+      everybody. A module left without one comes out with the module before
+      it, which is how "these two land together" is written.
+    * ``gaps`` — each module waits its own number of days after the one
+      before, counted from the buyer's own start.
+
+    A later module never opens before an earlier one, whatever is typed in.
+    """
+    rows = product.curriculum() if product is not None else []
+    if not rows:
+        return []
+    mode = product.drip_mode_key()
+
+    raw: list[datetime | None] = []
+    if mode == "dates":
+        carried = None
+        for row in rows:
+            carried = _parse_release(row.get("release_at")) or carried
+            raw.append(carried)
+    elif anchor is None:
+        raw = [None] * len(rows)
+    elif mode == "gaps":
+        when = anchor
+        for i, row in enumerate(rows):
+            if i:
+                when = when + timedelta(days=int(row.get("gap_days") or 0))
+            raw.append(when)
+    else:
+        days = product.drip_days()
+        raw = [anchor + timedelta(days=i * days) for i in range(len(rows))]
+
+    out: list[datetime | None] = []
+    latest: datetime | None = None
+    for opens in raw:
+        if opens is not None:
+            latest = opens if latest is None else max(latest, opens)
+        out.append(latest)
+    return out
+
+
 def module_rows(product, started_at, now=None) -> list[dict]:
     """This product's modules with their file and lock state for one buyer.
 
@@ -40,11 +93,13 @@ def module_rows(product, started_at, now=None) -> list[dict]:
     if not rows:
         return []
     anchor = schedule_start(product, started_at)
-    dripped = product.is_dripped() and anchor is not None
+    dripped = product.is_dripped() and (
+        anchor is not None or product.drip_mode_key() == "dates")
     now = now or utcnow()
-    days = product.drip_days()
+    times = unlock_times(product, anchor) if dripped else []
     for row in rows:
-        opens = unlock_at(anchor, row["number"], days) if dripped else None
+        i = row["number"] - 1
+        opens = times[i] if 0 <= i < len(times) else None
         unlocked = opens is None or opens <= now
         row["unlocked"] = unlocked
         row["unlock_at"] = None if unlocked else opens
@@ -56,10 +111,16 @@ def module_rows(product, started_at, now=None) -> list[dict]:
 def asset_unlocked(product, asset, started_at, now=None) -> bool:
     """False only for a file pinned to a module this buyer hasn't reached yet."""
     number = getattr(asset, "module_index", None)
-    anchor = schedule_start(product, started_at)
-    if not number or product is None or not product.is_dripped() or anchor is None:
+    if not number or product is None or not product.is_dripped():
         return True
-    return unlock_at(anchor, number, product.drip_days()) <= (now or utcnow())
+    anchor = schedule_start(product, started_at)
+    if anchor is None and product.drip_mode_key() != "dates":
+        return True
+    times = unlock_times(product, anchor)
+    if number > len(times):
+        return True
+    opens = times[number - 1]
+    return opens is None or opens <= (now or utcnow())
 
 
 def next_locked(rows: list[dict]) -> dict | None:
