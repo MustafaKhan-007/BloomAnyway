@@ -1686,6 +1686,56 @@ ok("Membership page has Monthly/Annual billing toggle",
    and "membership-billing.js" in mbody
    and "Annual (best value)" in mbody)
 
+# Switching plans cancels the old one before Stripe opens, so what to say
+# about it isn't known until they come back. Saying it up front greeted
+# everyone who paid with "complete checkout" once they already had.
+with app.app_context():
+    _switcher = User(email="switcher@example.com", email_verified_at=utcnow(),
+                     membership="healing")
+    _switcher.set_password(USER_PW)
+    db.session.add(_switcher)
+    db.session.commit()
+_real_conf = pay.configured
+_real_cancel = pay.cancel_membership_subscriptions
+_real_session = pay.create_checkout_session
+pay.configured = lambda: True
+pay.cancel_membership_subscriptions = lambda *a, **k: {
+    "ok": True, "cancelled": [], "errors": []}
+pay.create_checkout_session = lambda **k: "https://stripe.test/checkout"
+try:
+    switch_client = app.test_client()
+    switch_client.post("/login", data={"email": "switcher@example.com",
+                                       "password": USER_PW})
+    r = switch_client.get("/checkout/membership/creator")
+    ok("Switching plans sends them to Stripe", r.status_code in (302, 303))
+    _sbody = switch_client.get("/account?purchased=1").get_data(as_text=True)
+    ok("Coming back from a paid switch says the new plan is on",
+       "on your new plan" in _sbody, "no success line")
+    ok("And doesn't ask them to complete a checkout they just completed",
+       "Complete checkout to start" not in _sbody)
+    ok("The news is said once, not on every page after",
+       "on your new plan"
+       not in switch_client.get("/account").get_data(as_text=True))
+
+    with app.app_context():
+        _u = User.query.filter_by(email="switcher@example.com").first()
+        _u.membership = "healing"
+        db.session.commit()
+    abandon_client = app.test_client()
+    abandon_client.post("/login", data={"email": "switcher@example.com",
+                                        "password": USER_PW})
+    abandon_client.get("/checkout/membership/creator")
+    _abody2 = abandon_client.get("/membership").get_data(as_text=True)
+    ok("Closing Stripe without paying does warn the old plan is gone",
+       "been paid for yet" in _abody2, "no warning")
+    ok("And that is said once too",
+       "been paid for yet"
+       not in abandon_client.get("/membership").get_data(as_text=True))
+finally:
+    pay.configured = _real_conf
+    pay.cancel_membership_subscriptions = _real_cancel
+    pay.create_checkout_session = _real_session
+
 # Sign-up and sign-in show the tiers, priced, with nothing pressable.
 for _path, _where in (("/register", "sign-up"), ("/login", "sign-in")):
     _abody = app.test_client().get(_path).get_data(as_text=True)

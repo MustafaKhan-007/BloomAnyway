@@ -4,7 +4,7 @@ import os
 import re
 from datetime import date, datetime
 from flask import (Response, abort, current_app, flash, jsonify, redirect,
-                   render_template, request, send_file, url_for)
+                   render_template, request, send_file, session, url_for)
 from flask_login import current_user, login_required
 
 from ..extensions import db, limiter
@@ -299,6 +299,26 @@ def checkout_product(slug):
     return redirect(url)
 
 
+def _settle_membership_switch(*, paid: bool) -> None:
+    """Say how a plan switch ended, once, at the point we can tell.
+
+    Switching cancels the old plan before Stripe is opened, so the news is
+    either "you're on the new one" or "the old one is gone and the new one
+    wasn't paid for" — and which it is isn't known until they come back.
+    """
+    tier = session.pop("membership_switch", None)
+    if not tier:
+        return
+    if paid:
+        flash("You're on your new plan. It can take a moment to show "
+              "everywhere — refresh the page if it still says the old one.",
+              "success")
+    else:
+        flash("Your previous membership was cancelled, and the new one hasn't "
+              "been paid for yet. Choose a plan below to finish switching.",
+              "info")
+
+
 @bp.route("/checkout/membership/<tier>", methods=["GET", "POST"])
 @limiter.limit("20 per minute")
 def checkout_membership(tier):
@@ -356,11 +376,11 @@ def checkout_membership(tier):
                 "membership switch: cancel reported errors for %s: %s",
                 current_user.email, result.get("errors"),
             )
-        flash(
-            "Your previous membership was cancelled. Complete checkout to start "
-            "the new plan.",
-            "info",
-        )
+        # Not a message yet: this is written before Stripe, and whether it
+        # turns out to be good news or a warning depends on what they do
+        # there. Left as a flash it greeted everyone who paid with "complete
+        # checkout to start the new plan", after they just had.
+        session["membership_switch"] = tier
 
     email = current_user.email if current_user.is_authenticated else None
     name = current_user.public_name() if current_user.is_authenticated else None
@@ -469,6 +489,8 @@ def membership():
         if reconcile_user(current_user):
             db.session.commit()
         _sync_membership_cancel_flag(current_user)
+        # Back here mid-switch means Stripe was closed without paying.
+        _settle_membership_switch(paid=False)
 
     all_plans = {p.tier: p for p in MembershipPlan.query.all()}
     current = (current_user.effective_membership()
@@ -860,6 +882,8 @@ def account():
     # After checkout return, fulfill the exact session (incl. $0 / 100% off)
     # and sync recent payments so My space updates even if the webhook lagged.
     session_id = (request.args.get("session_id") or "").strip()
+    if request.args.get("purchased") or session_id:
+        _settle_membership_switch(paid=True)
     if (request.args.get("purchased") or session_id) and pay.configured():
         try:
             if session_id:
