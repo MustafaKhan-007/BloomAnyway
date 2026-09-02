@@ -4246,6 +4246,22 @@ ok("And touching the page at all hands it over to them",
    all(evt in _loader for evt in ("pointerdown", "touchstart", "keydown"))
    and "if (window.location.hash || touched || typing()) return;" in _loader)
 
+# Turning pages is one control, not three: back on the left, forward on the
+# right, the page you are on between them. Left to wrap on a phone, Next fell
+# onto a line of its own underneath Previous.
+_pager_rules = [
+    (" ".join(sel.split()), decls)
+    for sel, decls in re.findall(r"([^{}]+)\{([^{}]*)\}",
+                                 re.sub(r"/\*.*?\*/", "", css, flags=re.S))
+    if "reader__footer:not(.reader__footer--simple)" in " ".join(sel.split())
+]
+ok("The reader's page buttons stay on one row on a phone",
+   any("flex-wrap: nowrap" in d for _, d in _pager_rules),
+   f"rules={[s for s, _ in _pager_rules]}")
+ok("And the page number sits between them",
+   any("reader__page-field" in s and "justify-content: center" in d
+       and "flex: 1" in d for s, d in _pager_rules))
+
 for path, needle in (("/privacy", "What we collect"),
                      ("/terms", "Full Bloom"),
                      ("/refunds", "14 days")):

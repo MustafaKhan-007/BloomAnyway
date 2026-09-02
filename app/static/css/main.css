@@ -1910,6 +1910,32 @@ html.is-page-loading { cursor: progress; }
   background: var(--plum-deep); color: #fff !important;
 }
 .reader__nav-btn--primary:hover { filter: brightness(1.06); }
+/* On a phone the three of these are a shade too wide together, and wrapping
+   left Next stranded on a line of its own under Previous. Trimmed to fit so
+   they stay a row: back on the left, forward on the right, the page you are
+   on between them. The plain footer still wraps — its buttons are wider. */
+@media (max-width: 560px) {
+  .reader__footer:not(.reader__footer--simple) {
+    flex-wrap: nowrap;
+    gap: 8px;
+  }
+  .reader__footer:not(.reader__footer--simple) .reader__nav-btn {
+    flex: 0 0 auto;
+    padding: 11px 14px;
+  }
+  .reader__footer:not(.reader__footer--simple) .reader__page-field {
+    flex: 1 1 auto;
+    min-width: 0;
+    justify-content: center;
+    gap: 6px;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  .reader__footer:not(.reader__footer--simple) .reader__page-field input {
+    width: 46px;
+    padding: 7px 4px;
+  }
+}
 .reader__panel {
   position: fixed; z-index: 40;
   top: 110px; right: max(16px, calc((100vw - var(--container)) / 2 + 16px));
