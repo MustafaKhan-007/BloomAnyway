@@ -5945,6 +5945,73 @@ ok("Counting the stars, so italic comes off bold without taking one with it",
 ok("Bullets have always come back off, and still do",
    "bulleted ? line.replace" in _admin_js2)
 
+# A guide should arrive, not wait to be found: the receipt carries the PDF.
+from werkzeug.datastructures import FileStorage as _FileStorage  # noqa: E402
+with app.app_context():
+    from app.services import assets as _ast
+    _rc = Product(slug="receipt-guide", title="Receipt Guide", type="guide",
+                  status="published", track="building", promise="x",
+                  price_cents=1200, stripe_price_id="price_receipt")
+    db.session.add(_rc)
+    db.session.commit()
+    _small = b"%PDF-1.4 " + b"the guide " * 50 + b"\n%%EOF\n"
+    _ast.add_asset(_rc, _FileStorage(BytesIO(_small), filename="guide.pdf",
+                                     content_type="application/pdf"))
+    _ast.add_asset(_rc, _FileStorage(BytesIO(b"\x00\x00\x00\x18ftypmp42v"),
+                                     filename="intro.mp4",
+                                     content_type="video/mp4"))
+    db.session.commit()
+    _picked = _ast.receipt_files(_rc)
+    ok("The guide itself goes with the receipt",
+       [f["name"] for f in _picked] == ["guide.pdf"],
+       f"got {[f['name'] for f in _picked]}")
+    ok("With the bytes of the real file",
+       _picked and _picked[0]["data"] == _small)
+    ok("Anything too big to post is left in the library instead",
+       _ast.receipt_files(_rc, budget=10) == [])
+
+    # A drip-fed course must not arrive whole on day one.
+    _rc.drip_enabled = True
+    _rc.set_curriculum([{"title": "One"}, {"title": "Two"}])
+    _ast.add_asset(_rc, _FileStorage(BytesIO(b"%PDF-1.4 week two\n%%EOF\n"),
+                                     filename="week-two.pdf",
+                                     content_type="application/pdf"),
+                   module_index=2)
+    db.session.commit()
+    ok("But a module they haven't reached yet doesn't",
+       [f["name"] for f in _ast.receipt_files(_rc)] == ["guide.pdf"],
+       f"got {[f['name'] for f in _ast.receipt_files(_rc)]}")
+    _cat_svc._purge_product(db.session.get(Product, _rc.id))
+    db.session.commit()
+
+_carried = {}
+_real_send_email = _mailer.send_email
+
+
+def _catch_send(to, subject, text, html_body=None, template_id=None,
+                params=None, sender=None, attachments=None):
+    _carried.clear()
+    _carried.update(text=text, params=params or {},
+                    files=[a["name"] for a in (attachments or [])])
+    return True
+
+
+_mailer.send_email = _catch_send
+try:
+    with app.app_context():
+        _mailer.send_order_receipt(
+            "buyer@example.com", order_id="R-1",
+            product_name="Receipt Guide", amount="$12",
+            order_date="Sep 02, 2026",
+            attachments=[{"name": "guide.pdf", "data": b"%PDF-1.4\n"}])
+    ok("The receipt sends it and says it is there",
+       _carried["files"] == ["guide.pdf"]
+       and "Attached: guide.pdf" in _carried["text"]
+       and _carried["params"].get("ATTACHED") == "guide.pdf",
+       f"got {_carried}")
+finally:
+    _mailer.send_email = _real_send_email
+
 # When a PDF still won't open, the reader has to say why and leave a way in.
 _reader_js = client.get("/static/js/course-reader.js").get_data(as_text=True)
 ok("The reader names what went wrong instead of one blanket sentence",

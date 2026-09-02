@@ -1339,12 +1339,23 @@ def handle_payment_event(event_type: str, data: dict) -> Order | None:
             from .mailer import send_order_receipt
             when = order.created_at
             order_date = when.strftime("%b %d, %Y") if when else ""
+            # The guide itself rides along, so it arrives rather than waiting
+            # to be found. Anything the buyer can't open yet, or is too big to
+            # post, stays in their library instead.
+            try:
+                from .assets import receipt_files
+                came_with = receipt_files(product)
+            except Exception:
+                log.exception("receipt: could not gather files for %s",
+                              order.ls_order_id)
+                came_with = []
             send_order_receipt(
                 order.buyer_email,
                 order_id=order.ls_order_id,
                 product_name=name,
                 amount=order.total_display(),
                 order_date=order_date,
+                attachments=came_with,
             )
         except Exception:
             log.exception("Order receipt email failed for %s", order.ls_order_id)

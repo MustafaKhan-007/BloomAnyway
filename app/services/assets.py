@@ -6,6 +6,7 @@ read when present, so nothing uploaded before the move needs migrating.
 """
 from __future__ import annotations
 
+import logging
 import os
 import secrets
 import zipfile
@@ -23,6 +24,8 @@ from ..models import Product, ProductAsset
 #: bodies over roughly 100 MB whatever this is set to.
 MAX_BYTES = 90 * 1024 * 1024
 _CHUNK = 1024 * 1024
+
+log = logging.getLogger(__name__)
 
 
 def storage_dir() -> str:
@@ -145,6 +148,48 @@ def _looks_like_h5p(data: bytes, filename: str) -> bool:
             return "h5p.json" in names or any(n.endswith("/h5p.json") for n in names)
     except zipfile.BadZipFile:
         return False
+
+
+#: What may ride along with a receipt. Mail providers reject anything much
+#: over ten megabytes, and a receipt is not the place for a whole course.
+RECEIPT_MAX_BYTES = 8 * 1024 * 1024
+RECEIPT_MAX_FILES = 3
+
+
+def receipt_files(product, *, budget: int = RECEIPT_MAX_BYTES,
+                  limit: int = RECEIPT_MAX_FILES) -> list[dict]:
+    """The PDFs to send with a purchase receipt.
+
+    Only what the buyer could open the moment they paid: on a drip-fed course
+    the modules arrive on their own schedule, so sending them by email would
+    hand over the whole thing on day one. Anything too big to post is left out
+    and stays where it always was, in their library.
+    """
+    out: list[dict] = []
+    if product is None:
+        return out
+    dripped = product.is_dripped()
+    spent = 0
+    for asset in product.top_level_assets():
+        if asset.kind != "pdf":
+            continue
+        if dripped and asset.module_index:
+            continue
+        size = asset.size or 0
+        if size <= 0 or spent + size > budget:
+            continue
+        try:
+            data = read_bytes(asset)
+        except Exception:
+            log.exception("receipt: could not read asset %s", asset.id)
+            continue
+        if not data:
+            continue
+        out.append({"name": asset.filename or "guide.pdf", "data": data})
+        spent += size
+        if len(out) >= limit:
+            break
+    return out
 
 
 def _check_whole_pdf(path: str, kind: str) -> None:

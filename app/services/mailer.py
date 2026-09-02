@@ -164,11 +164,28 @@ def _brevo_error_hint(status: int, body: str) -> str:
     return f"Brevo error {status}: {(body or '')[:240]}"
 
 
+def _as_brevo_attachments(attachments) -> list[dict]:
+    """Files in the shape Brevo wants: a name and the bytes, base64'd."""
+    import base64
+
+    out = []
+    for item in attachments or []:
+        data = item.get("data")
+        if not data:
+            continue
+        out.append({
+            "name": (item.get("name") or "attachment").strip() or "attachment",
+            "content": base64.b64encode(data).decode("ascii"),
+        })
+    return out
+
+
 def _send_via_brevo(to: str, subject: str, text_body: str,
                     html_body: str | None = None,
                     template_id: int | None = None,
                     params: dict | None = None,
-                    sender: str | None = None) -> bool:
+                    sender: str | None = None,
+                    attachments=None) -> bool:
     """Send through Brevo's transactional HTTP API."""
     key = _brevo_api_key()
     if not key:
@@ -206,6 +223,9 @@ def _send_via_brevo(to: str, subject: str, text_body: str,
         payload["subject"] = subject
         payload["textContent"] = text_body
         payload["htmlContent"] = html_body
+    files = _as_brevo_attachments(attachments)
+    if files:
+        payload["attachment"] = files
     try:
         resp = requests.post(
             BREVO_SEND_URL,
@@ -253,11 +273,13 @@ def _send_via_smtp(to: str, msg: EmailMessage) -> bool:
 
 def send_email(to: str, subject: str, text_body: str, html_body: str | None = None,
                template_id: int | None = None, params: dict | None = None,
-               sender: str | None = None) -> bool:
+               sender: str | None = None, attachments=None) -> bool:
     """Send email. Prefer Brevo; fall back to SMTP; else console in local dev.
 
     ``sender`` overrides MAIL_FROM for this one send and must already be a
     verified Brevo sender — see :func:`sender_from`.
+
+    ``attachments`` is a list of ``{"name": ..., "data": bytes}``.
     """
     cfg = current_app.config
     to = (to or "").strip()
@@ -280,6 +302,7 @@ def send_email(to: str, subject: str, text_body: str, html_body: str | None = No
             template_id=template_id,
             params=params,
             sender=sender,
+            attachments=attachments,
         )
 
     if not cfg["SMTP_HOST"]:
@@ -288,6 +311,9 @@ def send_email(to: str, subject: str, text_body: str, html_body: str | None = No
         print(f"From: {sender or _mail_from()}\nTo: {to}\nSubject: {subject}\n\n{text_body}")
         if template_id:
             print(f"(Brevo template #{template_id} params={params!r})")
+        for item in attachments or []:
+            print(f"(attached {item.get('name')}, "
+                  f"{len(item.get('data') or b'')} bytes)")
         print("====================================\n")
         _set_error("")
         return True
@@ -303,6 +329,14 @@ def send_email(to: str, subject: str, text_body: str, html_body: str | None = No
     msg.set_content(text_body)
     if html_body:
         msg.add_alternative(html_body, subtype="html")
+    for item in attachments or []:
+        data = item.get("data")
+        if not data:
+            continue
+        msg.add_attachment(
+            data, maintype="application", subtype="pdf",
+            filename=(item.get("name") or "attachment.pdf"),
+        )
     return _send_via_smtp(to, msg)
 
 
@@ -483,29 +517,43 @@ def send_order_receipt(
     product_name: str,
     amount: str,
     order_date: str,
+    attachments=None,
 ) -> bool:
-    """Send Brevo order-receipt template (#4) after a successful product purchase."""
+    """Send Brevo order-receipt template (#4) after a successful product purchase.
+
+    ``attachments`` are the readable files that come with it, so a guide lands
+    in the buyer's inbox rather than only waiting in their library.
+    """
     template_id = _int_config("BREVO_TEMPLATE_RECEIPT", 4) or None
     oid = str(order_id or "").strip()
     product = (product_name or "").strip() or "Purchase"
     paid = (amount or "").strip() or "—"
     when = (order_date or "").strip() or "—"
+    attached = [a.get("name") for a in (attachments or []) if a.get("data")]
+    came_with = (
+        "\n\nAttached: " + ", ".join(n for n in attached if n)
+        + "\nIt's in your library too, at any time."
+        if attached else ""
+    )
     text = (
         "Thanks for your purchase on Bloom Anyway.\n\n"
         f"Order #: {oid}\n"
         f"Item: {product}\n"
         f"Amount paid: {paid}\n"
-        f"Date: {when}\n\n"
+        f"Date: {when}"
+        f"{came_with}\n\n"
         "— Bloom Anyway"
     )
     if not template_id:
-        return send_email(to, "Your Bloom Anyway receipt", text)
+        return send_email(to, "Your Bloom Anyway receipt", text,
+                          attachments=attachments)
 
     params = {
         "ORDER_ID": oid,
         "PRODUCT_NAME": product,
         "AMOUNT": paid,
         "ORDER_DATE": when,
+        "ATTACHED": ", ".join(n for n in attached if n),
     }
     return send_email(
         to,
@@ -513,6 +561,7 @@ def send_order_receipt(
         text,
         template_id=template_id,
         params=params,
+        attachments=attachments,
     )
 
 
