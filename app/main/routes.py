@@ -533,7 +533,10 @@ def membership():
                            back_url=back_url, back_label=back_label)
 
 
-CHALLENGE_ENROLL_URL = "https://stan.store/hustlinmommazbiz/p/2-month-challenge"
+CHALLENGE_ENROLL_URL = (
+    "https://stan.store/hustlinmommazbiz/p/"
+    "2-month-challenge-round-2-waitlist-closed"
+)
 
 
 @bp.route("/challenge")

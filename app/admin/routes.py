@@ -172,8 +172,10 @@ def dashboard():
             set_setting("stripe_last_sync_at",
                         datetime.utcnow().isoformat(timespec="seconds"))
         pay.maybe_sweep_cancel_flags()
+    from ..main.routes import CHALLENGE_ENROLL_URL
     return render_template(
         "admin/dashboard.html",
+        challenge_enroll_url=CHALLENGE_ENROLL_URL,
         today_quote=quotes_service.quote_for(today),
         tomorrow_quote=quotes_service.quote_for(today + timedelta(days=1)),
         cards=stats.dashboard_cards(),
