@@ -28,7 +28,7 @@ FEATURE_DEFS: list[dict[str, Any]] = [
         "help": "Play tips marked for Healing members.",
         "kind": "bool",
         "matrix": None,  # folded into “Watch Content Hub tips”
-        "perk": "Content tips marked for Healing members",
+        "perk": "Connect with women all over the world",
     },
     {
         "key": "content_hub_creator",
