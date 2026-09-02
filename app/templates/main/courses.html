@@ -16,6 +16,10 @@
       <div class="lib-card__intro">
         {% if product.test_mode %}
         <p class="lib-card__badge lib-card__badge--test">Test mode · owners only</p>
+        {% elif product.is_off_shelf() and not owned_purchase_id %}
+        <p class="lib-card__badge lib-card__badge--shelved">
+          <span aria-hidden="true">&#9723;</span> Off the shelves
+        </p>
         {% elif product.badge or owned_purchase_id %}
         <p class="lib-card__badge">
           {% if owned_purchase_id %}Purchased{% elif product.badge %}{{ product.badge }}{% endif %}
@@ -53,6 +57,12 @@
       <a class="btn lib-card__btn lib-card__btn--primary lib-card__btn--{{ lane }}"
          href="{{ url_for('main.course_reader', purchase_id=owned_purchase_id) }}">
         Open &amp; read
+      </a>
+      {% elif product.is_off_shelf() %}
+      <span class="lib-card__price lib-card__price--shelved">No longer sold</span>
+      <a class="btn lib-card__btn lib-card__btn--ghost"
+         href="{{ url_for('main.course_detail', slug=product.slug) }}">
+        Have a look
       </a>
       {% elif product.has_promo() %}
       <span class="lib-card__price lib-card__price--promo">

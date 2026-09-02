@@ -59,6 +59,9 @@
             {% if p.test_mode %}
             <span class="status-pill status-pill--test">test</span>
             {% endif %}
+            {% if p.is_off_shelf() %}
+            <span class="status-pill status-pill--shelved">off the shelves</span>
+            {% endif %}
           </td>
           <td class="studio-product-list__actions">
             <a class="btn btn--secondary btn--sm" href="{{ url_for('admin.product_edit', product_id=p.id) }}">Edit</a>

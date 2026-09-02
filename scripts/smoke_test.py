@@ -5060,6 +5060,106 @@ ok("Module 2 opens once its interval has passed",
 r = drip_client.get(f"/account/courses/{drip_purchase_id}/file/{mod2_asset_id}")
 ok("Module 2 file streams after unlocking", r.status_code == 200 and b"module two" in r.data)
 
+# A launch with a date on it: module one opens that day for everyone at once,
+# instead of each buyer starting their own clock when they pay.
+with app.app_context():
+    from app.services import drip as drip_svc
+    _p = db.session.get(Product, drip_prod_id)
+    _bought = utcnow() - timedelta(days=30)
+    _p.drip_starts_at = utcnow() + timedelta(days=5)
+    _open = [row["number"] for row in drip_svc.module_rows(_p, _bought)
+             if row["unlocked"]]
+    ok("A release date still to come holds module 1 shut, however long ago they bought",
+       _open == [], f"open={_open}")
+    _p.drip_starts_at = utcnow() - timedelta(days=8)
+    _open = [row["number"] for row in drip_svc.module_rows(_p, _bought)
+             if row["unlocked"]]
+    ok("Once it lands, the modules follow it at the usual interval",
+       _open == [1, 2], f"open={_open}")
+    _late = [row["number"] for row in drip_svc.module_rows(_p, utcnow())
+             if row["unlocked"]]
+    ok("And buying late opens what has been released, not a fresh wait",
+       _late == [1, 2], f"open={_late}")
+    _p.drip_starts_at = utcnow() + timedelta(days=5)
+    ok("A file waiting on the release date is refused too",
+       not drip_svc.asset_unlocked(
+           _p, db.session.get(ProductAsset, mod1_asset_id), _bought))
+    _p.drip_starts_at = None
+    db.session.commit()
+
+# The date is set in Studio, on the owner's own calendar.
+r = admin.post(
+    f"/admin/products/{drip_prod_id}/edit",
+    data=dict(_drip_fields, **{
+        "slug": "drip-course",
+        "mod1_title": "Week one", "mod1_desc": "Start here",
+        "mod2_title": "Week two", "mod2_desc": "Keep going",
+        "drip_starts_date": "2027-03-01", "drip_starts_time": "09:00",
+    }),
+    content_type="multipart/form-data", follow_redirects=True)
+with app.app_context():
+    _p = db.session.get(Product, drip_prod_id)
+    ok("Studio saves the day module 1 is released",
+       r.status_code == 200 and _p.drip_starts_at is not None
+       and _p.drip_starts_at.year == 2027 and _p.drip_starts_at.month == 3,
+       f"got {_p.drip_starts_at}")
+r = admin.post(
+    f"/admin/products/{drip_prod_id}/edit",
+    data=dict(_drip_fields, **{
+        "slug": "drip-course",
+        "mod1_title": "Week one", "mod1_desc": "Start here",
+        "mod2_title": "Week two", "mod2_desc": "Keep going",
+    }),
+    content_type="multipart/form-data", follow_redirects=True)
+with app.app_context():
+    ok("And clearing the field puts it back to starting when they buy",
+       db.session.get(Product, drip_prod_id).drip_starts_at is None)
+
+# Off the shelves: still there to read about, no longer for sale, and everyone
+# who already bought it keeps it.
+r = admin.post(
+    f"/admin/products/{drip_prod_id}/edit",
+    data=dict(_drip_fields, **{
+        "slug": "drip-course",
+        "mod1_title": "Week one", "mod1_desc": "Start here",
+        "mod2_title": "Week two", "mod2_desc": "Keep going",
+        "off_shelf_date": "2027-06-30", "off_shelf_time": "23:59",
+    }),
+    content_type="multipart/form-data", follow_redirects=True)
+with app.app_context():
+    _p = db.session.get(Product, drip_prod_id)
+    ok("Studio saves a last day on sale",
+       r.status_code == 200 and _p.off_shelf_at is not None
+       and _p.off_shelf_at.year == 2027, f"got {_p.off_shelf_at}")
+    ok("A date still to come leaves it selling as normal",
+       not _p.is_off_shelf() and _p.buyable_by(None))
+    _p.off_shelf_at = utcnow() - timedelta(minutes=1)
+    db.session.commit()
+    ok("Once the date passes it stops being sold",
+       _p.is_off_shelf() and not _p.buyable_by(None))
+    ok("A sale on it is dropped, since there is nowhere left to type the code",
+       not _p.has_promo())
+
+_shelf = client.get("/courses").get_data(as_text=True)
+ok("It stays on the catalogue, marked off the shelves",
+   "Drip Course" in _shelf and "Off the shelves" in _shelf)
+r = client.get("/courses/drip-course")
+ok("Its page still opens and says so instead of offering a buy button",
+   r.status_code == 200 and "Off the shelves" in r.get_data(as_text=True)
+   and "Buy now" not in r.get_data(as_text=True))
+r = client.get("/checkout/product/drip-course")
+ok("And checkout turns anyone new away",
+   r.status_code in (302, 303)
+   and "/courses/drip-course" in (r.headers.get("Location") or ""))
+r = drip_client.get(f"/account/courses/{drip_purchase_id}")
+ok("Someone who bought it before still reads it", r.status_code == 200)
+r = drip_client.get(f"/account/courses/{drip_purchase_id}/file/{mod1_asset_id}")
+ok("Including the files inside it", r.status_code == 200)
+with app.app_context():
+    _p = db.session.get(Product, drip_prod_id)
+    _p.off_shelf_at = None
+    db.session.commit()
+
 # owner adds a module after publishing — existing buyers get it on their schedule
 r = admin.post(
     f"/admin/products/{drip_prod_id}/edit",

@@ -69,7 +69,20 @@
           <p class="pd-hero__note">Preview only — checkout stays off until this product is live.</p>
           {% elif owned_purchase_id %}
           <a class="btn btn--primary pd-hero__cta" href="{{ url_for('main.course_reader', purchase_id=owned_purchase_id) }}">Open &amp; read</a>
-          <p class="pd-hero__note">You already own this — open it in My space anytime.</p>
+          <p class="pd-hero__note">
+            You already own this — open it in My space anytime.
+            {%- if product.is_off_shelf() %} It is off the shelves now, and yours to keep.{% endif %}
+          </p>
+          {% elif product.is_off_shelf() %}
+          <p class="pd-offshelf">
+            <span class="pd-offshelf__mark" aria-hidden="true">&#9723;</span>
+            <span>
+              <strong>Off the shelves.</strong>
+              This isn’t for sale any more{% if product.off_shelf_display() %},
+              as of {{ product.off_shelf_display() }}{% endif %}. Everyone who
+              bought it keeps it for good.
+            </span>
+          </p>
           {% else %}
           <a class="btn btn--primary pd-hero__cta" href="{{ url_for('main.checkout_product', slug=product.slug) }}">Buy now</a>
           <p class="pd-hero__note">Secure checkout. You’ll find it in My space after purchase.</p>

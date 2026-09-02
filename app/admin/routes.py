@@ -377,6 +377,30 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
             pass
     if not product.drip_interval_days:
         product.drip_interval_days = 7
+    # Read off the owner's own calendar; stored UTC like every other time here.
+    from ..services.timefmt import parse_owner_parts
+    tz_name = getattr(current_user, "timezone", None)
+    starts_date = (form.get("drip_starts_date") or "").strip()
+    if starts_date:
+        product.drip_starts_at = parse_owner_parts(
+            starts_date,
+            (form.get("drip_starts_time") or "").strip() or "09:00", tz_name)
+        if product.drip_starts_at is None:
+            flash("That release date didn't look right, so the modules will "
+                  "open from each buyer's own start instead.", "info")
+    else:
+        product.drip_starts_at = None
+
+    shelf_date = (form.get("off_shelf_date") or "").strip()
+    if shelf_date:
+        product.off_shelf_at = parse_owner_parts(
+            shelf_date,
+            (form.get("off_shelf_time") or "").strip() or "23:59", tz_name)
+        if product.off_shelf_at is None:
+            flash("That last-day-on-sale date didn't look right, so this is "
+                  "still on sale.", "info")
+    else:
+        product.off_shelf_at = None
 
     perk_tier = (form.get("perk_tier") or "").strip().lower()
     product.perk_membership_tier = (
@@ -414,8 +438,6 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
     else:
         product.promo_code = promo_code
         product.promo_price_cents = promo_price
-        # Read off the owner's own calendar; stored UTC like every other time.
-        from ..services.timefmt import parse_owner_parts
         ends_date = (form.get("promo_ends_date") or "").strip()
         product.promo_ends_at = parse_owner_parts(
             ends_date,

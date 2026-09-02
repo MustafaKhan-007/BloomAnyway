@@ -272,6 +272,10 @@ def checkout_product(slug):
     product = Product.query.filter_by(slug=slug, status="published").first_or_404()
     if not product.visible_to(current_user):
         abort(404)
+    if product.is_off_shelf():
+        flash("This one is off the shelves now and can't be bought any more.",
+              "info")
+        return redirect(url_for("main.course_detail", slug=product.slug))
     pid = (product.stripe_price_id or "").strip()
     if not pid:
         flash("Checkout for this guide isn’t live yet — check back soon.", "info")

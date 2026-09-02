@@ -826,6 +826,7 @@ body.is-studio-readonly .admin-main input[type="submit"] {
 .status-pill--archived, .status-pill--refunded { background: var(--rose-soft); color: var(--plum); }
 .status-pill--pending { background: #F5E6C8; color: var(--plum); }
 .status-pill--test { background: var(--plum); color: #fff; }
+.status-pill--shelved { background: rgba(61, 20, 49, 0.12); color: var(--plum-deep); }
 
 .flagged-list { display: grid; gap: 18px; }
 .flagged-member {
@@ -8597,6 +8598,14 @@ a.at-handle:hover { text-decoration: underline; }
   display: inline-block; padding: 2px 10px; border-radius: 999px;
   background: #3d1431; color: #fff8f3; letter-spacing: 0.06em;
 }
+.lib-card__badge--shelved {
+  display: inline-block; padding: 2px 10px; border-radius: 999px;
+  background: rgba(61, 20, 49, 0.08); color: var(--ink-soft);
+  letter-spacing: 0.06em;
+}
+.lib-card__price--shelved {
+  font-size: 1rem; font-weight: 700; color: var(--ink-soft);
+}
 .lib-card__cat {
   margin: 0 0 4px; font-size: 11px; font-weight: 800;
   letter-spacing: 0.1em; text-transform: uppercase; color: #B58A3F;
@@ -9140,6 +9149,16 @@ a.at-handle:hover { text-decoration: underline; }
 }
 .pd-hero__cta { min-width: 140px; justify-content: center; width: 100%; }
 .pd-hero__note { flex: 1 1 100%; margin: 0; font-size: 13px; color: var(--ink-soft); }
+.pd-offshelf {
+  flex: 1 1 100%; margin: 0;
+  display: flex; align-items: flex-start; gap: 9px;
+  padding: 11px 13px; border-radius: 12px;
+  background: rgba(61, 20, 49, 0.06);
+  border: 1px solid rgba(61, 20, 49, 0.12);
+  font-size: 13.5px; line-height: 1.55; color: var(--ink-soft);
+}
+.pd-offshelf strong { color: var(--plum-deep); }
+.pd-offshelf__mark { color: var(--plum-deep); opacity: 0.6; }
 .pd-hero__perk {
   flex: 1 1 100%; margin: 0;
   padding: 8px 11px; border-radius: 10px;

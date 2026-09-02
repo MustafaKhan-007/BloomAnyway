@@ -418,6 +418,14 @@ class Product(db.Model):
     # ``drip_interval_days`` after the one before it (counted from purchase).
     drip_enabled = db.Column(db.Boolean, nullable=False, default=False)
     drip_interval_days = db.Column(db.Integer, nullable=False, default=7)
+    #: Fixed release for module one. Set it and the whole schedule runs off the
+    #: calendar for everybody at once, rather than from each buyer's own start,
+    #: which is what a launch with a date on it needs.
+    drip_starts_at = db.Column(db.DateTime)
+
+    #: When this stops being sold. Past this it stays on the shelf to read
+    #: about and everyone who bought it keeps it, but nobody new can buy.
+    off_shelf_at = db.Column(db.DateTime)
 
     # Additional perk: buying this also grants a membership tier, free, for
     # ``perk_membership_months`` months.
@@ -696,9 +704,30 @@ class Product(db.Model):
         return bool(getattr(user, "is_authenticated", False)
                     and getattr(user, "is_admin", False))
 
+    def is_off_shelf(self, now: datetime | None = None) -> bool:
+        """Past its selling date: still readable, still listed, no longer sold."""
+        if self.off_shelf_at is None:
+            return False
+        return self.off_shelf_at <= (now or utcnow())
+
+    def off_shelf_display(self) -> str:
+        """The date it stopped (or stops) being sold, in the reader's own day."""
+        if self.off_shelf_at is None:
+            return ""
+        from .services.timefmt import format_local
+        return format_local(self.off_shelf_at, "%b %d, %Y")
+
+    def drip_starts_display(self) -> str:
+        """When module one opens, for a product on a fixed release date."""
+        if self.drip_starts_at is None:
+            return ""
+        from .services.timefmt import format_local
+        return format_local(self.drip_starts_at, "%b %d, %Y")
+
     def buyable_by(self, user) -> bool:
         """Only live products sell, and test ones only sell to owners."""
-        return self.status == "published" and self.visible_to(user)
+        return (self.status == "published" and self.visible_to(user)
+                and not self.is_off_shelf())
 
     def perk_tier(self) -> str:
         tier = (self.perk_membership_tier or "").strip().lower()
@@ -728,13 +757,18 @@ class Product(db.Model):
 
     # --- a running promo code -------------------------------------------------
     def has_promo(self) -> bool:
-        """A promo needs a code, a price that beats the normal one, and time left."""
+        """A promo needs a code, a price that beats the normal one, and time left.
+
+        Nothing off the shelves advertises a sale, since there is no longer a
+        checkout for the code to be typed into.
+        """
         return bool(
             (self.promo_code or "").strip()
             and self.promo_price_cents is not None
             and self.price_cents is not None
             and 0 <= self.promo_price_cents < self.price_cents
             and not self.promo_expired()
+            and not self.is_off_shelf()
         )
 
     def promo_expired(self) -> bool:

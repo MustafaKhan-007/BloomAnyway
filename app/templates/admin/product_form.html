@@ -167,6 +167,24 @@
             Courses</em> as well, or there is nothing to buy yet.
           </p>
         </div>
+        <div class="field">
+          <label for="off_shelf_date">Take off the shelves on</label>
+          <div class="studio-accent-row">
+            <input type="date" id="off_shelf_date" name="off_shelf_date"
+                   value="{{ product.off_shelf_at|localtime('%Y-%m-%d') if product.off_shelf_at else '' }}">
+            <input type="time" id="off_shelf_time" name="off_shelf_time"
+                   value="{{ product.off_shelf_at|localtime('%H:%M') if product.off_shelf_at else '23:59' }}">
+          </div>
+          <p class="field-help">
+            Optional. After this it stops selling but stays on Courses with an
+            off-the-shelves mark, so people can still see it existed. Everyone
+            who already bought it keeps it for good. Leave empty to sell it for
+            as long as it is live.
+            {%- if product.off_shelf_at and product.is_off_shelf() %}
+            <strong>Off the shelves since {{ product.off_shelf_display() }}.</strong>
+            {%- endif %}
+          </p>
+        </div>
       </div>
     </section>
 
@@ -329,6 +347,23 @@
               <span class="field-help" style="margin:0;">days</span>
             </div>
             <p class="field-help">Counted from each buyer’s own purchase date.</p>
+          </div>
+        </div>
+        <div class="form-row studio-modules__drip">
+          <div class="field">
+            <label for="drip_starts_date">Open module 1 on</label>
+            <div class="studio-accent-row">
+              <input type="date" id="drip_starts_date" name="drip_starts_date"
+                     value="{{ product.drip_starts_at|localtime('%Y-%m-%d') if product.drip_starts_at else '' }}">
+              <input type="time" id="drip_starts_time" name="drip_starts_time"
+                     value="{{ product.drip_starts_at|localtime('%H:%M') if product.drip_starts_at else '09:00' }}">
+            </div>
+            <p class="field-help">
+              Optional. Leave empty and everyone starts the day they buy. Put a
+              date here and module 1 opens then for everybody at once, with the
+              rest following at the interval above. Buy after that and whatever
+              has already been released is waiting for them.
+            </p>
           </div>
         </div>
         <div data-modules-list>

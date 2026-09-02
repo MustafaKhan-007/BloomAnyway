@@ -17,6 +17,19 @@ def unlock_at(started_at: datetime, number: int, interval_days: int) -> datetime
     return started_at + timedelta(days=steps * max(1, int(interval_days or 1)))
 
 
+def schedule_start(product, started_at: datetime | None) -> datetime | None:
+    """Where this product's schedule counts from for one buyer.
+
+    Normally each buyer's own purchase, so a course bought today starts today.
+    A product with a release date on it runs off the calendar instead: module
+    one opens that day for everybody, and the rest follow from there, which is
+    what a launch announced for a date needs. Buying afterwards then opens
+    whatever has already been released rather than starting the wait again.
+    """
+    fixed = getattr(product, "drip_starts_at", None) if product is not None else None
+    return fixed or started_at
+
+
 def module_rows(product, started_at, now=None) -> list[dict]:
     """This product's modules with their file and lock state for one buyer.
 
@@ -26,11 +39,12 @@ def module_rows(product, started_at, now=None) -> list[dict]:
     rows = product.modules() if product is not None else []
     if not rows:
         return []
-    dripped = product.is_dripped() and started_at is not None
+    anchor = schedule_start(product, started_at)
+    dripped = product.is_dripped() and anchor is not None
     now = now or utcnow()
     days = product.drip_days()
     for row in rows:
-        opens = unlock_at(started_at, row["number"], days) if dripped else None
+        opens = unlock_at(anchor, row["number"], days) if dripped else None
         unlocked = opens is None or opens <= now
         row["unlocked"] = unlocked
         row["unlock_at"] = None if unlocked else opens
@@ -42,10 +56,10 @@ def module_rows(product, started_at, now=None) -> list[dict]:
 def asset_unlocked(product, asset, started_at, now=None) -> bool:
     """False only for a file pinned to a module this buyer hasn't reached yet."""
     number = getattr(asset, "module_index", None)
-    if (not number or product is None or not product.is_dripped()
-            or started_at is None):
+    anchor = schedule_start(product, started_at)
+    if not number or product is None or not product.is_dripped() or anchor is None:
         return True
-    return unlock_at(started_at, number, product.drip_days()) <= (now or utcnow())
+    return unlock_at(anchor, number, product.drip_days()) <= (now or utcnow())
 
 
 def next_locked(rows: list[dict]) -> dict | None:
