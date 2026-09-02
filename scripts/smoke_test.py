@@ -480,7 +480,7 @@ with app.app_context():
         mime="application/pdf",
         kind="pdf",
         size=12,
-        data=b"%PDF-1.4 fake",
+        data=b"%PDF-1.4 fake\n%%EOF\n",
         sort_order=0,
     )
     db.session.add(asset)
@@ -578,7 +578,7 @@ with app.app_context():
     shop_dir = current_app.config["SHOP_FILES_DIR"]
     key = "quiet-guide.pdf"
     Path(shop_dir).mkdir(parents=True, exist_ok=True)
-    (Path(shop_dir) / key).write_bytes(b"%PDF-1.4 shop-file")
+    (Path(shop_dir) / key).write_bytes(b"%PDF-1.4 shop-file\n%%EOF\n")
     owned = ShopPurchase(
         lemon_squeezy_order_id="FILE-1", customer_email="newperson@example.com",
         user_id=known_id, product_name="Self Hosted Guide", file_key=key,
@@ -592,7 +592,7 @@ with app.app_context():
     owned_id = owned.id
 r = client.get(f"/account/shop/{owned_id}/download")
 ok("Owner can download self-hosted shop file",
-   r.status_code == 200 and r.get_data() == b"%PDF-1.4 shop-file")
+   r.status_code == 200 and r.get_data() == b"%PDF-1.4 shop-file\n%%EOF\n")
 r = buyer_client.get(f"/account/shop/{owned_id}/download")
 ok("Non-owner blocked from shop file download", r.status_code == 404)
 
@@ -5045,10 +5045,10 @@ r = admin.post(
     data=dict(_drip_fields, **{
         "mod1_title": "Week one",
         "mod1_desc": "Start here",
-        "mod1_file": (BytesIO(b"%PDF-1.4 module one"), "week-one.pdf"),
+        "mod1_file": (BytesIO(b"%PDF-1.4 module one\n%%EOF\n"), "week-one.pdf"),
         "mod2_title": "Week two",
         "mod2_desc": "Keep going",
-        "mod2_file": (BytesIO(b"%PDF-1.4 module two"), "week-two.pdf"),
+        "mod2_file": (BytesIO(b"%PDF-1.4 module two\n%%EOF\n"), "week-two.pdf"),
     }),
     content_type="multipart/form-data",
     follow_redirects=True,
@@ -5371,7 +5371,7 @@ r = admin.post(
         "mod2_desc": "Keep going",
         "mod3_title": "Week three",
         "mod3_desc": "Look back",
-        "mod3_file": (BytesIO(b"%PDF-1.4 module three"), "week-three.pdf"),
+        "mod3_file": (BytesIO(b"%PDF-1.4 module three\n%%EOF\n"), "week-three.pdf"),
     }),
     content_type="multipart/form-data",
     follow_redirects=True,
@@ -5416,7 +5416,7 @@ r = admin.post(
             "mod3_title": "Week three", "mod3_desc": "Look back",
         }).items(),
         ("mod1_file", (BytesIO(b"\x00\x00\x00\x18ftypmp42 lesson"), "lesson.mp4")),
-        ("mod1_file", (BytesIO(b"%PDF-1.4 worksheet"), "worksheet.pdf")),
+        ("mod1_file", (BytesIO(b"%PDF-1.4 worksheet\n%%EOF\n"), "worksheet.pdf")),
         ("mod1_text_title", "Before you start"),
         ("mod1_text_body", "Read this **first**, then press play."),
         ("mod1_text_title", "A note on pacing"),
@@ -5546,6 +5546,55 @@ r = app.test_client().post(f"/admin/products/{drip_prod_id}/uploads/begin",
                            json={"filename": "sneaky.mp4", "size": 10})
 ok("Only owners can start an upload", r.status_code in (302, 401, 403, 404))
 
+# A PDF that arrives short still saves and still looks like a file in Studio.
+# The breakage only shows up later, to a buyer, as a reader that won't open it,
+# so it is turned away while somebody can still do something about it.
+r = admin.post(
+    f"/admin/products/{drip_prod_id}/assets",
+    data={"asset": (BytesIO(b"%PDF-1.4 whole\n%%EOF\n"), "whole.pdf")},
+    content_type="multipart/form-data", follow_redirects=True)
+with app.app_context():
+    ok("A PDF that is all there is taken",
+       any(a.filename == "whole.pdf"
+           for a in db.session.get(Product, drip_prod_id).assets))
+r = admin.post(
+    f"/admin/products/{drip_prod_id}/assets",
+    data={"asset": (BytesIO(b"%PDF-1.4 cut off here"), "short.pdf")},
+    content_type="multipart/form-data", follow_redirects=True)
+_short_body = r.get_data(as_text=True)
+with app.app_context():
+    ok("One that stops before its end marker is refused, and said so plainly",
+       not any(a.filename == "short.pdf"
+               for a in db.session.get(Product, drip_prod_id).assets)
+       and "cut short" in _short_body, "it was accepted")
+r = admin.post(
+    f"/admin/products/{drip_prod_id}/assets",
+    data={"asset": (BytesIO(b"not a pdf at all"), "fake-pdf.pdf")},
+    content_type="multipart/form-data", follow_redirects=True)
+with app.app_context():
+    ok("And so is a file only calling itself one",
+       not any(a.filename == "fake-pdf.pdf"
+               for a in db.session.get(Product, drip_prod_id).assets))
+    from app.services import assets as _assets_svc
+    for _a in list(db.session.get(Product, drip_prod_id).assets):
+        if _a.filename == "whole.pdf":
+            _assets_svc.delete_file(_a)
+            db.session.delete(_a)
+    db.session.commit()
+
+# When a PDF still won't open, the reader has to say why and leave a way in.
+_reader_js = client.get("/static/js/course-reader.js").get_data(as_text=True)
+ok("The reader names what went wrong instead of one blanket sentence",
+   all(word in _reader_js for word in
+       ("PasswordException", "InvalidPDFException", "MissingPDFException")),
+   "no per-cause messages")
+ok("And offers to hand the file to the browser's own reader",
+   "Open it in a new tab instead" in _reader_js)
+ok("A LiveCycle form is recognised rather than drawn blank",
+   "isPureXfa" in _reader_js and "enableXfa" in _reader_js)
+ok("Why a form's boxes didn't draw is left in the console, not swallowed",
+   "form fields could not be drawn" in _reader_js)
+
 # A lesson added in the editor but not saved yet doesn't exist as far as the
 # product is concerned. A file pinned to it used to belong to no lesson and no
 # module intro, so it showed nowhere: not to the buyer, and not to the owner,
@@ -5629,7 +5678,7 @@ r = admin.post("/admin/products/new", data=_MultiDict([
     ("mod1_lesson_title", "Lesson one"), ("mod1_lesson_desc", "first"),
     ("mod1_lesson_title", "Lesson two"), ("mod1_lesson_desc", "second"),
     ("mod1_lesson1_file", (BytesIO(b"\x89PNG\r\n\x1a\n" + b"x" * 64), "diagram.png")),
-    ("mod1_lesson2_file", (BytesIO(b"%PDF-1.4 handout"), "handout.pdf")),
+    ("mod1_lesson2_file", (BytesIO(b"%PDF-1.4 handout\n%%EOF\n"), "handout.pdf")),
 ]), content_type="multipart/form-data", follow_redirects=True)
 ok("A new product can be created with files already in its lessons",
    r.status_code == 200)
@@ -5652,7 +5701,7 @@ r = admin.post(f"/admin/products/{_lu_id}/edit", data=_MultiDict([
     ("mod1_lesson_title", "Lesson one"), ("mod1_lesson_desc", "first"),
     ("mod1_lesson_title", ""), ("mod1_lesson_desc", ""),
     ("mod1_lesson_title", "Lesson two"), ("mod1_lesson_desc", "second"),
-    ("mod1_lesson3_file", (BytesIO(b"%PDF-1.4 extra"), "extra.pdf")),
+    ("mod1_lesson3_file", (BytesIO(b"%PDF-1.4 extra\n%%EOF\n"), "extra.pdf")),
 ]), content_type="multipart/form-data", follow_redirects=True)
 with app.app_context():
     _lessons = db.session.get(Product, _lu_id).modules()[0]["lessons"]
@@ -5665,7 +5714,7 @@ with app.app_context():
 # a file with no module is open from day one and stays reachable
 r = admin.post(
     f"/admin/products/{drip_prod_id}/assets",
-    data={"asset": (BytesIO(b"%PDF-1.4 welcome"), "welcome.pdf"),
+    data={"asset": (BytesIO(b"%PDF-1.4 welcome\n%%EOF\n"), "welcome.pdf"),
           "asset_title": "Read me first"},
     content_type="multipart/form-data", follow_redirects=True)
 ok("Studio takes a file that belongs to no module", r.status_code == 200)
@@ -5833,7 +5882,7 @@ admin.post(
     data=_MultiDict([
         ("title", "Doomed Course"), ("track", "building"), ("type", "guide"),
         ("mod1_title", "Only module"), ("mod1_desc", "one"),
-        ("mod1_file", (BytesIO(b"%PDF-1.4 doomed"), "doomed.pdf")),
+        ("mod1_file", (BytesIO(b"%PDF-1.4 doomed\n%%EOF\n"), "doomed.pdf")),
     ]),
     content_type="multipart/form-data", follow_redirects=True)
 with app.app_context():

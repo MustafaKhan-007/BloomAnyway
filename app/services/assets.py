@@ -147,6 +147,33 @@ def _looks_like_h5p(data: bytes, filename: str) -> bool:
         return False
 
 
+def _check_whole_pdf(path: str, kind: str) -> None:
+    """Refuse a PDF that stops before its end marker.
+
+    A cut-short upload still saves and still looks like a file in Studio; the
+    breakage only shows later, to a buyer, as a reader that won't open it. A
+    PDF ends with %%EOF, so a missing one means the upload didn't finish.
+    """
+    if kind != "pdf":
+        return
+    try:
+        size = os.path.getsize(path)
+        with open(path, "rb") as fh:
+            head = fh.read(5)
+            # Generous: readers look back about a kilobyte for the marker, so
+            # anything without one in four is beyond them as well as us.
+            fh.seek(max(0, size - 4096))
+            tail = fh.read()
+    except OSError:
+        return
+    if not head.startswith(b"%PDF-"):
+        raise AssetError("That doesn't look like a PDF inside — check the file "
+                         "and try again.")
+    if b"%%EOF" not in tail:
+        raise AssetError("That PDF arrived cut short, so it wouldn't open for "
+                         "anyone. Upload it again.")
+
+
 def describe(filename: str, mimetype: str | None) -> tuple[str, str, str]:
     """Return (safe filename, mime, kind) for an upload."""
     safe = secure_filename(filename or "") or "course-file"
@@ -243,6 +270,11 @@ def add_asset(
                 kind, mime = "h5p", "application/zip"
                 if not filename.lower().endswith(".h5p"):
                     filename = os.path.splitext(filename)[0] + ".h5p"
+    try:
+        _check_whole_pdf(disk_path(disk_name), kind)
+    except AssetError:
+        _safe_remove(disk_path(disk_name))
+        raise
     return _attach(product, title=title, filename=filename, mime=mime,
                    kind=kind, size=size, disk_name=disk_name,
                    module_index=module_index, lesson_index=lesson_index)
@@ -397,6 +429,13 @@ def finish_upload(product: Product, upload_id: str, filename: str, *,
                 kind, mime = "h5p", "application/zip"
                 if not name.lower().endswith(".h5p"):
                     name = os.path.splitext(name)[0] + ".h5p"
+    # A slice going missing is exactly how a large upload ends up short, so
+    # this is the last place to catch it before a buyer does.
+    try:
+        _check_whole_pdf(path, kind)
+    except AssetError:
+        _safe_remove(path)
+        raise
 
     os.makedirs(storage_dir(), exist_ok=True)
     disk_name = secrets.token_hex(16) + (os.path.splitext(name)[1].lower())

@@ -386,9 +386,63 @@
     pdfjsLib.GlobalWorkerOptions.workerSrc =
       "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
 
+    // Say what went wrong rather than "could not open this PDF", which is the
+    // same sentence whether the file is locked, half-uploaded, or opened fine
+    // and only failed to draw — and leaves nobody anything to act on.
+    function reportPdfProblem(err, stage) {
+      var name = (err && err.name) || "";
+      var says = stage === "draw"
+        ? "This PDF opened, but the page wouldn't draw."
+        : "We couldn't open this PDF here.";
+      if (stage === "xfa") {
+        says = "This is a LiveCycle form, which needs its own reader.";
+      }
+      if (name === "PasswordException") {
+        says = "This PDF is locked with a password, so it can't be opened here.";
+      } else if (name === "InvalidPDFException") {
+        says = "This file isn't a PDF we can read — it may not have finished "
+          + "uploading.";
+      } else if (name === "MissingPDFException"
+                 || name === "UnexpectedResponseException") {
+        says = "The file didn't come through. Check your connection and reload.";
+      }
+      if (statusEl) {
+        statusEl.textContent = says + " ";
+        var link = document.createElement("a");
+        link.href = fileUrl;
+        link.target = "_blank";
+        link.rel = "noopener";
+        link.textContent = "Open it in a new tab instead";
+        statusEl.appendChild(link);
+      }
+      if (window.console && console.error) {
+        console.error("reader: PDF " + stage + " failed —",
+                      name || "unknown error", (err && err.message) || "", err);
+      }
+    }
+
+    var opened = false;
     pdfjsLib
-      .getDocument({ url: fileUrl, withCredentials: true })
+      .getDocument({
+        url: fileUrl,
+        withCredentials: true,
+        // Forms built in LiveCycle are XFA, and without this PDF.js shows the
+        // "please wait" sheet such a file carries instead of the form.
+        enableXfa: true,
+        // The site's script policy has no unsafe-eval, so keep PDF.js on its
+        // own interpreter for PDF functions rather than building JS at runtime.
+        isEvalSupported: false,
+      })
       .promise.then(function (pdf) {
+        opened = true;
+        // A LiveCycle form keeps its real content in XFA, which needs a viewer
+        // of its own to draw. Rendering the page would give a blank sheet or
+        // the "please wait" notice baked into the file, so hand it over to the
+        // browser's own reader instead of pretending.
+        if (pdf.isPureXfa) {
+          reportPdfProblem({ name: "XfaOnly" }, "xfa");
+          return null;
+        }
         state.pdf = pdf;
         state.total = pdf.numPages || 0;
         setupFormSaving();
@@ -402,8 +456,8 @@
       .then(function () {
         saveProgress();
       })
-      .catch(function () {
-        if (statusEl) statusEl.textContent = "Could not open this PDF.";
+      .catch(function (err) {
+        reportPdfProblem(err, opened ? "draw" : "open");
       });
 
     function prefetchText(from, to) {
@@ -527,7 +581,15 @@
         });
         return layer.render({ viewport: flip, annotations: anns })
           .then(applySavedForm);
-      }).catch(function () { /* no forms / render issue — leave the page as is */ });
+      }).catch(function (err) {
+        // The page itself is drawn and readable, so this stays a note in the
+        // console rather than an error over the top of it — but it is the only
+        // trace of why a form's boxes never turned up.
+        if (window.console && console.warn) {
+          console.warn("reader: form fields could not be drawn —",
+                       (err && err.name) || "", (err && err.message) || "", err);
+        }
+      });
     }
 
     /* Each form widget is a <section data-annotation-id> with one control; the
