@@ -3,6 +3,33 @@
 
 {% block content %}
 <div class="studio-dash studio-dash-exact">
+  {% if storage and storage.missing %}
+  <div class="admin-panel studio-card studio-alarm">
+    <h2 style="margin-top: 0;">
+      {{ storage.missing }} uploaded file{{ '' if storage.missing == 1 else 's' }}
+      {{ 'is' if storage.missing == 1 else 'are' }} no longer on the server
+    </h2>
+    <p>
+      {{ 'It points' if storage.missing == 1 else 'They point' }} at bytes that
+      aren't at <code>{{ storage.dir }}</code> any more, so
+      {{ 'it' if storage.missing == 1 else 'they' }} won't open for anyone who
+      bought them.
+      {% if storage.swapped %}
+      The disk being written to now isn't the one that held them, so they went
+      with a restart rather than with anything anyone did here.
+      {% endif %}
+    </p>
+    <p class="field-help" style="margin: 0;">
+      {% if storage.swapped %}
+      Check that a persistent disk is attached to the service and mounted so
+      that path sits inside it. Until it is, anything uploaded will keep
+      disappearing on the next deploy.
+      {% endif %}
+      The files themselves need uploading again; each one is marked in its
+      product so you can see which.
+    </p>
+  </div>
+  {% endif %}
   <div class="page-head studio-dash__head">
     <div>
       <h1>Dashboard</h1>

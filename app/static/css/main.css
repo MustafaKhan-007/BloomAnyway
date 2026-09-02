@@ -9483,6 +9483,12 @@ a.at-handle:hover { text-decoration: underline; }
 .module-items__item { display: grid; gap: 8px; justify-items: start; }
 .module-items__item > * { width: 100%; }
 .module-items__add { width: auto; }
+/* Something that needs the owner's attention before anything else on a page. */
+.studio-alarm {
+  border-color: rgba(190, 72, 60, 0.45);
+  background: rgba(190, 72, 60, 0.07);
+}
+.studio-alarm h2 { color: #8c2f24; }
 .module-items__gone {
   margin: 4px 0 0; padding: 7px 10px; border-radius: 8px;
   background: rgba(190, 72, 60, 0.1);

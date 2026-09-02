@@ -173,9 +173,16 @@ def dashboard():
                         datetime.utcnow().isoformat(timespec="seconds"))
         pay.maybe_sweep_cancel_flags()
     from ..main.routes import CHALLENGE_ENROLL_URL
+    from ..services import storage_health
+    try:
+        storage = storage_health.check()
+    except Exception:
+        log.exception("dashboard: storage check failed")
+        storage = {"wiped": False}
     return render_template(
         "admin/dashboard.html",
         challenge_enroll_url=CHALLENGE_ENROLL_URL,
+        storage=storage,
         today_quote=quotes_service.quote_for(today),
         tomorrow_quote=quotes_service.quote_for(today + timedelta(days=1)),
         cards=stats.dashboard_cards(),

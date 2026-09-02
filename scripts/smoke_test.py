@@ -6097,6 +6097,50 @@ ok("And opening one shows the whole of it",
    "-webkit-line-clamp: 4" in _css_clamp
    and ".is-clamped.is-open" in _css_clamp)
 
+# A disk that isn't really persistent behaves like a working one until the
+# next restart, when it comes back empty. Leaving a marker on it and
+# remembering that marker turns that into something Studio can state.
+with app.app_context():
+    from app.services import storage_health as _sh
+    _first = _sh.check()
+    ok("A healthy disk raises nothing",
+       _first["checked"] and not _first["swapped"] and _first["missing"] == 0,
+       f"got {_first}")
+    _lost2 = ProductAsset.query.filter(ProductAsset.disk_name.isnot(None)).first()
+    _path2 = _assets_svc.disk_path(_lost2.disk_name)
+    _kept2 = open(_path2, "rb").read()
+    _os.remove(_path2)
+    _gone_state = _sh.check()
+    ok("A file that has gone is counted",
+       _gone_state["missing"] >= 1, f"got {_gone_state}")
+
+_alarm = admin.get("/admin", follow_redirects=True).get_data(as_text=True)
+ok("Studio says so on the dashboard, not only on the file",
+   "no longer on the server" in _alarm, "no warning")
+ok("And keeps saying it while it is still true",
+   "no longer on the server"
+   in admin.get("/admin", follow_redirects=True).get_data(as_text=True))
+with app.app_context():
+    open(_path2, "wb").write(_kept2)
+ok("Going quiet once the files are back",
+   "no longer on the server"
+   not in admin.get("/admin", follow_redirects=True).get_data(as_text=True))
+
+with app.app_context():
+    from app.services.settings import get_setting as _gs, set_setting as _ss
+    _mark = _sh._read_marker()
+    ok("The disk is marked so a different one can be told apart",
+       bool(_mark) and _gs(_sh.SETTING_KEY, "") == _mark,
+       f"marker {_mark!r} vs remembered {_gs(_sh.SETTING_KEY, '')!r}")
+    _os.remove(_os.path.join(app.config["COURSE_FILES_DIR"], _sh.MARKER_NAME))
+    _os.remove(_path2)
+    _swapped = _sh.check()
+    ok("A disk with no marker of its own reads as a different one",
+       _swapped["swapped"], f"got {_swapped}")
+    open(_path2, "wb").write(_kept2)
+    _ss(_sh.SETTING_KEY, _sh._read_marker())
+    db.session.commit()
+
 # A guide should arrive, not wait to be found: the receipt carries the PDF.
 from werkzeug.datastructures import FileStorage as _FileStorage  # noqa: E402
 with app.app_context():
