@@ -57,6 +57,11 @@ def process_and_save(key: str, file_storage) -> str:
         raise SiteImageError("That file was empty.")
     if len(raw) > MAX_UPLOAD_BYTES:
         raise SiteImageError("Keep site images under 8 MB.")
+    return _store(key, raw)
+
+
+def _store(key: str, raw: bytes) -> str:
+    """Crop to the slot's shape, shrink, and keep it in the database."""
     try:
         img = Image.open(io.BytesIO(raw))
         img = ImageOps.exif_transpose(img)
@@ -83,6 +88,38 @@ def process_and_save(key: str, file_storage) -> str:
         row.updated_at = utcnow()
     db.session.commit()
     return public_path(key)
+
+
+def save_from_url(key: str, url: str) -> str:
+    """Fetch a picture from elsewhere and keep our own copy of it.
+
+    Instagram hands out photo links that are signed and time-limited, so one
+    pointed at rather than kept works on the day it is set and quietly turns
+    into a broken circle weeks later. Returns "" if it can't be fetched, which
+    the caller should treat as having no picture at all.
+    """
+    import logging
+
+    import requests
+
+    if key not in SITE_IMAGE_KEYS or not (url or "").startswith("http"):
+        return ""
+    try:
+        resp = requests.get(url, timeout=6, stream=True, headers={
+            "User-Agent": "Mozilla/5.0 (compatible; BloomAnywayBot/1.0)",
+        })
+        if resp.status_code != 200:
+            return ""
+        raw = resp.raw.read(MAX_UPLOAD_BYTES + 1, decode_content=True)
+    except Exception:
+        logging.getLogger(__name__).info("site image: could not fetch %s", url)
+        return ""
+    if not raw or len(raw) > MAX_UPLOAD_BYTES:
+        return ""
+    try:
+        return _store(key, raw)
+    except SiteImageError:
+        return ""
 
 
 def clear(key: str) -> None:

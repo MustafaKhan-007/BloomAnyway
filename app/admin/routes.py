@@ -1586,6 +1586,18 @@ _SPOTLIGHT_KEYS = _SPOTLIGHT_FORM_KEYS + (
 _IMAGE_URL_KEYS = ("portrait_url", "hero_image_url")
 
 
+#: Hosts that hand out photo links good for a while rather than for good.
+_TEMPORARY_PHOTO_HOSTS = ("cdninstagram.com", "fbcdn.net")
+
+
+def _is_temporary_photo_link(url: str | None) -> bool:
+    """True for a photo address that will stop working on its own."""
+    text = (url or "").strip().lower()
+    if not text.startswith("http"):
+        return False
+    return any(host in text for host in _TEMPORARY_PHOTO_HOSTS)
+
+
 def _spotlight_end_date(kind: str, raw: str, filled: bool):
     """Run-until date for a slot: the owner's date, else the default run."""
     from ..services import spotlight as spot
@@ -1653,7 +1665,7 @@ def spotlight():
         handle = instagram_handle(values.get("creator_instagram") or "")
         values["creator_instagram"] = handle
         from ..services.site_images import (SiteImageError, clear as clear_site_image,
-                                            process_and_save)
+                                            process_and_save, save_from_url)
         try:
             if request.form.get("clear_creator"):
                 clear_site_image("creator")
@@ -1664,11 +1676,17 @@ def spotlight():
         except SiteImageError as exc:
             flash(str(exc), "error")
             return redirect(url_for("admin.spotlight"))
+        # A link straight to Instagram's photo is signed and runs out, leaving
+        # a broken circle on the home page weeks later. Anything pointing there
+        # is dropped, and a fresh one is copied to us rather than linked.
+        if _is_temporary_photo_link(values.get("creator_image_url")):
+            values["creator_image_url"] = ""
         if handle and (not values.get("creator_image_url")
                        or not values.get("creator_blurb")):
             preview = fetch_instagram_preview(handle)
             if preview.get("image") and not values.get("creator_image_url"):
-                values["creator_image_url"] = preview["image"]
+                values["creator_image_url"] = save_from_url("creator",
+                                                            preview["image"])
             if preview.get("blurb") and not values.get("creator_blurb"):
                 values["creator_blurb"] = preview["blurb"]
 

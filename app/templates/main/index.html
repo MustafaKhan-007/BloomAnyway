@@ -271,7 +271,8 @@
         <div class="spotlight-creator">
           {% if creator_of_month.image %}
           <img class="spotlight-creator__photo" src="{{ creator_of_month.image }}"
-               alt="{{ creator_of_month.name }}" width="104" height="104" loading="lazy">
+               alt="{{ creator_of_month.name }}" width="104" height="104" loading="lazy"
+               data-photo-fallback="&#127803;">
           {% else %}
           <span class="spotlight-creator__photo spotlight-creator__photo--ph" aria-hidden="true">&#127803;</span>
           {% endif %}

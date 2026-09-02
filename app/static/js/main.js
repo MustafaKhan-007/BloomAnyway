@@ -75,6 +75,23 @@
     });
   }
 
+  /* ---- a picture that won't load leaves a mark, not its own alt text ---- */
+  // Error events don't bubble, so this listens on the way down. Swapping the
+  // image for the placeholder it would have had keeps the circle a circle
+  // instead of a ring of cut-off words.
+  document.addEventListener("error", function (e) {
+    var img = e.target;
+    if (!img || img.tagName !== "IMG") return;
+    var mark = img.getAttribute("data-photo-fallback");
+    if (mark === null || !img.parentNode) return;
+    var base = (img.className || "").split(/\s+/)[0];
+    var stand = document.createElement("span");
+    stand.className = base ? base + " " + base + "--ph" : "";
+    stand.setAttribute("aria-hidden", "true");
+    stand.textContent = mark;
+    img.parentNode.replaceChild(stand, img);
+  }, true);
+
   /* ---- password show/hide toggles ---- */
   document.querySelectorAll(".password-toggle").forEach(function (btn) {
     btn.addEventListener("click", function () {

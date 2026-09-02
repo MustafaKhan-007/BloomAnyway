@@ -5704,6 +5704,35 @@ with app.app_context():
     _svc._purge_product(db.session.get(Product, _order_id))
     db.session.commit()
 
+# Instagram hands out photo links that are signed and run out, so one pointed
+# at rather than copied works the day it is set and turns into a broken circle
+# on the home page weeks later.
+from app.admin.routes import _is_temporary_photo_link  # noqa: E402
+
+ok("A photo link that will expire is recognised",
+   _is_temporary_photo_link(
+       "https://scontent-lhr8-1.cdninstagram.com/v/t51.2885-19/x.jpg?oe=68")
+   and _is_temporary_photo_link("https://scontent.xx.fbcdn.net/v/x.jpg"))
+ok("And our own stored photo is not mistaken for one",
+   not _is_temporary_photo_link("/media/site/creator")
+   and not _is_temporary_photo_link("") and not _is_temporary_photo_link(None))
+with app.app_context():
+    from app.services import settings as _settings_svc
+    _settings_svc.set_setting("creator_name", "Spotlit")
+    _settings_svc.set_setting("creator_instagram", "spotlit")
+    _settings_svc.set_setting(
+        "creator_image_url",
+        "https://scontent-lhr8-1.cdninstagram.com/v/t51/gone.jpg?oe=1")
+    db.session.commit()
+_home = client.get("/").get_data(as_text=True)
+_photo = re.search(r'<img class="spotlight-creator__photo"[^>]*>', _home)
+ok("A picture that fails leaves the mark it would have had, not its alt text",
+   bool(_photo) and "data-photo-fallback" in _photo.group(0),
+   "no fallback on the spotlight photo")
+_main_js = client.get("/static/js/main.js").get_data(as_text=True)
+ok("Which the page swaps in when the picture doesn't arrive",
+   "data-photo-fallback" in _main_js and '"error"' in _main_js)
+
 # When a PDF still won't open, the reader has to say why and leave a way in.
 _reader_js = client.get("/static/js/course-reader.js").get_data(as_text=True)
 ok("The reader names what went wrong instead of one blanket sentence",
