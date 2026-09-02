@@ -8,6 +8,7 @@ import hmac
 import io
 import json
 import os
+import pathlib
 import re
 import sys
 import tempfile
@@ -2833,7 +2834,7 @@ def _notices_strip(html):
 _hub_html = _notices_strip(client.get("/").get_data(as_text=True))
 ok("A tip and a reel review from the same day both reach the home page",
    "New in the Content Hub" in _hub_html and "Batch a week of hooks" in _hub_html
-   and "New reel review: <strong>Loved your pacing</strong>" in _hub_html)
+   and "New reel review" in _hub_html and "Loved your pacing" in _hub_html)
 ok("Each card goes to its own piece",
    f'href="/watch/{text_tip_id}"' in _hub_html
    and f'href="/watch/reviews/{pub_id}"' in _hub_html)
@@ -2845,8 +2846,7 @@ with app.app_context():
 _hub_html = _notices_strip(client.get("/").get_data(as_text=True))
 ok("A tip past its own 24 hours drops off on its own",
    "Batch a week of hooks" not in _hub_html)
-ok("And takes nothing else with it",
-   "New reel review: <strong>Loved your pacing</strong>" in _hub_html)
+ok("And takes nothing else with it", "Loved your pacing" in _hub_html)
 with app.app_context():
     db.session.get(Video, text_tip_id).created_at = _was
     db.session.commit()
@@ -2882,6 +2882,16 @@ ok("The kind is said once over the titles, not repeated per title",
    f"said it {_busy.count('New in the Content Hub')} time(s)")
 ok("And each title is still its own link",
    all(f'href="/watch/{i}"' in _busy for i in _extra_ids))
+ok("Everything landing today shares one card, not one apiece",
+   _busy.count("hero-newvideo--many") == 1
+   and _busy.count('class="hero-newvideo"') == 0,
+   f"got {_busy.count('hero-newvideo')} cards")
+ok("A kind per line inside it",
+   _busy.count("hero-newvideo__group") == 2)
+_css = client.get("/static/css/main.css").get_data(as_text=True)
+ok("With corners rounded like the notices beside it, not into a pill",
+   re.search(r"\.hero-newvideo \{[^}]*border-radius: 16px", _css, re.S) is not None,
+   "still a full pill")
 with app.app_context():
     for _i in _extra_ids:
         db.session.delete(db.session.get(Video, _i))
@@ -4273,6 +4283,16 @@ _full_width_actions = [
 ]
 ok("On a phone the buttons get the whole card width, not the sliver beside the cover",
    bool(_full_width_actions), f"rules={_full_width_actions}")
+
+# "Page 12 of 248" is wider than the gap between the two buttons on a small
+# phone, and was being cut through the middle rather than given room.
+ok("The word Page steps aside on a phone rather than the count being cut",
+   ".reader__page-word" in css
+   and re.search(r"@media \(max-width: 420px\) \{\s*\.reader__page-word", css)
+   is not None,
+   "nothing gives way on a narrow screen")
+ok("But it is still there to be read aloud",
+   "clip: rect(0, 0, 0, 0)" in css)
 
 # Putting the page back where someone left it runs a few times while the page
 # settles. On a phone those land after a tap, and scrolling out from under a
@@ -5909,6 +5929,31 @@ ok("A LiveCycle form is recognised rather than drawn blank",
    "isPureXfa" in _reader_js and "enableXfa" in _reader_js)
 ok("Why a form's boxes didn't draw is left in the console, not swallowed",
    "form fields could not be drawn" in _reader_js)
+ok("A file that isn't there says so, rather than blaming the connection",
+   "isn't on the server any more" in _reader_js
+   and "MissingPDFException" in _reader_js)
+
+# A file can lose its bytes — an upload that never finished, storage moved.
+# Nothing showed it: Studio listed the file and the buyer got a reader that
+# wouldn't open, with no way for either to tell why.
+with app.app_context():
+    _lost = ProductAsset.query.filter(ProductAsset.disk_name.isnot(None)).first()
+    if _lost is not None:
+        _path = _assets_svc.disk_path(_lost.disk_name)
+        _keep = open(_path, "rb").read()
+        ok("A file that is where it should be isn't flagged",
+           not _lost.file_missing())
+        _os.remove(_path)
+        ok("One whose bytes have gone is",
+           db.session.get(ProductAsset, _lost.id).file_missing())
+        _lost_product, _lost_name = _lost.product_id, _lost.filename
+        open(_path, "wb").write(_keep)
+        ok("And it is not flagged again once it is back",
+           not db.session.get(ProductAsset, _lost.id).file_missing())
+ok("Studio has somewhere to say it, on the file itself",
+   "module-items__gone" in client.get("/static/css/main.css").get_data(as_text=True)
+   and "file_missing()" in pathlib.Path(
+       "app/templates/admin/product_form.html").read_text())
 
 # A lesson added in the editor but not saved yet doesn't exist as far as the
 # product is concerned. A file pinned to it used to belong to no lesson and no

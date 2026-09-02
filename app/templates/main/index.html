@@ -24,27 +24,32 @@
       {% endif %}
       {% endfor %}
       {# Everything published to the hub today, each staying its own 24 hours. #}
-      {% for group in hub_drops %}
-      {% if group['items']|length == 1 %}
-      <a class="hero-newvideo" href="{{ group['items'][0].url }}">
+      {% if hub_drops %}
+      {% set lone = hub_drops|length == 1 and hub_drops[0]['items']|length == 1 %}
+      {% if lone %}
+      <a class="hero-newvideo" href="{{ hub_drops[0]['items'][0].url }}">
         <span class="hero-newvideo__spark" aria-hidden="true">&#9654;</span>
-        <span class="hero-newvideo__text">{{ group.label }}: <strong>{{ group['items'][0].title }}</strong></span>
+        <span class="hero-newvideo__text">{{ hub_drops[0].label }}: <strong>{{ hub_drops[0]['items'][0].title }}</strong></span>
       </a>
       {% else %}
       <div class="hero-newvideo hero-newvideo--many">
-        <span class="hero-newvideo__head">
-          <span class="hero-newvideo__spark" aria-hidden="true">&#9654;</span>
-          <span class="hero-newvideo__text">{{ group.label }}</span>
-        </span>
-        <span class="hero-newvideo__list">
-          {% for item in group['items'] %}
-          <a class="hero-newvideo__one" href="{{ item.url }}">{{ item.title }}</a>
-          {%- if not loop.last %}<span class="hero-newvideo__sep" aria-hidden="true">&middot;</span>{% endif %}
-          {% endfor %}
-        </span>
+        {% for group in hub_drops %}
+        <div class="hero-newvideo__group">
+          <span class="hero-newvideo__head">
+            <span class="hero-newvideo__spark" aria-hidden="true">&#9654;</span>
+            <span class="hero-newvideo__text">{{ group.label }}</span>
+          </span>
+          <span class="hero-newvideo__list">
+            {% for item in group['items'] %}
+            <a class="hero-newvideo__one" href="{{ item.url }}">{{ item.title }}</a>
+            {%- if not loop.last %}<span class="hero-newvideo__sep" aria-hidden="true">&middot;</span>{% endif %}
+            {% endfor %}
+          </span>
+        </div>
+        {% endfor %}
       </div>
       {% endif %}
-      {% endfor %}
+      {% endif %}
     </div>
   </div>
   {% endif %}

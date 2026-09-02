@@ -1001,6 +1001,23 @@ class ProductAsset(db.Model):
         backref=db.backref("parent", remote_side=[id]),
     )
 
+    def file_missing(self) -> bool:
+        """True when the row is here but the bytes behind it are not.
+
+        A file can go astray — an upload that never finished, storage moved.
+        Nothing showed it: Studio listed the file as normal and the buyer got
+        a reader that wouldn't open, with no way for either to tell why.
+        """
+        if not self.disk_name:
+            return False
+        import os
+
+        from .services.assets import disk_path
+        try:
+            return not os.path.isfile(disk_path(self.disk_name))
+        except Exception:
+            return True
+
     def display_title(self):
         return self.title or self.filename
 

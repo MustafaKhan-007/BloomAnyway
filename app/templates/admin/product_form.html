@@ -31,6 +31,12 @@
     <span class="module-items__size">{{ item.size_display() }}</span>
     <button class="btn btn--quiet btn--sm" type="submit" form="del-asset-{{ item.id }}">Remove</button>
   </div>
+  {% if item.file_missing() %}
+  <p class="module-items__gone">
+    This file isn’t on the server any more, so it won’t open for anyone who
+    bought this. Remove it and upload it again.
+  </p>
+  {% endif %}
   {% if item.is_text() %}
   <div class="module-notes">{{ extract_fields(item) }}</div>
   {% else %}

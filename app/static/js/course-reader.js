@@ -402,8 +402,10 @@
       } else if (name === "InvalidPDFException") {
         says = "This file isn't a PDF we can read — it may not have finished "
           + "uploading.";
-      } else if (name === "MissingPDFException"
-                 || name === "UnexpectedResponseException") {
+      } else if (name === "MissingPDFException") {
+        says = "This file isn't on the server any more, so there's nothing to "
+          + "open. It needs uploading again in Studio.";
+      } else if (name === "UnexpectedResponseException") {
         says = "The file didn't come through. Check your connection and reload.";
       }
       if (statusEl) {

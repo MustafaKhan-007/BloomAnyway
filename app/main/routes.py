@@ -1107,9 +1107,16 @@ def course_file(purchase_id, asset_id):
 
     product = reader_svc.catalog_product_for_purchase(purchase)
     asset = db.session.get(ProductAsset, asset_id)
+    # Every refusal here reaches the reader as the same blank 404, so each one
+    # says which it was — otherwise a file that won't open could be any of four
+    # different problems and nothing on the server distinguishes them.
     if product is None or asset is None or asset.product_id != product.id:
+        log.info("course file %s refused: no such file on purchase %s",
+                 asset_id, purchase_id)
         abort(404)
     if not drip_svc.asset_unlocked(product, asset, purchase.purchased_at):
+        log.info("course file %s refused: module %s hasn't opened for purchase %s",
+                 asset_id, asset.module_index, purchase_id)
         abort(404)
     from ..services import assets as asset_svc
 

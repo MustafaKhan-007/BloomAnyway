@@ -288,7 +288,7 @@
         <div class="reader__footer" id="reader-toolbar" {% if asset.kind != 'pdf' %}hidden{% endif %}>
           <button type="button" class="btn reader__nav-btn reader__nav-btn--ghost" id="reader-prev">← Previous</button>
           <label class="reader__page-field">
-            Page
+            <span class="reader__page-word">Page</span>
             <input type="number" id="reader-page" min="1" value="{{ start_page }}" inputmode="numeric">
             of <span id="reader-total">—</span>
           </label>
