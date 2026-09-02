@@ -4165,6 +4165,24 @@ _hidden_rules = [
 ok("And is the only place that has to say so",
    _hidden_rules == ["[hidden]"], f"rules={_hidden_rules}")
 
+# A grid item stretches to its row unless told otherwise, and a stretched
+# height combined with an aspect ratio decides the width — which is how a
+# library cover grew past its own column and sat over the title and buttons.
+_photo_cover = re.search(
+    r"\.lib-card__cover--photo \{([^}]*)\}", re.sub(r"/\*.*?\*/", "", css, flags=re.S))
+ok("A library cover is sized by its column, not by how tall the card is",
+   bool(_photo_cover) and "aspect-ratio" in _photo_cover.group(1)
+   and "align-self: start" in _photo_cover.group(1),
+   f"rule={_photo_cover.group(1).strip() if _photo_cover else None}")
+_full_width_actions = [
+    " ".join(sel.split())
+    for sel, decls in re.findall(r"([^{}]+)\{([^{}]*)\}",
+                                 re.sub(r"/\*.*?\*/", "", css, flags=re.S))
+    if ".lib-card__actions" in sel and "grid-column: 1 / -1" in decls
+]
+ok("On a phone the buttons get the whole card width, not the sliver beside the cover",
+   bool(_full_width_actions), f"rules={_full_width_actions}")
+
 for path, needle in (("/privacy", "What we collect"),
                      ("/terms", "Full Bloom"),
                      ("/refunds", "14 days")):

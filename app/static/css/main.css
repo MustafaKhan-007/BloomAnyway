@@ -8431,6 +8431,12 @@ a.at-handle:hover { text-decoration: underline; }
   background: #1a1020;
   aspect-ratio: 3 / 4;
   min-height: 0;
+  /* Grid items stretch to the row by default, and with an aspect ratio the
+     stretched height decides the width: a tall card made the cover wider than
+     its column, so it sat over the title and the buttons. Sizing from the
+     column and letting the height follow keeps it in its own lane. */
+  align-self: start;
+  width: 100%;
 }
 .lib-card__cover-img {
   display: block;
@@ -8886,22 +8892,60 @@ a.at-handle:hover { text-decoration: underline; }
     box-shadow: inset 0 -3px 0 var(--plum-deep) !important;
   }
   .lib-card {
-    grid-template-columns: 92px 1fr;
-    gap: 14px;
+    grid-template-columns: 92px minmax(0, 1fr);
+    gap: 12px 14px;
     padding: 14px;
     border-radius: 16px;
     border: 1px solid rgba(61, 20, 49, 0.12);
     box-shadow: none;
     background: #fff;
   }
-  .lib-card__cover,
-  .lib-card__cover-img {
-    min-height: 124px;
+  /* The cover sits beside the title only. Progress and buttons run the whole
+     width underneath, because a phone leaves roughly 200px next to the cover
+     and two buttons don't read well in that. */
+  .lib-card__body {
+    display: contents;
+  }
+  .lib-card__top {
+    grid-column: 2;
+    min-width: 0;
+  }
+  .lib-card__progress,
+  .lib-card__actions {
+    grid-column: 1 / -1;
+  }
+  /* Both kinds of cover become the same tidy thumbnail, so a drawn one can't
+     tower over a photographed one and leave the card half empty. Scoped to the
+     shelf: the same classes draw the much larger cover preview in Studio. */
+  .lib-card > .lib-card__cover {
+    align-self: start;
+    aspect-ratio: 3 / 4;
+    min-height: 0;
     border-radius: 12px;
   }
-  .lib-card__cover--photo,
-  .lib-card__cover--photo .lib-card__cover-img {
+  /* A photograph fills its corner to the edge; only a drawn cover is inset. */
+  .lib-card > .lib-card__cover:not(.lib-card__cover--photo) {
+    padding: 12px 10px 10px;
+  }
+  .lib-card > .lib-card__cover .lib-card__cover-img {
     min-height: 0;
+    border-radius: 12px;
+  }
+  .lib-card > .lib-card__cover .lib-card__cover-title {
+    font-size: 0.82rem;
+    -webkit-line-clamp: 3;
+  }
+  .lib-card > .lib-card__cover .lib-card__cover-kind {
+    margin-top: 6px;
+    font-size: 10px;
+  }
+  .lib-card > .lib-card__cover .lib-card__cover-brand {
+    padding-top: 8px;
+    font-size: 10px;
+  }
+  .lib-card > .lib-card__cover .lib-card__bloom {
+    width: 58px; height: 66px;
+    bottom: 18px;
   }
   .lib-card__ring,
   .lib-card__meta,
@@ -8931,7 +8975,18 @@ a.at-handle:hover { text-decoration: underline; }
     background: var(--plum-deep);
   }
   .lib-card__actions {
-    margin-top: 12px;
+    margin-top: 0;
+    padding-top: 2px;
+    gap: 8px;
+  }
+  /* Share the row evenly rather than leaving one button stranded. */
+  .lib-card__btn {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 11px 12px;
+  }
+  .lib-card__wait {
+    flex: 1 1 100%;
   }
 
   /* ---- Reader: expandable page list ---- */
