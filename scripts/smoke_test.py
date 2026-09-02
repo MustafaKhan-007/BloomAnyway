@@ -2820,9 +2820,18 @@ with app.app_context():
 
 # Two things landing in the hub on one day both belong on the home page, and
 # each keeps its own day rather than sharing the newest one's.
-_hub_html = client.get("/").get_data(as_text=True)
-ok("A tip and a reel review from the same day stack on the home page",
-   "New in the Content Hub: <strong>Batch a week of hooks</strong>" in _hub_html
+def _notices_strip(html):
+    """Just the announcement strip — these titles appear further down too."""
+    start = html.find("home-hero__notices-inner")
+    if start < 0:
+        return ""
+    end = html.find("home-hero__strap", start)
+    return html[start:end if end > start else len(html)]
+
+
+_hub_html = _notices_strip(client.get("/").get_data(as_text=True))
+ok("A tip and a reel review from the same day both reach the home page",
+   "New in the Content Hub" in _hub_html and "Batch a week of hooks" in _hub_html
    and "New reel review: <strong>Loved your pacing</strong>" in _hub_html)
 ok("Each card goes to its own piece",
    f'href="/watch/{text_tip_id}"' in _hub_html
@@ -2832,9 +2841,9 @@ with app.app_context():
     _was = _aged.created_at
     _aged.created_at = utcnow() - timedelta(hours=25)
     db.session.commit()
-_hub_html = client.get("/").get_data(as_text=True)
+_hub_html = _notices_strip(client.get("/").get_data(as_text=True))
 ok("A tip past its own 24 hours drops off on its own",
-   "New in the Content Hub: <strong>Batch a week of hooks</strong>" not in _hub_html)
+   "Batch a week of hooks" not in _hub_html)
 ok("And takes nothing else with it",
    "New reel review: <strong>Loved your pacing</strong>" in _hub_html)
 with app.app_context():
@@ -2845,6 +2854,37 @@ with app.test_request_context("/"):
     ok("A busy day can't bury the hero — the strip is capped",
        len(_home_svc.content_hub_drops(limit=1)) == 1
        and _home_svc.MAX_DROPS >= 2)
+
+# Several of a kind on one day used to be a full-width bar apiece, saying "New
+# in the Content Hub" over and over. They share a row instead.
+with app.app_context():
+    _extra_tips = []
+    for _t in ("Hooks that land", "Filming in one take"):
+        _v = Video(title=_t, published=True, created_at=utcnow(),
+                   body="Some tip text.")
+        db.session.add(_v)
+        _extra_tips.append(_v)
+    db.session.commit()
+    _extra_ids = [_v.id for _v in _extra_tips]
+with app.test_request_context("/"):
+    _groups = _home_svc.content_hub_groups()
+    _tip_groups = [g for g in _groups if g["kind"] == "tip"]
+    ok("Tips landing together are gathered under one heading",
+       len(_tip_groups) == 1 and len(_tip_groups[0]["items"]) >= 2,
+       f"got {[(g['kind'], len(g['items'])) for g in _groups]}")
+    ok("However busy the day, the strip is one row per kind",
+       len(_groups) <= 2, f"got {len(_groups)} rows")
+_busy = _notices_strip(client.get("/").get_data(as_text=True))
+ok("The kind is said once over the titles, not repeated per title",
+   _busy.count("New in the Content Hub") == 1
+   and "Hooks that land" in _busy and "Filming in one take" in _busy,
+   f"said it {_busy.count('New in the Content Hub')} time(s)")
+ok("And each title is still its own link",
+   all(f'href="/watch/{i}"' in _busy for i in _extra_ids))
+with app.app_context():
+    for _i in _extra_ids:
+        db.session.delete(db.session.get(Video, _i))
+    db.session.commit()
 ok("Someone with no account isn't told about a hub they can't read",
    "New in the Content Hub"
    not in app.test_client().get("/").get_data(as_text=True))

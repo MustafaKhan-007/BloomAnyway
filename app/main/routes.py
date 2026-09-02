@@ -121,7 +121,7 @@ def _spotlight_context():
 def index():
     from ..services import homepage as home_svc
     # Only members hear about the hub, since only members can read it.
-    hub_drops = (home_svc.content_hub_drops()
+    hub_drops = (home_svc.content_hub_groups()
                  if getattr(current_user, "is_authenticated", False) else [])
     return render_template(
         "main/index.html",

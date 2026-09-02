@@ -53,6 +53,26 @@ def content_hub_drops(limit: int = MAX_DROPS) -> list[dict]:
     return drops[:limit]
 
 
+def content_hub_groups(limit: int = MAX_DROPS) -> list[dict]:
+    """The same drops, gathered by what they are.
+
+    Three things landing on one day used to be three full-width bars saying
+    "New in the Content Hub" twice over. Gathered like this the strip is two
+    rows at the very most, however busy the day, and each title is still its
+    own link.
+    """
+    groups: dict[str, dict] = {}
+    for drop in content_hub_drops(limit):
+        group = groups.get(drop["kind"])
+        if group is None:
+            group = {"kind": drop["kind"], "label": drop["label"],
+                     "at": drop["at"], "items": []}
+            groups[drop["kind"]] = group
+        group["items"].append({"title": drop["title"], "url": drop["url"]})
+        group["at"] = max(group["at"], drop["at"])
+    return sorted(groups.values(), key=lambda g: g["at"], reverse=True)
+
+
 def _active_product_listings():
     return (
         MarketplaceListing.query

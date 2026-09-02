@@ -2337,6 +2337,37 @@ html.is-page-loading { cursor: progress; }
 }
 .hero-newvideo__spark { font-size: 13px; }
 .hero-newvideo:hover { transform: translateY(-2px); box-shadow: var(--shadow-card-hover); }
+/* Several of a kind on one day share a row: the "New in the Content Hub" is
+   said once and each title stays its own link, so a busy day is two rows at
+   the very most instead of a bar apiece. */
+.hero-newvideo--many {
+  flex-direction: column; align-items: flex-start; gap: 3px;
+  padding: 9px 20px 11px; cursor: default;
+}
+.hero-newvideo--many:hover { transform: none; box-shadow: none; }
+.hero-newvideo__head { display: inline-flex; align-items: center; gap: 8px; }
+/* The kind is said once, over the titles, so the row reads as one thing. */
+.hero-newvideo--many .hero-newvideo__text {
+  font-size: 11px; font-weight: 800; letter-spacing: 0.09em;
+  text-transform: uppercase; opacity: 0.85;
+}
+.hero-newvideo--many .hero-newvideo__spark { font-size: 10px; opacity: 0.85; }
+.hero-newvideo__list {
+  display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 2px 9px;
+  min-width: 0;
+}
+.hero-newvideo__one {
+  color: #fff; font-weight: 700; text-decoration: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.4);
+}
+.hero-newvideo__one:hover { border-bottom-color: #fff; }
+.hero-newvideo__sep { opacity: 0.55; }
+@media (max-width: 640px) {
+  /* Too narrow to sit side by side, and the dots would be left dangling at
+     the end of each line, so they become a plain list under the one label. */
+  .hero-newvideo__list { flex-direction: column; align-items: flex-start; gap: 3px; }
+  .hero-newvideo__sep { display: none; }
+}
 
 /* membership gate cards in the community */
 .member-gate {

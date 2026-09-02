@@ -24,11 +24,26 @@
       {% endif %}
       {% endfor %}
       {# Everything published to the hub today, each staying its own 24 hours. #}
-      {% for drop in hub_drops %}
-      <a class="hero-newvideo" href="{{ drop.url }}">
+      {% for group in hub_drops %}
+      {% if group['items']|length == 1 %}
+      <a class="hero-newvideo" href="{{ group['items'][0].url }}">
         <span class="hero-newvideo__spark" aria-hidden="true">&#9654;</span>
-        <span class="hero-newvideo__text">{{ drop.label }}: <strong>{{ drop.title }}</strong></span>
+        <span class="hero-newvideo__text">{{ group.label }}: <strong>{{ group['items'][0].title }}</strong></span>
       </a>
+      {% else %}
+      <div class="hero-newvideo hero-newvideo--many">
+        <span class="hero-newvideo__head">
+          <span class="hero-newvideo__spark" aria-hidden="true">&#9654;</span>
+          <span class="hero-newvideo__text">{{ group.label }}</span>
+        </span>
+        <span class="hero-newvideo__list">
+          {% for item in group['items'] %}
+          <a class="hero-newvideo__one" href="{{ item.url }}">{{ item.title }}</a>
+          {%- if not loop.last %}<span class="hero-newvideo__sep" aria-hidden="true">&middot;</span>{% endif %}
+          {% endfor %}
+        </span>
+      </div>
+      {% endif %}
       {% endfor %}
     </div>
   </div>
