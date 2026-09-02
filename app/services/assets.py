@@ -28,15 +28,40 @@ _CHUNK = 1024 * 1024
 log = logging.getLogger(__name__)
 
 
+#: Ceiling for a file kept in the database rather than on a disk. Postgres
+#: will hold far more, but a course video does not belong in a row: it is read
+#: whole into memory to serve, and it travels with every backup.
+DB_MAX_BYTES = 32 * 1024 * 1024
+
+
+def in_database() -> bool:
+    """True when there is no files directory, so bytes live in the database.
+
+    A host without a persistent disk has nowhere durable to put a file: the
+    container's own filesystem looks fine until the next deploy and then comes
+    back empty. Leaving COURSE_FILES_DIR blank keeps files in Postgres, which
+    survives a deploy, at the cost of a much smaller ceiling.
+    """
+    return not (current_app.config.get("COURSE_FILES_DIR") or "").strip()
+
+
 def storage_dir() -> str:
     return current_app.config["COURSE_FILES_DIR"]
 
 
 def parts_dir() -> str:
+    # A part file only has to survive the upload itself, so with no disk it can
+    # sit in the system's temporary space and be read into the database at the
+    # end. That keeps the slice-by-slice uploader working either way.
+    if in_database():
+        import tempfile
+        return os.path.join(tempfile.gettempdir(), "bloom-course-parts")
     return os.path.join(storage_dir(), "parts")
 
 
 def max_upload_bytes() -> int:
+    if in_database():
+        return DB_MAX_BYTES
     return current_app.config["COURSE_UPLOAD_MAX_MB"] * 1024 * 1024
 
 
@@ -192,6 +217,18 @@ def receipt_files(product, *, budget: int = RECEIPT_MAX_BYTES,
     return out
 
 
+def _check_whole_bytes(raw: bytes, kind: str) -> None:
+    """The same cut-short check, for a file held in memory."""
+    if kind != "pdf":
+        return
+    if not raw.startswith(b"%PDF-"):
+        raise AssetError("That doesn't look like a PDF inside — check the file "
+                         "and try again.")
+    if b"%%EOF" not in raw[-4096:]:
+        raise AssetError("That PDF arrived cut short, so it wouldn't open for "
+                         "anyone. Upload it again.")
+
+
 def _check_whole_pdf(path: str, kind: str) -> None:
     """Refuse a PDF that stops before its end marker.
 
@@ -306,6 +343,22 @@ def add_asset(
     head = stream.read(_CHUNK)
     if not head:
         raise AssetError("That file was empty.")
+
+    if in_database():
+        raw = head + stream.read(DB_MAX_BYTES + 1 - len(head))
+        if len(raw) > DB_MAX_BYTES:
+            raise AssetError(
+                f"With no disk attached, files are kept in the database and "
+                f"have to stay under {DB_MAX_BYTES // (1024 * 1024)} MB.")
+        if ext in (".h5p", ".zip") and _looks_like_h5p(raw, filename):
+            kind, mime = "h5p", "application/zip"
+            if not filename.lower().endswith(".h5p"):
+                filename = os.path.splitext(filename)[0] + ".h5p"
+        _check_whole_bytes(raw, kind)
+        return _attach(product, title=title, filename=filename, mime=mime,
+                       kind=kind, size=len(raw), data=raw,
+                       module_index=module_index, lesson_index=lesson_index)
+
     disk_name, size = _store_stream(stream, head, MAX_BYTES, ext)
     # A zip only reveals itself as an H5P package from its central directory,
     # which sits at the end, so this has to wait until the file has landed.
@@ -386,7 +439,8 @@ def _clean_body(body: str) -> str:
 
 
 def _attach(product: Product, *, title, filename, mime, kind, size,
-            disk_name=None, body=None, module_index=None, lesson_index=None,
+            disk_name=None, data=None, body=None, module_index=None,
+            lesson_index=None,
             parent: ProductAsset | None = None) -> ProductAsset:
     asset = ProductAsset(
         product_id=product.id,
@@ -396,6 +450,7 @@ def _attach(product: Product, *, title, filename, mime, kind, size,
         kind=kind,
         size=size,
         disk_name=disk_name,
+        data=data,
         body=body,
         sort_order=_next_order(product, module_index, parent),
         module_index=module_index,
@@ -440,7 +495,7 @@ def append_chunk(upload_id: str, data: bytes) -> int:
     if os.path.getsize(path) + len(data) > max_upload_bytes():
         _safe_remove(path)
         raise AssetError(
-            f"That file is over {current_app.config['COURSE_UPLOAD_MAX_MB']} MB.")
+            f"That file is over {max_upload_bytes() // (1024 * 1024)} MB.")
     with open(path, "ab") as fh:
         fh.write(data)
     return os.path.getsize(path)
@@ -481,6 +536,18 @@ def finish_upload(product: Product, upload_id: str, filename: str, *,
     except AssetError:
         _safe_remove(path)
         raise
+
+    if in_database():
+        with open(path, "rb") as fh:
+            raw = fh.read()
+        _safe_remove(path)
+        if len(raw) > DB_MAX_BYTES:
+            raise AssetError(
+                f"With no disk attached, files are kept in the database and "
+                f"have to stay under {DB_MAX_BYTES // (1024 * 1024)} MB.")
+        return _attach(product, title=title, filename=name, mime=mime,
+                       kind=kind, size=len(raw), data=raw,
+                       module_index=module_index, lesson_index=lesson_index)
 
     os.makedirs(storage_dir(), exist_ok=True)
     disk_name = secrets.token_hex(16) + (os.path.splitext(name)[1].lower())

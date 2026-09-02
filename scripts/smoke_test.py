@@ -6097,6 +6097,49 @@ ok("And opening one shows the whole of it",
    "-webkit-line-clamp: 4" in _css_clamp
    and ".is-clamped.is-open" in _css_clamp)
 
+# With no disk attached there is nowhere durable to put a file, so the bytes
+# go into Postgres instead — which survives a deploy, at a much smaller size.
+from werkzeug.datastructures import FileStorage as _FileStorage  # noqa: E402
+
+_was_dir = app.config["COURSE_FILES_DIR"]
+app.config["COURSE_FILES_DIR"] = ""
+try:
+    with app.app_context():
+        ok("With no files directory, storage falls to the database",
+           _assets_svc.in_database()
+           and _assets_svc.max_upload_bytes() == _assets_svc.DB_MAX_BYTES)
+        _dbp = Product(slug="in-the-db", title="In The DB", type="guide",
+                       status="published", track="building", promise="x",
+                       price_cents=100, stripe_price_id="price_inthedb")
+        db.session.add(_dbp)
+        db.session.commit()
+        _raw = b"%PDF-1.4 " + b"kept in a row " * 40 + b"\n%%EOF\n"
+        _dba = _assets_svc.add_asset(
+            _dbp, _FileStorage(BytesIO(_raw), filename="rowfile.pdf",
+                               content_type="application/pdf"))
+        db.session.commit()
+        ok("The file is held in the row, not pointed at on a disk",
+           _dba.disk_name is None and bytes(_dba.data or b"") == _raw)
+        ok("It reads back whole, and never reads as missing",
+           _assets_svc.read_bytes(_dba) == _raw and not _dba.file_missing())
+        ok("And it still goes out with a receipt",
+           [f["name"] for f in _assets_svc.receipt_files(_dbp)] == ["rowfile.pdf"])
+        try:
+            _assets_svc.add_asset(
+                _dbp, _FileStorage(BytesIO(b"%PDF-1.4 " + b"x" * (
+                    _assets_svc.DB_MAX_BYTES + 10) + b"\n%%EOF\n"),
+                    filename="huge.pdf", content_type="application/pdf"))
+            _refused = ""
+        except _assets_svc.AssetError as _exc:
+            _refused = str(_exc)
+        ok("Anything past what a row should hold is turned away, and says why",
+           "kept in the database" in _refused, f"got {_refused!r}")
+        db.session.rollback()
+        _cat_svc._purge_product(Product.query.filter_by(slug="in-the-db").first())
+        db.session.commit()
+finally:
+    app.config["COURSE_FILES_DIR"] = _was_dir
+
 # A disk that isn't really persistent behaves like a working one until the
 # next restart, when it comes back empty. Leaving a marker on it and
 # remembering that marker turns that into something Studio can state.

@@ -8,8 +8,12 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: flask db upgrade && python seed.py && gunicorn "app:create_app()" --workers 2 --threads 4 --timeout 300
     healthCheckPath: /healthz
-    # Persistent disk for uploaded videos (survives deploys; keeps big files
-    # out of the database and out of worker memory). Resize in the dashboard.
+    # A persistent disk for uploaded files. Without one, the paths below are
+    # ordinary container storage: they work until the next deploy and then
+    # come back empty, taking every uploaded file with them. If this disk is
+    # not attached to the live service, clear COURSE_FILES_DIR (and the other
+    # two paths) so files are kept in Postgres instead, which survives — at a
+    # much smaller size per file.
     disk:
       name: media
       mountPath: /var/media

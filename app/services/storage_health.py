@@ -69,8 +69,10 @@ def check() -> dict:
 
     folder = (current_app.config.get("COURSE_FILES_DIR") or "").strip()
     state = {"dir": folder, "swapped": False, "checked": False,
-             "files": 0, "missing": 0}
+             "files": 0, "missing": 0, "in_database": not folder}
     if not folder:
+        # Nothing to check: the bytes are in Postgres, which outlives the
+        # container they were uploaded from.
         return state
 
     known = (get_setting(SETTING_KEY, "") or "").strip()
