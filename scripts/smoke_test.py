@@ -5704,6 +5704,50 @@ with app.app_context():
     _svc._purge_product(db.session.get(Product, _order_id))
     db.session.commit()
 
+# A module row with no title used to be dropped on save, and the lessons
+# written inside it went too, with nothing said. Someone filling in lessons
+# before naming the module lost the lot on the first save.
+r = admin.post("/admin/products/new", data=_MultiDict([
+    ("title", "Kept Work"), ("track", "building"), ("types", "course"),
+    ("promise", "x"), ("price", "10.00"), ("stripe", "price_kept"),
+    ("mod1_title", "Named"), ("mod1_lesson_title", "A1"),
+    ("mod2_title", ""), ("mod2_lesson_title", "B1"),
+    ("mod2_lesson_title", "B2"),
+    ("mod3_title", ""), ("mod3_desc", ""),
+]), content_type="multipart/form-data", follow_redirects=True)
+with app.app_context():
+    _kept = Product.query.filter_by(slug="kept-work").first()
+    _rows = _kept.curriculum() if _kept else []
+    ok("Lessons under a module nobody named are kept, under a stand-in name",
+       [(row["title"], [x["title"] for x in row["lessons"]]) for row in _rows]
+       == [("Named", ["A1"]), ("Module 2", ["B1", "B2"])],
+       f"got {[(row['title'], [x['title'] for x in row['lessons']]) for row in _rows]}")
+    ok("While a row with nothing in it is still nothing to save",
+       len(_rows) == 2)
+ok("And the stand-in name is said out loud, not slipped in",
+   "under a stand-in name" in r.get_data(as_text=True))
+
+r = admin.post("/admin/products/new", data=_MultiDict([
+    ("title", "Kept Writing"), ("track", "building"), ("types", "course"),
+    ("promise", "x"), ("price", "10.00"), ("stripe", "price_kept2"),
+    ("mod1_title", "Named"),
+    ("mod1_lesson_title", ""), ("mod1_lesson_desc", "All of the writing."),
+    ("mod1_lesson_title", ""), ("mod1_lesson_desc", ""),
+]), content_type="multipart/form-data", follow_redirects=True)
+with app.app_context():
+    _rows = Product.query.filter_by(slug="kept-writing").first().curriculum()
+    ok("A lesson written but not named keeps what was written in it",
+       [(x["title"], x["description"]) for x in _rows[0]["lessons"]]
+       == [("Lesson 1", "All of the writing.")],
+       f"got {_rows[0]['lessons']}")
+with app.app_context():
+    from app.services import catalog as _cat_svc
+    for _slug in ("kept-work", "kept-writing"):
+        _p = Product.query.filter_by(slug=_slug).first()
+        if _p:
+            _cat_svc._purge_product(_p)
+    db.session.commit()
+
 # Instagram hands out photo links that are signed and run out, so one pointed
 # at rather than copied works the day it is set and turns into a broken circle
 # on the home page weeks later.

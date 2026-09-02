@@ -296,19 +296,33 @@ def _blank_module(number: int) -> dict:
             "release_at": None, "gap_days": 0}
 
 
+def _row_has_work(form, row_number: int) -> bool:
+    """Anything typed into this module row besides its title."""
+    if (form.get(f"mod{row_number}_desc") or "").strip():
+        return True
+    for field in ("lesson_title", "lesson_desc", "text_title", "text_body"):
+        if any((v or "").strip()
+               for v in form.getlist(f"mod{row_number}_{field}")):
+            return True
+    return False
+
+
 def _lesson_numbers(form, row_number: int) -> dict[int, int]:
     """Position of a lesson in the form → the lesson number it is saved as.
 
-    A lesson with no title is dropped, so the third set of lesson fields on the
-    page is not necessarily lesson three. Files uploaded with the form are
-    named after the position they were rendered at, and need this to land in
-    the right lesson.
+    An empty lesson row is nothing to save, so the third set of lesson fields
+    on the page is not necessarily lesson three. Files uploaded with the form
+    are named after the position they were rendered at, and need this to land
+    in the right lesson. A lesson with a description but no title is kept and
+    named, rather than thrown away with what was written in it.
     """
+    titles = form.getlist(f"mod{row_number}_lesson_title")
+    descs = form.getlist(f"mod{row_number}_lesson_desc")
     out: dict[int, int] = {}
     number = 0
-    for pos, raw in enumerate(form.getlist(f"mod{row_number}_lesson_title"),
-                              start=1):
-        if not (raw or "").strip():
+    for pos, raw in enumerate(titles, start=1):
+        written = (descs[pos - 1] if pos - 1 < len(descs) else "").strip()
+        if not (raw or "").strip() and not written:
             continue
         number += 1
         out[pos] = number
@@ -399,10 +413,18 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
 
     curriculum_rows = []
     module_numbers: dict[int, int] = {}
+    unnamed: list[str] = []
     for i in range(1, MAX_MODULES + 1):
         t = (form.get(f"mod{i}_title") or "").strip()
+        # The form always offers a couple of empty rows, so an empty one is
+        # nothing to save. A row with work in it is a different thing: it used
+        # to be dropped for want of a title, taking the lessons written inside
+        # it, with nothing said about where they went.
         if not t:
-            continue
+            if not _row_has_work(form, i):
+                continue
+            t = f"Module {len(curriculum_rows) + 1}"
+            unnamed.append(t)
         # Lessons are the subsections inside a module; their content and text
         # extracts are assigned per file below. Titles arrive as repeated
         # fields so an owner can add as many as they like.
@@ -418,6 +440,9 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
             j = pos - 1
             lt = (lesson_titles[j] or "").strip()
             ld = (lesson_descs[j] if j < len(lesson_descs) else "").strip()
+            if not lt:
+                lt = f"Lesson {len(lessons) + 1}"
+                unnamed.append(f"{t} · {lt}")
             lessons.append({"title": lt[:160], "description": ld[:8000]})
             was = (lesson_froms[j] if j < len(lesson_froms) else "").strip()
             if was.isdigit():
@@ -439,6 +464,11 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
         })
         module_numbers[i] = len(curriculum_rows)
     product.set_curriculum(curriculum_rows)
+    if unnamed:
+        flash("Saved " + ", ".join(unnamed[:4])
+              + (" and more" if len(unnamed) > 4 else "")
+              + " under a stand-in name — nothing typed there was lost, and "
+              "you can rename them whenever.", "info")
     if tracked:
         _move_module_content(product, module_moves, lesson_moves,
                              old_module_count)
