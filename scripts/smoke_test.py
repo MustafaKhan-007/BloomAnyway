@@ -5607,6 +5607,32 @@ r = app.test_client().post(f"/admin/products/{drip_prod_id}/uploads/begin",
                            json={"filename": "sneaky.mp4", "size": 10})
 ok("Only owners can start an upload", r.status_code in (302, 401, 403, 404))
 
+# A tab closed midway through a large video leaves its slices behind, and
+# nothing ever came back for them. On a disk sized to the library that exists,
+# a few forgotten gigabytes is the difference between room and none.
+with app.app_context():
+    import time as _time
+
+    from app.services import assets as _assets_svc
+    _parts = _assets_svc.parts_dir()
+    _os.makedirs(_parts, exist_ok=True)
+    _stale = _os.path.join(_parts, "abandoned.mp4")
+    _live = _os.path.join(_parts, "inflight.mp4")
+    for _p in (_stale, _live):
+        with open(_p, "wb") as _fh:
+            _fh.write(b"x" * 512)
+    _os.utime(_stale, (_time.time() - 30 * 3600,) * 2)
+    _cleared = _assets_svc.sweep_parts()
+    ok("An upload nobody finished is cleared away",
+       _cleared == 1 and not _os.path.isfile(_stale), f"cleared {_cleared}")
+    ok("While one still in flight is left alone", _os.path.isfile(_live))
+    _os.utime(_live, (_time.time() - 30 * 3600,) * 2)
+r = admin.post(f"/admin/products/{drip_prod_id}/uploads/begin",
+               json={"filename": "next.mp4", "size": 1000})
+with app.app_context():
+    ok("And starting another upload sweeps them, with no scheduler to run",
+       not _os.path.isfile(_live))
+
 # A PDF that arrives short still saves and still looks like a file in Studio.
 # The breakage only shows up later, to a buyer, as a reader that won't open it,
 # so it is turned away while somebody can still do something about it.

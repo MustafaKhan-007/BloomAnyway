@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import os
 import secrets
+import time
 import zipfile
 from io import BytesIO
 
@@ -485,14 +486,50 @@ def _attach(product: Product, *, title, filename, mime, kind, size,
 # file on the media disk. Nothing about this depends on which worker handles a
 # given slice, because the state is the file itself.
 
+#: How long a half-finished upload is kept before it is treated as abandoned.
+PART_KEEP_HOURS = 24
+
+
+def sweep_parts(older_than_hours: int = PART_KEEP_HOURS) -> int:
+    """Clear out slices from uploads nobody finished.
+
+    A tab closed midway through a large video leaves its part file behind,
+    and nothing ever came back for it. On a disk sized to the library that
+    actually exists, a few forgotten gigabytes is the difference between
+    room to spare and no room at all.
+    """
+    folder = parts_dir()
+    if not os.path.isdir(folder):
+        return 0
+    cutoff = time.time() - max(1, int(older_than_hours)) * 3600
+    cleared = 0
+    for name in os.listdir(folder):
+        path = os.path.join(folder, name)
+        try:
+            if os.path.isfile(path) and os.path.getmtime(path) < cutoff:
+                os.remove(path)
+                cleared += 1
+        except OSError:
+            continue
+    if cleared:
+        log.info("uploads: cleared %s abandoned part file(s)", cleared)
+    return cleared
+
+
 def begin_upload(filename: str, declared_size: int) -> str:
     """Reserve a part file and return its id."""
     if declared_size <= 0:
         raise AssetError("That file was empty.")
     if declared_size > max_upload_bytes():
         raise AssetError(
-            f"That file is over {current_app.config['COURSE_UPLOAD_MAX_MB']} MB.")
+            f"That file is over {max_upload_bytes() // (1024 * 1024)} MB.")
     os.makedirs(parts_dir(), exist_ok=True)
+    # Starting one upload is as good a moment as any to clear away the ones
+    # that were never finished, and it needs no scheduler to happen.
+    try:
+        sweep_parts()
+    except Exception:
+        log.exception("uploads: could not sweep abandoned parts")
     ext = os.path.splitext(secure_filename(filename or ""))[1].lower()
     upload_id = secrets.token_hex(16) + ext
     open(_part_path(upload_id), "wb").close()
