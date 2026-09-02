@@ -6175,6 +6175,13 @@ with app.app_context():
     ok("A healthy disk raises nothing",
        _first["checked"] and not _first["swapped"] and _first["missing"] == 0,
        f"got {_first}")
+
+_ok_line = admin.get("/admin", follow_redirects=True).get_data(as_text=True)
+ok("When all is well the dashboard says where uploads are landing",
+   "Uploaded files are kept" in _ok_line and "all present" in _ok_line,
+   "nothing said either way")
+
+with app.app_context():
     _lost2 = ProductAsset.query.filter(ProductAsset.disk_name.isnot(None)).first()
     _path2 = _assets_svc.disk_path(_lost2.disk_name)
     _kept2 = open(_path2, "rb").read()
@@ -6186,6 +6193,8 @@ with app.app_context():
 _alarm = admin.get("/admin", follow_redirects=True).get_data(as_text=True)
 ok("Studio says so on the dashboard, not only on the file",
    "no longer on the server" in _alarm, "no warning")
+ok("And drops the all-is-well line while it isn't",
+   "all present" not in _alarm)
 ok("And keeps saying it while it is still true",
    "no longer on the server"
    in admin.get("/admin", follow_redirects=True).get_data(as_text=True))

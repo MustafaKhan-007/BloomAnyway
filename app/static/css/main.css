@@ -9483,6 +9483,16 @@ a.at-handle:hover { text-decoration: underline; }
 .module-items__item { display: grid; gap: 8px; justify-items: start; }
 .module-items__item > * { width: 100%; }
 .module-items__add { width: auto; }
+/* Quiet confirmation of where uploads are landing, so it can be checked. */
+.studio-storage-ok {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+.studio-storage-ok code {
+  padding: 1px 6px; border-radius: 6px;
+  background: rgba(61, 20, 49, 0.07);
+}
 /* Something that needs the owner's attention before anything else on a page. */
 .studio-alarm {
   border-color: rgba(190, 72, 60, 0.45);

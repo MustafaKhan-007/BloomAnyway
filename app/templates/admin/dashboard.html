@@ -29,6 +29,13 @@
       product so you can see which.
     </p>
   </div>
+  {% elif storage and storage.checked %}
+  <p class="studio-storage-ok">
+    Uploaded files are kept
+    {% if storage.in_database %}in the database{% else %}at
+    <code>{{ storage.dir }}</code>{% endif %} —
+    {{ storage.files }} there now, all present.
+  </p>
   {% endif %}
   <div class="page-head studio-dash__head">
     <div>

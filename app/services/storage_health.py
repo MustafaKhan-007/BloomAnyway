@@ -71,8 +71,15 @@ def check() -> dict:
     state = {"dir": folder, "swapped": False, "checked": False,
              "files": 0, "missing": 0, "in_database": not folder}
     if not folder:
-        # Nothing to check: the bytes are in Postgres, which outlives the
-        # container they were uploaded from.
+        # Nothing on a disk to go wrong: the bytes are in Postgres, which
+        # outlives the container they were uploaded from. Still worth counting
+        # them, so the dashboard can say where they are.
+        try:
+            state["files"] = ProductAsset.query.filter(
+                ProductAsset.data.isnot(None)).count()
+            state["checked"] = True
+        except Exception:
+            pass
         return state
 
     known = (get_setting(SETTING_KEY, "") or "").strip()
