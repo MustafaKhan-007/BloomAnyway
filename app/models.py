@@ -1125,6 +1125,8 @@ class MembershipPlan(db.Model):
     stripe_product_id_annual = db.Column(db.String(80), unique=True, index=True)
     active = db.Column(db.Boolean, nullable=False, default=False)
     sort_order = db.Column(db.Integer, nullable=False, default=0)
+    #: Days free before the first charge. 0 is no trial; Stripe allows 1–730.
+    trial_days = db.Column(db.Integer, nullable=False, default=0)
     features_json = db.Column(db.Text)  # JSON: toggled non-free capabilities
 
     def label(self):
@@ -1171,6 +1173,26 @@ class MembershipPlan(db.Model):
         if billing in ("annual", "year", "yearly"):
             return (self.stripe_price_id_annual or "").strip() or None
         return (self.stripe_price_id or self.ls_variant_id or "").strip() or None
+
+    def free_days(self) -> int:
+        """Days before the first charge. Stripe takes 1–730; 0 means none."""
+        try:
+            days = int(self.trial_days or 0)
+        except (TypeError, ValueError):
+            return 0
+        return max(0, min(730, days))
+
+    def trial_display(self) -> str:
+        """"14 days free" — empty when the plan charges from the start."""
+        days = self.free_days()
+        if not days:
+            return ""
+        if days == 1:
+            return "1 day free"
+        if days % 7 == 0 and days >= 14:
+            weeks = days // 7
+            return f"{weeks} weeks free"
+        return f"{days} days free"
 
 
 class Quote(db.Model):

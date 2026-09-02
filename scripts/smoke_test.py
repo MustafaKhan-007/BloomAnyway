@@ -5945,6 +5945,83 @@ ok("Counting the stars, so italic comes off bold without taking one with it",
 ok("Bullets have always come back off, and still do",
    "bulleted ? line.replace" in _admin_js2)
 
+# A membership can start with days free before the first charge.
+with app.app_context():
+    _hp = MembershipPlan.query.filter_by(tier="healing").first()
+    _hp.trial_days = 14
+    db.session.commit()
+    ok("A plan holds how many days are free, and says it in words",
+       _hp.free_days() == 14 and _hp.trial_display() == "2 weeks free",
+       f"got {_hp.free_days()} / {_hp.trial_display()!r}")
+    _hp.trial_days = 5
+    db.session.commit()
+    ok("Counted in days when that reads better", _hp.trial_display() == "5 days free")
+    _hp.trial_days = 0
+    db.session.commit()
+    ok("And says nothing when the plan charges from the start",
+       _hp.trial_display() == "")
+    _hp.trial_days = 14
+    db.session.commit()
+
+_trial_call = {}
+_real_checkout2 = pay.create_checkout_session
+_real_conf2 = pay.configured
+pay.configured = lambda: True
+pay.create_checkout_session = lambda **kw: (
+    _trial_call.update(kw) or "https://stripe.test/pay")
+try:
+    plain_client.get("/checkout/membership/healing")
+    ok("Someone new is sent to Stripe with the free days on the subscription",
+       _trial_call.get("trial_days") == 14, f"got {_trial_call.get('trial_days')}")
+    with app.app_context():
+        _sw = User.query.filter_by(email="plainmember@example.com").first()
+        _sw.membership = "creator"
+        db.session.commit()
+    plain_client.get("/checkout/membership/healing")
+    ok("Someone already paying doesn't get free days for switching",
+       _trial_call.get("trial_days") == 0, f"got {_trial_call.get('trial_days')}")
+    with app.app_context():
+        _sw = User.query.filter_by(email="plainmember@example.com").first()
+        _sw.membership = "none"
+        db.session.commit()
+finally:
+    pay.create_checkout_session = _real_checkout2
+    pay.configured = _real_conf2
+
+_trial_page = plain_client.get("/membership").get_data(as_text=True)
+ok("The membership page offers it where someone is deciding",
+   "Start with 2 weeks free" in _trial_page, "not offered")
+_plans_page = admin.get("/admin/memberships").get_data(as_text=True)
+ok("And Studio has somewhere to set it per plan",
+   'name="healing_trial_days"' in _plans_page
+   and 'name="creator_trial_days"' in _plans_page)
+# That form saves every plan at once, so each one's current values go back
+# with it — posting only the field under test would blank the others.
+with app.app_context():
+    _plan_form = {}
+    for _pl in MembershipPlan.query.all():
+        _plan_form[f"{_pl.tier}_name"] = _pl.name or _pl.tier
+        _plan_form[f"{_pl.tier}_stripe"] = _pl.stripe_price_id or ""
+        _plan_form[f"{_pl.tier}_stripe_annual"] = _pl.stripe_price_id_annual or ""
+        _plan_form[f"{_pl.tier}_stripe_product"] = _pl.stripe_product_id or ""
+        _plan_form[f"{_pl.tier}_stripe_product_annual"] = (
+            _pl.stripe_product_id_annual or "")
+        _plan_form[f"{_pl.tier}_trial_days"] = str(_pl.free_days())
+        if _pl.active:
+            _plan_form[f"{_pl.tier}_active"] = "1"
+        if _pl.price_cents is not None:
+            _plan_form[f"{_pl.tier}_price"] = f"{_pl.price_cents / 100:.2f}"
+        if _pl.annual_price_cents is not None:
+            _plan_form[f"{_pl.tier}_annual_price"] = (
+                f"{_pl.annual_price_cents / 100:.2f}")
+_plan_form["healing_trial_days"] = "30"
+admin.post("/admin/memberships", data=_plan_form, follow_redirects=True)
+with app.app_context():
+    ok("Setting it there sticks",
+       MembershipPlan.query.filter_by(tier="healing").first().free_days() == 30)
+    MembershipPlan.query.filter_by(tier="healing").first().trial_days = 0
+    db.session.commit()
+
 # Where paying leaves you depends on whether there is anywhere to land. Signed
 # in, that is the library. Not signed in, /account would only bounce to a
 # sign-in page, so it is the product again with word that it is on its way.

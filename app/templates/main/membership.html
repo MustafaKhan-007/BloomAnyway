@@ -170,6 +170,9 @@
           </p>
           {% endif %}
           <p class="mem-card__trial mem-trial--year">&#10003; Pay once a year and save.</p>
+          {% if healing and healing.trial_display() %}
+          <p class="mem-card__freetrial">&#10003; Start with {{ healing.trial_display() }} — cancel before it ends and you pay nothing.</p>
+          {% endif %}
           <p class="mem-card__section-label">Built for healing</p>
           <ul class="mem-card__perks">
             {% if healing %}
@@ -261,6 +264,9 @@
           </p>
           {% endif %}
           <p class="mem-card__trial mem-trial--year">&#10003; Pay once a year and save.</p>
+          {% if creator and creator.trial_display() %}
+          <p class="mem-card__freetrial">&#10003; Start with {{ creator.trial_display() }} — cancel before it ends and you pay nothing.</p>
+          {% endif %}
           <p class="mem-card__section-label">Built for creating</p>
           <ul class="mem-card__perks">
             {% if creator %}
@@ -358,6 +364,9 @@
           </p>
           {% endif %}
           <p class="mem-card__trial mem-trial--year">&#10003; Pay once a year and save.</p>
+          {% if full_bloom and full_bloom.trial_display() %}
+          <p class="mem-card__freetrial">&#10003; Start with {{ full_bloom.trial_display() }} — cancel before it ends and you pay nothing.</p>
+          {% endif %}
           <p class="mem-card__section-label">Everything in Healing and Creator</p>
           <ul class="mem-card__perks">
             {% if full %}

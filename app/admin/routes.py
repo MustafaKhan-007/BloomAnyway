@@ -2588,6 +2588,11 @@ def membership_plans():
             plan.stripe_product_id_annual = (
                 request.form.get(f"{p}_stripe_product_annual") or "").strip() or None
             plan.active = bool(request.form.get(f"{p}_active"))
+            raw_t = (request.form.get(f"{p}_trial_days") or "").strip()
+            if raw_t.isdigit():
+                plan.trial_days = max(0, min(730, int(raw_t)))
+            elif raw_t == "":
+                plan.trial_days = 0
             raw = (request.form.get(f"{p}_price") or "").strip().replace(",", "")
             try:
                 plan.price_cents = round(float(raw) * 100) if raw else None

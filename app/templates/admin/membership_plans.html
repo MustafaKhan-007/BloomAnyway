@@ -110,6 +110,21 @@
       </div>
 
       <div class="field" style="margin-top: 16px;">
+        <label for="{{ plan.tier }}_trial_days">Free trial</label>
+        <div class="studio-accent-row">
+          <input type="number" id="{{ plan.tier }}_trial_days"
+                 name="{{ plan.tier }}_trial_days" min="0" max="730"
+                 style="max-width: 96px;" value="{{ plan.free_days() }}">
+          <span class="field-help" style="margin: 0;">days</span>
+        </div>
+        <p class="field-help">
+          Days before the first charge. 0 for none. Stripe still takes a card
+          at checkout and bills automatically when the trial ends, and someone
+          already on a paid plan doesn’t get another one for switching.
+        </p>
+      </div>
+
+      <div class="field" style="margin-top: 16px;">
         <label class="checkline checkline--sm">
           <input type="checkbox" name="{{ plan.tier }}_active" value="1" {{ 'checked' if plan.active }}>
           Live — show this plan on the membership page

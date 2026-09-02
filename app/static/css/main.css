@@ -6631,6 +6631,14 @@ a.at-handle:hover { text-decoration: underline; }
   font-size: 14px; font-weight: 700;
   color: var(--rm-plum);
 }
+.mem-card__freetrial {
+  margin: 0 0 12px;
+  padding: 7px 11px;
+  border-radius: 10px;
+  background: rgba(90, 49, 88, 0.08);
+  font-size: 13.5px; font-weight: 700;
+  color: var(--plum-deep);
+}
 .mem-card__section-label {
   margin: 0 0 6px;
   font-size: 11px; font-weight: 800;

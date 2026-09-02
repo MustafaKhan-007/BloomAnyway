@@ -373,6 +373,12 @@ def checkout_membership(tier):
         flash("Payments aren’t configured yet. Please try again later.", "error")
         return redirect(url_for("main.membership"))
 
+    # Read before the switch below cancels the old plan and reconciles them
+    # down to free — by the time the session is built they look new again, and
+    # a free run would be handed out for switching.
+    was_paying = current_user.effective_membership() in (
+        "healing", "creator", "full_bloom")
+
     # Switching plans: cancel the current membership immediately, then send
     # them to Stripe Checkout for the new plan.
     if (current_user.is_authenticated
@@ -424,6 +430,9 @@ def checkout_membership(tier):
             # copies metadata onto the subscription too, so renewals carry it.
             metadata={"tier": tier, "kind": "membership", "billing": billing,
                       "buyer_user_id": str(current_user.id)},
+            # Someone already on a paid plan has had their run at it; a trial
+            # here would hand them free days for switching.
+            trial_days=0 if was_paying else plan.free_days(),
         )
     except pay.StripeError as exc:
         flash(str(exc), "error")

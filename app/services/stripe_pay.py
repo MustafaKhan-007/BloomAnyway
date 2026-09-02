@@ -62,11 +62,16 @@ def create_checkout_session(
     customer_name: str | None = None,
     metadata: dict | None = None,
     quantity: int = 1,
+    trial_days: int = 0,
 ) -> str:
     """Create a Stripe Checkout Session and return the hosted URL.
 
     ``product_id`` is a Stripe Price id (``price_…``).
     Memberships use ``mode=subscription``; courses/guides use ``mode=payment``.
+
+    ``trial_days`` holds off the first charge that long. Stripe only takes it
+    on a subscription, and only between 1 and 730, so anything else is left
+    off rather than sent and refused.
     """
     _configure_stripe()
     price_id = (product_id or "").strip()
@@ -97,6 +102,12 @@ def create_checkout_session(
         params["metadata"]["customer_name"] = customer_name.strip()[:120]
     if mode == "subscription":
         params["subscription_data"] = {"metadata": meta}
+        try:
+            free = int(trial_days or 0)
+        except (TypeError, ValueError):
+            free = 0
+        if 1 <= free <= 730:
+            params["subscription_data"]["trial_period_days"] = free
 
     try:
         session = stripe.checkout.Session.create(**params)
