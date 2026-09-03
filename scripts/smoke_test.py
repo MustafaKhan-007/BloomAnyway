@@ -506,6 +506,14 @@ r = buyer_client.get("/account?tab=saved")
 abody = r.get_data(as_text=True)
 ok("Courses tab shows real progress percent",
    "25%" in abody and "Continue reading" in abody and "Reading progress" in abody)
+# The card says what was bought rather than what the first file in it happens
+# to be: a course whose opening piece is a PDF is still a course.
+ok("The library card calls a course a course",
+   bool(re.search(r"lib-card__meta[\s\S]{0,400}?>\s*Course\s*<", abody))
+   and "PDF Document" not in abody)
+ok("And sends them to read it here, with no download beside it",
+   "Continue reading" in abody and "download=1" not in abody
+   and not re.search(r"lib-card__actions[\s\S]{0,800}?>\s*Download\s*<", abody))
 r = buyer_client.get(f"/account/courses/{purchase_id}")
 ok("Reader resumes at saved page",
    r.status_code == 200 and b'data-start-page="5"' in r.data)
