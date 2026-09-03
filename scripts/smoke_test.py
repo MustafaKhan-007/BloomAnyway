@@ -6219,6 +6219,38 @@ with app.app_context():
     _ss(_sh.SETTING_KEY, _sh._read_marker())
     db.session.commit()
 
+# Removing a purchase from My Space used to make it vanish, which reads like
+# it was taken away. Nothing is refunded and it is still theirs, so it stays
+# on the shelf, marked, with a way back.
+def _shelf():
+    _h = drip_client.get("/account?tab=saved").get_data(as_text=True)
+    return {
+        "listed": "Drip Course" in _h,
+        "marked": "Removed by you" in _h,
+        "opens": f"/account/courses/{drip_purchase_id}" in _h,
+        "restorable": "Put it back" in _h,
+    }
+
+
+_before_away = _shelf()
+ok("A purchase is on the shelf and opens", _before_away["listed"]
+   and _before_away["opens"] and not _before_away["marked"],
+   f"got {_before_away}")
+drip_client.post(f"/account/shop/{drip_purchase_id}/remove",
+                 follow_redirects=True)
+_away = _shelf()
+ok("Removing it leaves it there, saying who removed it",
+   _away["listed"] and _away["marked"], f"got {_away}")
+ok("With nothing to open, and a way to put it back",
+   not _away["opens"] and _away["restorable"], f"got {_away}")
+drip_client.post(f"/account/shop/{drip_purchase_id}/restore",
+                 follow_redirects=True)
+_back = _shelf()
+ok("Putting it back opens it again", _back == _before_away, f"got {_back}")
+with app.app_context():
+    ok("And the purchase itself was never touched",
+       db.session.get(ShopPurchase, drip_purchase_id).status == "linked")
+
 # A guide should arrive, not wait to be found: the receipt carries the PDF.
 from werkzeug.datastructures import FileStorage as _FileStorage  # noqa: E402
 with app.app_context():

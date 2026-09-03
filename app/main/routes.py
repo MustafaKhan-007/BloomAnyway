@@ -37,8 +37,8 @@ from ..services.recommend import INTENTS, valid_intent_keys
 from ..services.listings import (ListingError, can_add_listing, listing_limit,
                                  process_listing_image)
 from ..services.shop_purchases import (
-    collapse_duplicate_purchases, linked_purchases_for, link_pending_purchases,
-    remove_from_library,
+    collapse_duplicate_purchases, library_purchases_for, linked_purchases_for,
+    link_pending_purchases, remove_from_library, restore_to_library,
 )
 from ..services.social import (instagram_embed_url, instagram_from_links,
                                instagram_handle, instagram_profile_url,
@@ -986,7 +986,7 @@ def account():
     # Collapse repeated test checkouts of the same guide into one library card.
     if collapse_duplicate_purchases(current_user):
         db.session.commit()
-    shop_list = linked_purchases_for(current_user, dedupe=True)
+    shop_list = library_purchases_for(current_user, dedupe=True)
     progress_by_purchase = reader_svc.progress_map_for(
         current_user.id, [p.id for p in shop_list])
     readable = {}
@@ -1049,9 +1049,22 @@ def shop_remove(purchase_id):
     """Hide a library item (e.g. test checkouts / wrong product). Does not refund Stripe."""
     if remove_from_library(current_user, purchase_id):
         db.session.commit()
-        flash("Removed from your library.", "success")
+        flash("Put away. It stays on your shelf marked as removed, and you "
+              "can put it back whenever.", "success")
     else:
         flash("Could not remove that item.", "error")
+    return redirect(url_for("main.account", tab="saved"))
+
+
+@bp.route("/account/shop/<int:purchase_id>/restore", methods=["POST"])
+@login_required
+def shop_restore(purchase_id):
+    """Undo a removal, so a purchase opens again."""
+    if restore_to_library(current_user, purchase_id):
+        db.session.commit()
+        flash("Back in your library.", "success")
+    else:
+        flash("Could not put that one back.", "error")
     return redirect(url_for("main.account", tab="saved"))
 
 

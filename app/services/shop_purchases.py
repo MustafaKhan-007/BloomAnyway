@@ -258,12 +258,42 @@ def linked_purchases_for(user: User, *, dedupe: bool = False):
     return rows
 
 
+def library_purchases_for(user: User, *, dedupe: bool = False):
+    """Everything to show in My Space, including what was removed from it.
+
+    A purchase someone removed stays on the shelf, marked, rather than
+    vanishing — nothing was refunded and it is still theirs, so a list it has
+    silently dropped out of is a worse answer than one that says so.
+    """
+    if user is None or not getattr(user, "is_authenticated", False):
+        return []
+    rows = (ShopPurchase.query
+            .filter(ShopPurchase.user_id == user.id,
+                    ShopPurchase.status.in_(("linked", "removed")))
+            .order_by(ShopPurchase.purchased_at.desc(), ShopPurchase.id.desc())
+            .all())
+    if dedupe:
+        return dedupe_library_purchases(rows)
+    return rows
+
+
 def remove_from_library(user: User, purchase_id: int) -> bool:
-    """Hide a linked purchase from My Space (owner only). Does not refund Stripe."""
+    """Mark a purchase as put away (owner only). Does not refund Stripe."""
     if user is None or not getattr(user, "id", None):
         return False
     row = db.session.get(ShopPurchase, purchase_id)
     if row is None or row.user_id != user.id or row.status != "linked":
         return False
     row.status = "removed"
+    return True
+
+
+def restore_to_library(user: User, purchase_id: int) -> bool:
+    """Undo a removal, so the buyer can open it again."""
+    if user is None or not getattr(user, "id", None):
+        return False
+    row = db.session.get(ShopPurchase, purchase_id)
+    if row is None or row.user_id != user.id or row.status != "removed":
+        return False
+    row.status = "linked"
     return True

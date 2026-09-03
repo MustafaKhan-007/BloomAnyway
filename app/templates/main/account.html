@@ -484,12 +484,16 @@
         {% elif can_read and asset %}
           {% set dl.url = url_for('main.course_file', purchase_id=item.id, asset_id=asset.id, download=1) %}
         {% endif %}
-        <article class="lib-card" data-lib-bucket="{{ lib_bucket }}" style="--lib-cover: {{ cover }};">
+        {% set put_away = item.status == 'removed' %}
+        <article class="lib-card{{ ' lib-card--away' if put_away }}" data-lib-bucket="{{ lib_bucket }}" style="--lib-cover: {{ cover }};">
           {{ bloom_cover(item.product_name, kind_short, cover, cover_image) }}
           <div class="lib-card__body">
             <div class="lib-card__top">
               <div class="lib-card__intro">
                 <h3 class="lib-card__title">{{ item.product_name }}</h3>
+                {% if put_away %}
+                <p class="lib-card__away">Removed by you</p>
+                {% endif %}
                 <ul class="lib-card__meta">
                   <li>
                     <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M3.5 1.5h6.2L13 4.8V14a.5.5 0 0 1-.5.5h-9A.5.5 0 0 1 3 14V2a.5.5 0 0 1 .5-.5Zm6 .9V5h2.7L9.5 2.4ZM4.2 7.2h7.6v1.1H4.2V7.2Zm0 2.4h7.6v1.1H4.2V9.6Zm0 2.4h5.2v1.1H4.2v-1.1Z"/></svg>
@@ -526,6 +530,17 @@
             </div>
             {% endif %}
             <div class="lib-card__actions">
+              {% if put_away %}
+              <form method="post" action="{{ url_for('main.shop_restore', purchase_id=item.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn lib-card__btn lib-card__btn--ghost">
+                  Put it back
+                </button>
+              </form>
+              <p class="field-help lib-card__wait">
+                Still yours — nothing was refunded. Put it back to open it again.
+              </p>
+              {% else %}
               {% if can_read %}
               <a class="btn lib-card__btn lib-card__btn--primary" href="{{ url_for('main.course_reader', purchase_id=item.id) }}">
                 <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M2.2 2.2h5.1c.9 0 1.6.7 1.6 1.6v9.2c0-.6-.5-1.1-1.1-1.1H2.2V2.2Zm6.5 0h5.1v9.7H9.2c-.6 0-1.1.5-1.1 1.1V3.8c0-.9.7-1.6 1.6-1.6Z"/></svg>
@@ -546,7 +561,8 @@
                 {% endif %}
               </p>
               {% endif %}
-              {% if catalog %}
+              {% endif %}
+              {% if catalog and not put_away %}
               <details class="lib-card__more">
                 <summary aria-label="More options">···</summary>
                 <div class="lib-card__more-menu">
