@@ -246,7 +246,7 @@ def get_circle(circle_id: int | None = None, *, slug: str | None = None
 def user_can_access_circle(user: User | None, circle: SupportGroupCircle) -> bool:
     if not user or not getattr(user, "is_authenticated", True):
         return False
-    if not user.is_member() and not user.is_admin:
+    if not user.is_member() and not user.is_owner_view():
         return False
     if circle.track == "building":
         return user.has_feature("support_creator")
@@ -382,8 +382,9 @@ def last_peer_schedule_at(user_id: int) -> datetime | None:
 def can_schedule_peer(user: User) -> tuple[bool, str | None]:
     if not user or not user.is_member():
         return False, "Support groups are for Healing, Creator, and Full Bloom members."
-    # Owners/admins can schedule freely — no cooldown.
-    if getattr(user, "is_admin", False):
+    # Owners schedule freely — no cooldown — unless they are looking at the
+    # site as a member, in which case they get the member's rules.
+    if user.is_owner_view():
         return True, None
     last = last_peer_schedule_at(user.id)
     if last is None:
@@ -796,7 +797,7 @@ def join_peer_session(user: User, meeting_id: int
         if not user_can_access_circle(user, meeting.circle):
             return None, "That session isn’t included in your plan."
     elif kind == "facilitator":
-        if not user.is_admin and not user.is_healing():
+        if not user.is_owner_view() and not user.is_healing():
             return None, "Facilitator sessions are for Healing & Full Bloom members."
     if not meeting.scheduled_at or meeting.scheduled_at <= utcnow():
         return None, "That session has already started or ended."

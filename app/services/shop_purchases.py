@@ -1,10 +1,13 @@
 """Digital purchase fulfillment for My Space (Stripe)."""
+import logging
 from datetime import datetime
 
 from sqlalchemy import func, or_
 
 from ..extensions import db
 from ..models import MembershipPlan, ShopPurchase, User, utcnow
+
+log = logging.getLogger(__name__)
 
 
 def _norm_email(email: str) -> str:
@@ -68,7 +71,7 @@ def sync_membership_perk(purchase, *, downgrade: bool = False) -> bool:
     one can change the tier its buyer should be on. Ordinary purchases are
     left alone — a reconcile costs a Stripe lookup.
     """
-    from .perks import purchase_has_perk
+    from .perks import announce, purchase_has_perk
 
     user_id = getattr(purchase, "user_id", None)
     if not user_id or not purchase_has_perk(purchase):
@@ -80,6 +83,14 @@ def sync_membership_perk(purchase, *, downgrade: bool = False) -> bool:
     user = db.session.get(User, user_id)
     if user is None:
         return False
+    if not downgrade:
+        # Before the tier moves, so "you weren't on this already" still reads
+        # off what they held when they bought it.
+        try:
+            announce(user, purchase)
+        except Exception:
+            log.exception("perk: could not tell user %s about their membership",
+                          user_id)
     return reconcile_user(user, downgrade=downgrade)
 
 

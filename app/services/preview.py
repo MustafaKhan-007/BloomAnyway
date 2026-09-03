@@ -10,6 +10,11 @@ The choice lives in the session, never on the account, so it costs nothing to
 enter or leave, expires with the login, and can't leak onto anyone else. It
 changes what the owner *sees*: Studio stays open, and test products stay
 visible, because those are owner tools rather than membership gates.
+
+The everyday choice is an account from scratch: gated like somebody who has
+bought nothing, but reading the tier off the account each time rather than
+pinning it, so a perk landing mid-session shows up instead of being hidden by
+the very setting that was meant to reveal it.
 """
 from __future__ import annotations
 
@@ -19,16 +24,19 @@ from ..models import MEMBERSHIP_LABELS, MEMBERSHIPS, higher_membership
 SESSION_KEY = "owner_preview"
 
 #: "real" means "whatever I have actually earned" — the membership column plus
-#: any perk from a product I bought, which is the interesting case for testing.
+#: any perk from a product I bought. It reads as free while nothing has been
+#: earned, and rises the moment something does, which is the whole point of it.
 REAL = "real"
 
-#: everything the switch accepts
-CHOICES = (REAL,) + MEMBERSHIPS
+#: Everything the switch accepts. There is deliberately no "stay on free": a
+#: tier pinned to none looks identical to this until a perk lands, and then
+#: hides the very thing the owner was checking for.
+CHOICES = (REAL,) + tuple(t for t in MEMBERSHIPS if t != "none")
 
 
 def choice_label(choice: str) -> str:
     if choice == REAL:
-        return "What I've actually earned"
+        return "An account from scratch — free until something lands"
     return MEMBERSHIP_LABELS.get(choice, choice)
 
 
@@ -47,6 +55,11 @@ def current_choice() -> str:
     if store is None:
         return ""
     choice = (store.get(SESSION_KEY) or "").strip()
+    # Sessions from when free was a tier you could pin yourself to: they meant
+    # "show me what someone with nothing sees", which is what REAL does, only
+    # without staying blind to a perk arriving.
+    if choice == "none":
+        return REAL
     return choice if choice in CHOICES else ""
 
 
@@ -54,6 +67,8 @@ def set_choice(choice: str) -> str:
     """Start (or switch) preview. Returns the choice actually stored."""
     store = _session()
     choice = (choice or "").strip().lower()
+    if choice == "none":
+        choice = REAL
     if store is None or choice not in CHOICES:
         return ""
     store[SESSION_KEY] = choice
@@ -80,13 +95,22 @@ def _forget_cache() -> None:
 def earned_tier(user) -> str:
     """The tier this account would hold if it weren't an owner.
 
-    The membership column plus any product perk. Owners are skipped by
-    ``reconcile_user``, so the column is usually "none" and the perk is the
-    whole answer — which is exactly what a test purchase should change.
+    Worked out from what was actually bought — paid membership orders, a tier
+    set by hand in Studio, and any free months a product came with — rather
+    than from the membership column. Signing in stamps every owner's column
+    Full Bloom, so reading that would answer "Full Bloom" every time and hide
+    the perk this is here to show.
     """
+    from .memberships import manual_tier, purchased_tier
     from .perks import perk_state
-    base = getattr(user, "membership", None) or "none"
-    return higher_membership(base, perk_state(user)["tier"] or "none")
+
+    base = manual_tier(user)
+    if not base:
+        try:
+            base = purchased_tier(getattr(user, "email", "") or "")
+        except Exception:
+            base = "none"
+    return higher_membership(base or "none", perk_state(user)["tier"] or "none")
 
 
 def preview_tier(user) -> str:
@@ -133,7 +157,7 @@ def state(user) -> dict:
         from .perks import perk_end_display
         until = perk_end_display(user)
         if until:
-            label += f", until {until}"
+            label += f", free with a product you bought, until {until}"
         elif tier == "none":
-            label += " — nothing earned yet"
+            label += " — an account from scratch"
     return {"on": True, "choice": choice, "tier": tier, "label": label}

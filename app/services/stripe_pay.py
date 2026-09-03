@@ -1367,6 +1367,8 @@ def handle_payment_event(event_type: str, data: dict) -> Order | None:
                 amount=order.total_display(),
                 order_date=order_date,
                 attachments=came_with,
+                perk=(product.perk_summary().replace(", free", "")
+                      if product is not None and product.has_perk() else ""),
             )
         except Exception:
             log.exception("Order receipt email failed for %s", order.ls_order_id)
