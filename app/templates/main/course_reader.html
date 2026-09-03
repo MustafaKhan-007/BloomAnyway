@@ -80,7 +80,8 @@
         <p class="reader-modules__title">Modules</p>
         {% if next_locked %}
         <p class="reader-modules__note">
-          Module {{ next_locked.number }} unlocks {{ next_locked.unlock_display }}
+          Module {{ next_locked.number }} unlocks
+          {{ next_locked.unlock_at|localtime('%b %d, %Y at %I:%M %p') }} your time
           ({{ next_locked.days_away }} day{{ '' if next_locked.days_away == 1 else 's' }} away).
         </p>
         {% endif %}
@@ -109,7 +110,7 @@
             <span class="reader-modules__body">
               <strong>{{ m.title }}</strong>
               <small>
-                {%- if not m.unlocked %}Unlocks {{ m.unlock_display }}
+                {%- if not m.unlocked %}Unlocks {{ m.unlock_at|localtime('%b %d, %Y at %I:%M %p') }}
                 {%- else %}Coming soon{% endif -%}
               </small>
             </span>
@@ -174,7 +175,8 @@
       <h2>Your next module is on its way</h2>
       <p class="field-help">
         This course is released a piece at a time. Module {{ next_locked.number }} opens
-        {{ next_locked.unlock_display }} — it will be waiting here for you.
+        {{ next_locked.unlock_at|localtime('%b %d, %Y at %I:%M %p') }} your time
+        — it will be waiting here for you.
       </p>
       {% else %}
       <h2>Content coming soon</h2>

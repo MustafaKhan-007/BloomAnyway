@@ -1815,7 +1815,7 @@ html.is-page-loading { cursor: progress; }
 /* Under the page rather than beside it: the wrap centres the page itself. */
 .course-reader__pdf-note {
   flex: 0 0 auto;
-  margin: 8px 0 0;
+  margin: 8px auto 0;
   text-align: center;
 }
 
@@ -2022,6 +2022,9 @@ html.is-page-loading { cursor: progress; }
 .course-reader__empty {
   text-align: center; padding: clamp(28px, 5vw, 48px) 20px;
 }
+/* Paragraphs are capped at 68ch site-wide, which in a centred card leaves the
+   text sitting off to one side. Centre the column itself, not just its lines. */
+.course-reader__empty p { margin-inline: auto; }
 .reader-block { margin-top: 28px; }
 .reader-block__title { margin-bottom: 12px; }
 .reader-pdf {

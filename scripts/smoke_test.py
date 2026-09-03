@@ -5177,6 +5177,21 @@ ok("Reader opens module 1 the moment they buy",
    and f"/file/{mod1_asset_id}" in _rbody)
 ok("Reader shows the later module as locked",
    "Week two" in _rbody and "Unlocks" in _rbody)
+# "Opens the 15th" is no use without the hour, and the hour is no use on the
+# server's clock, so the wait is written out on the reader's own.
+_when = re.search(r"unlocks\s+([A-Z][a-z]{2} \d{2}, \d{4} at \d{2}:\d{2} [AP]M)"
+                  r"\s+your time", _rbody)
+ok("And says what time it opens, on their clock", bool(_when),
+   "no local unlock time in the module bar")
+_ny = app.test_client()
+_ny.set_cookie("tz", "America/New_York", domain="localhost")
+_ny.post("/login", data={"email": "dripper@example.com", "password": USER_PW})
+_nybody = _ny.get(f"/account/courses/{drip_purchase_id}").get_data(as_text=True)
+_ny_when = re.search(r"unlocks\s+([A-Z][a-z]{2} \d{2}, \d{4} at \d{2}:\d{2} [AP]M)",
+                     _nybody)
+ok("Somebody reading it from another timezone is told their own hour",
+   bool(_ny_when) and bool(_when) and _ny_when.group(1) != _when.group(1),
+   f"got {_ny_when and _ny_when.group(1)} for both")
 r = drip_client.get(f"/account/courses/{drip_purchase_id}/file/{mod1_asset_id}")
 ok("Unlocked module file opens", r.status_code == 200 and b"module one" in r.data)
 r = drip_client.get(f"/account/courses/{drip_purchase_id}/file/{mod2_asset_id}")
