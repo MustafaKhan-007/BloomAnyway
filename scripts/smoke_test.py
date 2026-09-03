@@ -5764,6 +5764,65 @@ with app.app_context():
         _assets_svc.delete_file(_sliced_asset)
         db.session.delete(_sliced_asset)
         db.session.commit()
+
+# Decks uploaded before any of this are still sitting in modules as .pptx
+# files, which the reader can only offer as a download. Opening one draws it.
+with app.app_context():
+    _stale = ProductAsset(
+        product_id=drip_prod_id, filename="old-deck.pptx", kind="other",
+        mime="application/vnd.openxmlformats-officedocument.presentationml"
+             ".presentation",
+        size=len(_deck_bytes), data=_deck_bytes, module_index=1, sort_order=99)
+    db.session.add(_stale)
+    db.session.commit()
+    _stale_id = _stale.id
+r = drip_client.get(f"/account/courses/{drip_purchase_id}?module=1&item={_stale_id}")
+_sbody = r.get_data(as_text=True)
+ok("A deck uploaded before all this is drawn the first time it is opened",
+   r.status_code == 200 and "This file type opens best as a download" not in _sbody
+   and "reader-pdf-canvas" in _sbody, "still offering it as a download")
+with app.app_context():
+    _was = db.session.get(ProductAsset, _stale_id)
+    ok("And the drawing is kept, so it is only ever done once",
+       _was.kind == "pdf" and _was.filename == "old-deck.pdf"
+       and _assets_svc.read_bytes(_was).startswith(b"%PDF-"),
+       f"got {(_was.kind, _was.filename)}")
+    ok("With the deck's own name still on it in the list of pieces",
+       _was.display_title() == "old-deck")
+    _assets_svc.delete_file(_was)
+    db.session.delete(_was)
+    # One the owner opens in Studio is drawn there too, rather than waiting
+    # for a buyer to be the one who finds it.
+    _stale2 = ProductAsset(
+        product_id=drip_prod_id, filename="studio-deck.pptx", kind="other",
+        mime="application/octet-stream", size=len(_deck_bytes),
+        data=_deck_bytes, module_index=1, sort_order=98)
+    db.session.add(_stale2)
+    db.session.commit()
+    _stale2_id = _stale2.id
+r = admin.get(f"/admin/products/{drip_prod_id}/edit")
+_ebody = r.get_data(as_text=True)
+with app.app_context():
+    _now = db.session.get(ProductAsset, _stale2_id)
+    ok("Studio draws the ones already uploaded, and says it has",
+       _now.kind == "pdf" and _now.filename == "studio-deck.pdf"
+       and "slide deck" in _ebody, f"got {(_now.kind, _now.filename)}")
+    _assets_svc.delete_file(_now)
+    db.session.delete(_now)
+    db.session.commit()
+# A file that only looks like a deck is left alone rather than lost.
+with app.app_context():
+    _junk = ProductAsset(
+        product_id=drip_prod_id, filename="not-really.pptx", kind="other",
+        mime="application/octet-stream", size=9, data=b"nonsense!",
+        module_index=1, sort_order=97)
+    db.session.add(_junk)
+    db.session.commit()
+    ok("One that won't draw keeps its file and stays a download",
+       not _assets_svc.redraw_deck(_junk) and _junk.kind == "other"
+       and _junk.filename == "not-really.pptx")
+    db.session.delete(_junk)
+    db.session.commit()
 with app.app_context():
     for _a in list(db.session.get(Product, drip_prod_id).assets):
         if (_a.filename or "").startswith("posting-deck"):

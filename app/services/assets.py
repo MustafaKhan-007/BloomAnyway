@@ -375,6 +375,75 @@ def _drawn_deck(raw: bytes, filename: str,
             (title or "").strip() or slides_svc.deck_title(filename))
 
 
+def is_undrawn_deck(asset) -> bool:
+    """A slide deck sitting here as a file, from before decks became pages."""
+    if asset is None or (asset.kind or "") == "pdf":
+        return False
+    from . import slides as slides_svc
+    return slides_svc.is_deck(asset.filename or "")
+
+
+def redraw_deck(asset) -> bool:
+    """Draw a deck that is already stored into pages, in place.
+
+    Uploads have been drawn since decks were first supported, but everything
+    uploaded before that is still a .pptx nobody can read on the site: the
+    reader offers a download and gives up. Rather than ask the owner to find
+    and re-upload them, the first person to open one converts it, once.
+
+    Never raises. A deck too big, too broken or too odd to draw is left
+    exactly as it was, still downloadable.
+    """
+    if not is_undrawn_deck(asset):
+        return False
+    from . import slides as slides_svc
+    if (asset.size or 0) > slides_svc.MAX_BYTES:
+        return False
+    try:
+        raw = read_bytes(asset)
+    except Exception:
+        log.exception("slides: could not read %s to draw it", asset.filename)
+        return False
+    if not raw:
+        return False
+    try:
+        drawn = slides_svc.to_pdf(raw)
+    except Exception as err:
+        log.warning("slides: leaving %s as a download — %s", asset.filename, err)
+        return False
+
+    was_on_disk = asset.disk_name
+    if in_database():
+        if len(drawn) > DB_MAX_BYTES:
+            return False
+        asset.data, asset.disk_name = drawn, None
+    else:
+        try:
+            disk_name, _ = _store_stream(BytesIO(drawn), b"", MAX_BYTES, ".pdf")
+        except AssetError:
+            log.exception("slides: could not save the drawn %s", asset.filename)
+            return False
+        asset.disk_name, asset.data = disk_name, None
+    asset.title = asset.title or slides_svc.deck_title(asset.filename)
+    asset.filename = slides_svc.pdf_name(asset.filename)
+    asset.mime, asset.kind, asset.size = "application/pdf", "pdf", len(drawn)
+    if was_on_disk and was_on_disk != asset.disk_name:
+        try:
+            _safe_remove(disk_path(was_on_disk))
+        except AssetError:
+            pass
+    log.info("slides: drew %s into %s pages worth of PDF", asset.filename,
+             len(drawn))
+    return True
+
+
+def redraw_decks(product) -> int:
+    """Draw every deck this product is still holding as a file. Returns how many."""
+    if product is None:
+        return 0
+    return sum(1 for asset in product.top_level_assets() if redraw_deck(asset))
+
+
 def _attach_bytes(product: Product, raw: bytes, *, title, filename, mime, kind,
                   module_index, lesson_index) -> ProductAsset:
     """Save something already held in memory, wherever files live here."""
