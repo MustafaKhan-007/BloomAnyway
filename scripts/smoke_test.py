@@ -6619,6 +6619,13 @@ ok("And offers to hand the file to the browser's own reader",
    "Open it in a new tab instead" in _reader_js)
 ok("A LiveCycle form is recognised rather than drawn blank",
    "isPureXfa" in _reader_js and "enableXfa" in _reader_js)
+# A slide is wider than it is tall, so it fills the pane's width at Fit
+# already. Larger used to go past that and cut both sides off a slide, with
+# no sideways scroll to get them back.
+ok("Larger never draws a page wider than the pane it is read in",
+   "scale = widthFill" in _reader_js and "contain * 1.28" not in _reader_js)
+ok("And the line under the page counts as room the page hasn't got",
+   "course-reader__pdf-note" in _reader_js and "noteH" in _reader_js)
 
 # Fillable PDFs are read here and filled in elsewhere. Drawing real boxes over
 # the page never worked, so it is gone: the page is painted as it comes,

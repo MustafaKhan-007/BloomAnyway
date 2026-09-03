@@ -491,16 +491,23 @@
           var padY = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
           var chip = document.getElementById("reader-page-chip");
           var chipH = (chip && !chip.hidden) ? (chip.offsetHeight + 10) : 0;
+          // The note under the page shares the pane with it, so the page has
+          // that much less room than the pane does.
+          var note = document.querySelector(".course-reader__pdf-note");
+          var noteH = note ? note.offsetHeight + 8 : 0;
           availW = Math.max(280, pane.clientWidth - padX);
-          availH = Math.max(280, pane.clientHeight - padY - chipH);
+          availH = Math.max(280, pane.clientHeight - padY - chipH - noteH);
         }
         var unscaled = page.getViewport({ scale: 1 });
-        var contain = Math.min(availW / unscaled.width, availH / unscaled.height);
+        var widthFill = availW / unscaled.width;
+        var contain = Math.min(widthFill, availH / unscaled.height);
         var scale;
         if (zoom === "lg") {
-          // Always larger than Fit: width-fill, or 1.28× contain when width already fills.
-          var widthFill = availW / unscaled.width;
-          scale = Math.max(widthFill, contain * 1.28);
+          // As wide as the pane and no wider. A tall page grows past the
+          // bottom and scrolls, which is the point of it; a page wider than
+          // it is tall — a slide — is already this size at Fit, and anything
+          // past it would only cut the sides off with nowhere to scroll to.
+          scale = widthFill;
         } else if (zoom === "sm") {
           scale = contain * 0.85;
         } else {
