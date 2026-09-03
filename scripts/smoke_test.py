@@ -5684,6 +5684,93 @@ with app.app_context():
             db.session.delete(_a)
     db.session.commit()
 
+# A slide deck is drawn into pages as it lands, so from then on it is an
+# ordinary document: the same reader, the same pager, the same download.
+from pptx import Presentation as _Pptx  # noqa: E402
+from pptx.util import Inches as _In  # noqa: E402
+
+_deck = _Pptx()
+for _title, _body in (("Week two: posting", "What a save really means"),
+                      ("Three niches", "Finance, parenting, beauty")):
+    _s = _deck.slides.add_slide(_deck.slide_layouts[1])
+    _s.shapes.title.text = _title
+    _s.placeholders[1].text_frame.text = _body
+_s = _deck.slides.add_slide(_deck.slide_layouts[5])
+_s.shapes.title.text = "One more thing"
+_s.shapes.add_textbox(_In(1), _In(3), _In(6), _In(1)).text_frame.text = "Post today"
+_deck_bytes = BytesIO()
+_deck.save(_deck_bytes)
+_deck_bytes = _deck_bytes.getvalue()
+
+r = admin.post(
+    f"/admin/products/{drip_prod_id}/assets",
+    data={"asset": (BytesIO(_deck_bytes), "posting-deck.pptx"),
+          "asset_title": ""},
+    content_type="multipart/form-data", follow_redirects=True)
+with app.app_context():
+    _drawn = next((a for a in db.session.get(Product, drip_prod_id).assets
+                   if (a.filename or "").startswith("posting-deck")), None)
+    ok("A PowerPoint deck uploads and comes back as pages",
+       _drawn is not None and _drawn.kind == "pdf"
+       and _drawn.filename == "posting-deck.pdf"
+       and _drawn.mime == "application/pdf",
+       f"got {_drawn and (_drawn.kind, _drawn.filename)}")
+    ok("It keeps the deck's own name in the list of pieces",
+       _drawn is not None and _drawn.display_title() == "posting-deck"
+       and _drawn.kind_label() == "PDF",
+       f"got {_drawn and (_drawn.title, _drawn.kind_label())}")
+    _drawn_bytes = _assets_svc.read_bytes(_drawn) if _drawn else b""
+    ok("What is stored is a real PDF, one page per slide",
+       _drawn_bytes.startswith(b"%PDF-")
+       and _drawn_bytes.count(b"/Type /Page\n") >= 3
+       and b"%%EOF" in _drawn_bytes[-4096:],
+       f"{len(_drawn_bytes)} bytes")
+    _drawn_id = _drawn.id if _drawn else 0
+r = admin.post(
+    f"/admin/products/{drip_prod_id}/assets",
+    data={"asset": (BytesIO(b"PK\x03\x04 not really a deck"), "broken.pptx")},
+    content_type="multipart/form-data", follow_redirects=True)
+with app.app_context():
+    ok("A deck that won't open is refused, with what to do about it",
+       not any((a.filename or "").startswith("broken")
+               for a in db.session.get(Product, drip_prod_id).assets)
+       and "export it as a pdf" in r.get_data(as_text=True).lower())
+r = drip_client.get(f"/account/courses/{drip_purchase_id}/file/{_drawn_id}")
+ok("And the drawn deck streams to a buyer as a PDF",
+   r.status_code == 200 and r.data.startswith(b"%PDF-")
+   and "pdf" in (r.headers.get("Content-Type") or ""))
+
+# A deck big enough to arrive in slices takes the same road at the end of it.
+r = admin.post(f"/admin/products/{drip_prod_id}/uploads/begin",
+               json={"filename": "sliced-deck.pptx", "size": len(_deck_bytes)})
+_deck_upload = (r.get_json() or {}).get("upload_id")
+for _i in range(0, len(_deck_bytes), 4096):
+    admin.post(f"/admin/products/{drip_prod_id}/uploads/{_deck_upload}/chunk",
+               data={"chunk": (BytesIO(_deck_bytes[_i:_i + 4096]), "part")},
+               content_type="multipart/form-data")
+r = admin.post(f"/admin/products/{drip_prod_id}/uploads/{_deck_upload}/finish",
+               json={"filename": "sliced-deck.pptx", "module": 1})
+_sliced = r.get_json() or {}
+ok("A deck sent in slices is drawn into pages just the same",
+   r.status_code == 200 and _sliced.get("kind") == "pdf"
+   and _sliced.get("kind_label") == "PDF", f"got {_sliced}")
+with app.app_context():
+    _sliced_asset = db.session.get(ProductAsset, _sliced.get("asset_id") or 0)
+    ok("And lands as a document under the module it was sent to",
+       _sliced_asset is not None and _sliced_asset.filename == "sliced-deck.pdf"
+       and _sliced_asset.module_index == 1
+       and _assets_svc.read_bytes(_sliced_asset).startswith(b"%PDF-"))
+    if _sliced_asset is not None:
+        _assets_svc.delete_file(_sliced_asset)
+        db.session.delete(_sliced_asset)
+        db.session.commit()
+with app.app_context():
+    for _a in list(db.session.get(Product, drip_prod_id).assets):
+        if (_a.filename or "").startswith("posting-deck"):
+            _assets_svc.delete_file(_a)
+            db.session.delete(_a)
+    db.session.commit()
+
 # Modules and lessons can be reordered and removed. What a row holds is pinned
 # to it by number while the rows on the form are positional, so a row that
 # moves has to take its files with it — otherwise a module dragged up the list

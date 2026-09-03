@@ -111,6 +111,8 @@ _MIME_BY_EXT = {
     ".htm": "text/html",
     ".doc": "application/msword",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".pptx": ("application/vnd.openxmlformats-officedocument"
+              ".presentationml.presentation"),
     ".epub": "application/epub+zip",
 }
 
@@ -133,6 +135,8 @@ _KIND_BY_EXT = {
     ".htm": "html",
     ".doc": "doc",
     ".docx": "docx",
+    # Drawn into a PDF the moment it lands, so this kind never reaches a row.
+    ".pptx": "slides",
     ".epub": "other",
     ".zip": "other",
 }
@@ -349,6 +353,46 @@ def _store_stream(stream, first: bytes, limit: int, ext: str) -> tuple[str, int]
     return disk_name, size
 
 
+def _drawn_deck(raw: bytes, filename: str,
+                title: str | None) -> tuple[bytes, str, str, str, str]:
+    """A slide deck as the PDF of it: (data, filename, mime, kind, title).
+
+    Decks are drawn once, here, rather than every time somebody opens one, so
+    everything downstream — the reader, the page counter, the download — is
+    handling an ordinary document.
+    """
+    from . import slides as slides_svc
+    try:
+        drawn = slides_svc.to_pdf(raw)
+    except slides_svc.SlideError as err:
+        raise AssetError(str(err)) from err
+    except Exception as err:
+        log.exception("slides: %s wouldn't draw", filename)
+        raise AssetError(
+            "We couldn't turn that deck into pages. Export it as a PDF from "
+            "PowerPoint and upload that instead.") from err
+    return (drawn, slides_svc.pdf_name(filename), "application/pdf", "pdf",
+            (title or "").strip() or slides_svc.deck_title(filename))
+
+
+def _attach_bytes(product: Product, raw: bytes, *, title, filename, mime, kind,
+                  module_index, lesson_index) -> ProductAsset:
+    """Save something already held in memory, wherever files live here."""
+    if in_database():
+        if len(raw) > DB_MAX_BYTES:
+            raise AssetError(
+                f"With no disk attached, files are kept in the database and "
+                f"have to stay under {DB_MAX_BYTES // (1024 * 1024)} MB.")
+        return _attach(product, title=title, filename=filename, mime=mime,
+                       kind=kind, size=len(raw), data=raw,
+                       module_index=module_index, lesson_index=lesson_index)
+    ext = os.path.splitext(filename)[1].lower()
+    disk_name, size = _store_stream(BytesIO(raw), b"", MAX_BYTES, ext)
+    return _attach(product, title=title, filename=filename, mime=mime,
+                   kind=kind, size=size, disk_name=disk_name,
+                   module_index=module_index, lesson_index=lesson_index)
+
+
 def _safe_remove(path: str) -> None:
     try:
         os.remove(path)
@@ -391,6 +435,14 @@ def add_asset(
     head = stream.read(_CHUNK)
     if not head:
         raise AssetError("That file was empty.")
+
+    if kind == "slides":
+        from . import slides as slides_svc
+        raw = head + stream.read(slides_svc.MAX_BYTES + 1 - len(head))
+        raw, filename, mime, kind, title = _drawn_deck(raw, filename, title)
+        return _attach_bytes(product, raw, title=title, filename=filename,
+                             mime=mime, kind=kind, module_index=module_index,
+                             lesson_index=lesson_index)
 
     if in_database():
         raw = head + stream.read(DB_MAX_BYTES + 1 - len(head))
@@ -607,6 +659,20 @@ def finish_upload(product: Product, upload_id: str, filename: str, *,
 
     name, mime, kind = describe(filename, None)
     ext = os.path.splitext(name)[1].lower()
+    if kind == "slides":
+        from . import slides as slides_svc
+        if size > slides_svc.MAX_BYTES:
+            _safe_remove(path)
+            raise AssetError(
+                f"That deck is over {slides_svc.MAX_BYTES // (1024 * 1024)} MB. "
+                "Export it as a PDF from PowerPoint and upload that instead.")
+        with open(path, "rb") as fh:
+            raw = fh.read()
+        _safe_remove(path)
+        raw, name, mime, kind, title = _drawn_deck(raw, name, title)
+        return _attach_bytes(product, raw, title=title, filename=name,
+                             mime=mime, kind=kind, module_index=module_index,
+                             lesson_index=lesson_index)
     if ext in (".h5p", ".zip"):
         with open(path, "rb") as fh:
             if _looks_like_h5p(fh.read(), name):
