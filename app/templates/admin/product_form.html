@@ -4,7 +4,7 @@
 {% block content %}
 {% set accent_default = '#5A3158' if product.track == 'healing' else '#B58A3F' %}
 {% set has_custom_accent = product.accent_hex() is not none %}
-{% set file_accept = '.pdf,.h5p,.zip,.png,.jpg,.jpeg,.webp,.gif,.mp4,.webm,.mp3,.wav,.txt,.md,.html,.doc,.docx' %}
+{% set file_accept = '.pdf,.pptx,.h5p,.zip,.png,.jpg,.jpeg,.webp,.gif,.mp4,.webm,.mp3,.wav,.txt,.md,.html,.doc,.docx' %}
 
 {# A written extract, editable where it sits. Used for the ones hanging off a
    file and for the module-level ones, which until now could only be retyped. #}
@@ -338,7 +338,9 @@
           Leave blank to skip. Start with two — add more whenever you like, including
           after this is live. New modules reach everyone who already bought it.
           Each module can hold as many videos, documents and written extracts as
-          you want, worked through in the order they appear.
+          you want, worked through in the order they appear. A PowerPoint deck
+          is turned into pages as it uploads, so buyers read it here like any
+          other document.
         </p>
         <p class="field-help" style="margin:0 0 12px;">
           Use the arrows to move a module or lesson up and down; whatever is
@@ -656,8 +658,7 @@
       <div class="form-row">
         <div class="field" style="flex:2;">
           <label for="asset">File</label>
-          <input type="file" id="asset" name="asset"
-                 accept=".pdf,.h5p,.zip,.png,.jpg,.jpeg,.webp,.gif,.mp4,.webm,.mp3,.wav,.txt,.md,.html,.doc,.docx">
+          <input type="file" id="asset" name="asset" accept="{{ file_accept }}">
         </div>
         <div class="field">
           <label for="asset_title">Label</label>
