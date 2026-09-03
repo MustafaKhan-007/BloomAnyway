@@ -2015,9 +2015,10 @@ html.is-page-loading { cursor: progress; }
      the controls — a tall phone-shot lesson included. */
   display: block; margin: 0 auto;
   width: auto; height: auto;
-  /* Sized by the room left under the module bar, so the player and its
-     controls land above the fold on an ordinary window at ordinary zoom. */
-  max-width: 100%; max-height: clamp(200px, calc(100vh - 600px), 520px);
+  /* Two thirds of the screen's height, whatever the screen: a lesson filmed
+     upright is worth watching at a size you can see, and one filmed wide is
+     held back by the width of the pane long before this bites. */
+  max-width: 100%; max-height: 68vh;
   border-radius: 12px;
   background: #1a0f16;
 }
@@ -2026,10 +2027,6 @@ html.is-page-loading { cursor: progress; }
 .reader__stage--media { height: auto; max-height: none; }
 .reader__stage--media .reader__viewer {
   align-items: center; justify-content: center; overflow: visible;
-}
-@media (max-width: 820px) {
-  /* Less sits above the player on a phone, so it can have more of the screen. */
-  .course-reader__video { max-height: clamp(200px, calc(100vh - 430px), 520px); }
 }
 .course-reader__audio {
   padding: 28px 12px; display: grid; place-items: center;
