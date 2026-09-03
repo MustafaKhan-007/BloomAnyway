@@ -368,6 +368,32 @@ DRIP_MODES: dict[str, str] = {
     "gaps": "Each module its own wait after the one before",
 }
 
+#: File kinds gathered under one word when counting up what is in something.
+CONTENT_GROUPS = (
+    ("video", ("video",)),
+    ("audio track", ("audio",)),
+    ("document", ("pdf", "doc", "docx", "html", "other")),
+    ("interactive piece", ("h5p",)),
+    ("image", ("image",)),
+)
+
+
+def content_phrase(contents, noted: set) -> str:
+    """"1 video, 2 documents, written notes" for a pile of files.
+
+    Counts only, never a file or extract title — the store page says how much
+    is inside without giving the inside away. ``noted`` is the set of asset ids
+    that have a written extract hanging off them.
+    """
+    parts = []
+    for label, kinds in CONTENT_GROUPS:
+        n = sum(1 for a in contents if a.kind in kinds)
+        if n:
+            parts.append(f"{n} {label}" + ("" if n == 1 else "s"))
+    if any(a.kind == "text" or a.id in noted for a in contents):
+        parts.append("written notes")
+    return ", ".join(parts)
+
 
 class Product(db.Model):
     __tablename__ = "products"
@@ -712,33 +738,52 @@ class Product(db.Model):
         return rows
 
     def module_summaries(self) -> list[str]:
-        """One phrase per curriculum row: "1 video, 2 documents, written notes".
-
-        Counts only, never a file or extract title — the store page says how
-        much is inside without giving the inside away.
-        """
-        groups = (
-            ("video", ("video",)),
-            ("audio track", ("audio",)),
-            ("document", ("pdf", "doc", "docx", "html", "other")),
-            ("interactive piece", ("h5p",)),
-            ("image", ("image",)),
-        )
+        """One phrase per curriculum row: "1 video, 2 documents, written notes"."""
         # Worked out from the loaded collection rather than by asking each
         # file for its notes, which would be a query per row of the page.
         noted = {a.parent_asset_id for a in self.assets if a.parent_asset_id}
-        out = []
-        for row in self.modules():
-            contents = row["contents"]
-            parts = []
-            for label, kinds in groups:
-                n = sum(1 for a in contents if a.kind in kinds)
-                if n:
-                    parts.append(f"{n} {label}" + ("" if n == 1 else "s"))
-            if any(a.kind == "text" or a.id in noted for a in contents):
-                parts.append("written notes")
-            out.append(", ".join(parts))
-        return out
+        return [content_phrase(row["contents"], noted) for row in self.modules()]
+
+    def glance_facts(self) -> list[tuple[str, str]]:
+        """Label and value pairs summing the product up in a few lines.
+
+        The store page shows these beside the write-up, where the column would
+        otherwise be a stub next to a long description. Everything here is
+        worked out from what is already loaded, and none of it repeats the
+        owner's own copy.
+        """
+        rows = self.modules()
+        facts: list[tuple[str, str]] = []
+
+        if rows:
+            lessons = sum(len(row["lessons"]) for row in rows)
+            size = f"{len(rows)} module" + ("" if len(rows) == 1 else "s")
+            if lessons:
+                size += f", {lessons} lesson" + ("" if lessons == 1 else "s")
+            facts.append(("Size", size))
+
+        noted = {a.parent_asset_id for a in self.assets if a.parent_asset_id}
+        inside = content_phrase(self.top_level_assets(), noted)
+        if inside:
+            facts.append(("Inside", inside))
+
+        if self.is_dripped():
+            if self.drip_mode_key() == "interval":
+                days = self.drip_days()
+                unit = "day" if days == 1 else f"{days} days"
+                facts.append(("Pace", f"First module right away, then one every {unit}"))
+            else:
+                facts.append(("Pace", "One module at a time, on a set schedule"))
+        elif rows:
+            facts.append(("Pace", "Every module opens the moment you buy"))
+
+        facts.append(("Yours", "Kept for good, read any time in My space"))
+
+        if self.has_perk():
+            facts.append(("Also included", self.perk_summary()))
+        # A line or two isn't worth a column of its own: a single guide with
+        # nothing but its file would only narrow the write-up beside it.
+        return facts if len(facts) > 2 else []
 
     def is_dripped(self) -> bool:
         """Drip-feed only kicks in once there is more than one module."""

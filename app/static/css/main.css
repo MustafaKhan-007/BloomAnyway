@@ -9272,7 +9272,9 @@ a.at-handle:hover { text-decoration: underline; }
 }
 .pd-body-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* The write-up is the long half, so it gets the wider column: the shorter
+     one beside it then runs deeper and leaves less of a gap under it. */
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
   gap: 22px 28px;
   margin: 0 0 28px;
   align-items: start;
@@ -9293,6 +9295,22 @@ a.at-handle:hover { text-decoration: underline; }
 .pd-section h2 {
   margin: 0 0 12px; font-family: var(--font-display); font-size: 1.35rem; color: var(--plum-deep, var(--plum));
 }
+/* The facts card beside the write-up: label over value so a long value still
+   reads well in the narrow column. */
+.pd-glance {
+  margin: 0; padding: 14px 16px;
+  border-radius: 14px; background: var(--ivory-deep);
+  border: 1px solid rgba(61, 20, 49, 0.06);
+}
+.pd-glance__row { padding: 9px 0; border-bottom: 1px solid rgba(61, 20, 49, 0.08); }
+.pd-glance__row:first-child { padding-top: 0; }
+.pd-glance__row:last-child { padding-bottom: 0; border-bottom: 0; }
+.pd-glance dt {
+  margin: 0 0 2px;
+  font-size: 11px; font-weight: 800; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--plum-deep);
+}
+.pd-glance dd { margin: 0; font-size: 0.95rem; line-height: 1.5; color: var(--ink); }
 .pd-prose { font-size: 1.02rem; line-height: 1.65; color: var(--ink); }
 .pd-prose p { margin: 0 0 12px; }
 .pd-prose p:last-child { margin-bottom: 0; }
@@ -9364,7 +9382,6 @@ a.at-handle:hover { text-decoration: underline; }
   font-size: 11px; font-weight: 800; letter-spacing: 0.03em;
   color: var(--plum-deep); text-transform: uppercase;
 }
-.pd-curriculum__lesson-note { color: var(--ink-soft); }
 @media (max-width: 860px) {
   .pd-layout { grid-template-columns: 1fr; }
   .pd-layout__aside {

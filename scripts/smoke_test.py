@@ -5800,6 +5800,65 @@ ok("A lesson removed leaves its files in the module, not deleted",
                               ["gamma.pdf", "two.pdf"]),
    f"got {_lesson_map(_order_id)}")
 
+# The store page says what each lesson is called and stops there. The extract
+# written for a lesson is for the buyer reading it; printing every one of them
+# turned the module cards into walls of text.
+r = admin.post("/admin/products/new", data=_MultiDict([
+    ("title", "Glance Course"), ("track", "building"), ("types", "course"),
+    ("promise", "Short and clear"), ("price", "20.00"),
+    ("stripe", "price_glance"),
+    ("description", "A long write-up that runs well past the short note "
+                    "saying who the course is for."),
+    ("audience", "Women starting out."),
+    ("mod1_title", "Week one"), ("mod1_lesson_title", "Niche Selection"),
+    ("mod1_lesson_desc", "In this lesson you pick a niche and stay with it."),
+    ("mod1_lesson_title", "Content Basics"), ("mod1_lesson_desc", ""),
+    ("mod1_lesson1_file", (BytesIO(_pdf), "niche.pdf")),
+]), content_type="multipart/form-data", follow_redirects=True)
+_gbody = admin.get("/courses/glance-course").get_data(as_text=True)
+ok("The store page numbers and names each lesson",
+   r.status_code == 200 and "Niche Selection" in _gbody
+   and "Lesson 1" in _gbody and "Lesson 2" in _gbody)
+ok("And keeps the lesson's own write-up for the buyer, not the shop window",
+   "In this lesson you pick a niche" not in _gbody)
+
+# Beside a long write-up, "who this is for" is a couple of lines and the rest
+# of the column was empty. The facts card fills it with what a buyer asks next.
+ok("The column beside the write-up carries a facts card",
+   "At a glance" in _gbody and "pd-glance" in _gbody
+   and "Who this is for" in _gbody)
+ok("Saying how big it is and what is inside",
+   "1 module, 2 lessons" in _gbody and "1 document" in _gbody,
+   "size or contents line missing")
+ok("When it opens and what they keep",
+   "Every module opens the moment you buy" in _gbody
+   and "Kept for good" in _gbody)
+with app.app_context():
+    _facts = dict(db.session.get(Product, drip_prod_id).glance_facts())
+    ok("A drip-fed course's card says it comes a module at a time",
+       "moment you buy" not in _facts.get("Pace", "")
+       and ("every" in _facts.get("Pace", "")
+            or "one at a time" in _facts.get("Pace", "")),
+       f"got {_facts.get('Pace')!r}")
+    ok("And repeats the membership that comes with it",
+       "3 months of Creator membership, free" in _facts.get("Also included", ""),
+       f"got {_facts.get('Also included')!r}")
+    _bare = Product(slug="bare-glance", title="Bare Glance", type="guide",
+                    status="published", promise="x", price_cents=500,
+                    stripe_price_id="price_bare")
+    db.session.add(_bare)
+    db.session.commit()
+    ok("A guide with nothing to list keeps its write-up full width instead",
+       _bare.glance_facts() == [], f"got {_bare.glance_facts()}")
+    db.session.delete(_bare)
+    db.session.commit()
+with app.app_context():
+    _svc = __import__("app.services.catalog", fromlist=["catalog"])
+    _glance = Product.query.filter_by(slug="glance-course").first()
+    if _glance is not None:
+        _svc._purge_product(_glance)
+        db.session.commit()
+
 # The editor is long, so each section, module and lesson folds away. What each
 # one is called stays on show, and everything folded still saves.
 _fbody = admin.get(f"/admin/products/{_order_id}/edit").get_data(as_text=True)
