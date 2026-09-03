@@ -218,6 +218,15 @@ class User(UserMixin, db.Model):
         from .services.preview import preview_tier
         return preview_tier(self)
 
+    def is_owner_view(self) -> bool:
+        """An owner seeing the site as themselves rather than as a member.
+
+        Anywhere the answer is "everything, because they own the place" has to
+        ask this rather than ``is_admin``, or previewing changes the gates and
+        leaves the page still saying Owner.
+        """
+        return self.is_owner() and not self.preview_tier()
+
     def effective_membership(self) -> str:
         """The tier used for gating. Owner always ranks as Full Bloom."""
         preview = self.preview_tier()
@@ -262,7 +271,7 @@ class User(UserMixin, db.Model):
     def has_feature(self, key: str) -> bool:
         """True when this user's plan includes a Studio-toggled capability."""
         from .services.plan_features import feature_enabled
-        if self.is_admin and not self.preview_tier():
+        if self.is_owner_view():
             return True
         return feature_enabled(self.effective_membership(), key)
 
@@ -274,7 +283,7 @@ class User(UserMixin, db.Model):
             return default
 
     def membership_label(self) -> str:
-        if self.is_admin and not self.preview_tier():
+        if self.is_owner_view():
             return "Owner"
         return MEMBERSHIP_LABELS.get(self.effective_membership(), "Free")
 

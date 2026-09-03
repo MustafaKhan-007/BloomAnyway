@@ -7149,14 +7149,38 @@ with app.app_context():
     ok("Previewing changes nothing on the account itself",
        _owner.membership == "none" and _owner.is_admin is True)
 
+ok("The account page stops calling them the owner while they are a member",
+   ">Owner<" not in _body and "<h3>Owner</h3>" not in _body
+   and "Creator Member" in _body, "still showing the owner's own view")
+
+# Pinning yourself to Free was the same view as this right up until a perk
+# landed, at which point it hid the very thing being checked for. It is gone,
+# and a session still asking for it lands here instead.
 r = admin.post("/admin/preview", data={"tier": "none", "next": "/account"},
                follow_redirects=True)
-ok("The owner can also drop all the way to Free",
-   "Now browsing as Free" in r.get_data(as_text=True))
+ok("Asking for the old free-only view lands on an account from scratch",
+   "Now browsing as Creator" in r.get_data(as_text=True))
+_switch = admin.get("/admin/settings").get_data(as_text=True)
+ok("And free is no longer a tier to pin yourself to",
+   "An account from scratch" in _switch
+   and '<option value="none"' not in _switch)
+
+# With nothing earned, that same view is a free account and gated like one.
+with app.app_context():
+    _perk_buy = ShopPurchase.query.filter_by(lemon_squeezy_order_id="9301").first()
+    _perk_buy.purchased_at = utcnow() - timedelta(days=400)
+    db.session.commit()
 r = admin.get("/marketplace/mine", follow_redirects=True)
-ok("And the members-only marketplace shuts them out like anyone else",
+ok("Once the months run out the members-only marketplace shuts them out too",
    "members&#39; perk" in r.get_data(as_text=True)
    or "members' perk" in r.get_data(as_text=True))
+with app.app_context():
+    _perk_buy = ShopPurchase.query.filter_by(lemon_squeezy_order_id="9301").first()
+    _perk_buy.purchased_at = utcnow()
+    db.session.commit()
+r = admin.get("/account", follow_redirects=True)
+ok("And the moment the perk is live again, the same view lifts by itself",
+   "Creator" in r.get_data(as_text=True), "still gated as free")
 ok("Studio stays open while previewing", admin.get("/admin/").status_code == 200)
 ok("So do test products — they are owner tooling, not a membership gate",
    admin.get("/checkout/product/dress-rehearsal").status_code != 404)

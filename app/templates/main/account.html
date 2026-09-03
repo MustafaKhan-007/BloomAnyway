@@ -14,7 +14,7 @@
         <div>
           <h1>{{ greeting }}</h1>
           <div class="ms-exact__badges">
-            {% if current_user.is_admin %}
+            {% if current_user.is_owner_view() %}
             <span class="ms-exact__badge ms-exact__badge--gold">Owner</span>
             {% elif current_user.effective_membership() == 'full_bloom' %}
             <span class="ms-exact__badge ms-exact__badge--gold">Full Bloom Member</span>
@@ -256,7 +256,7 @@
       <aside class="ms-overview__side">
         <div class="ms-card ms-membership-card ms-exact__membership">
           <p class="eyebrow">Your Membership</p>
-          {% if current_user.is_admin %}
+          {% if current_user.is_owner_view() %}
           <h3>Owner</h3>
           <ul class="ms-exact__benefits">
             <li>Full Studio access</li>

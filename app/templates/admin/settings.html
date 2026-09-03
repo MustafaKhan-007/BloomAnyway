@@ -44,9 +44,9 @@
     <p class="field-help" style="margin-top: 0;">
       Owners count as Full Bloom everywhere, so there is normally no way to see
       what a paying member gets — or whether the free membership months on a
-      test product actually arrived. Pick a tier and the site will gate you like
-      that member until you switch back. Studio stays open the whole time,
-      test products stay visible, and nothing is written to your account.
+      product actually arrived. Pick how to be treated and the site gates you
+      that way until you switch back. Studio stays open the whole time, test
+      products stay visible, and nothing is written to your account.
     </p>
     <form method="post" action="{{ url_for('admin.preview') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -61,10 +61,13 @@
             {% endfor %}
           </select>
           <p class="field-help">
-            “What I've actually earned” is the one for testing perks: it ignores
-            your owner status and shows the tier your own purchases have bought
-            you{% if owner_preview.on and owner_preview.choice == 'real' %},
-            currently {{ owner_preview.label }}{% endif %}.
+            “An account from scratch” is the everyday one: nothing but what
+            this account has actually earned, so it reads as free while there
+            is nothing, and lifts by itself the moment a membership perk from
+            a product lands — rather than pinning you to free and hiding the
+            thing you were checking for{% if owner_preview.on and owner_preview.choice == 'real' %}.
+            Right now that is {{ owner_preview.label }}{% endif %}.
+            The named tiers are for seeing what someone on that plan gets.
           </p>
         </div>
       </div>
