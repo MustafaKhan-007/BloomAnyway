@@ -453,37 +453,37 @@
         {% endif %}
         {% set cover_image = (catalog.cover_url if catalog and catalog.cover_url else none) %}
         {% if kind == 'pdf' %}
-          {% set kind_label = 'PDF Document' %}
           {% set kind_short = 'PDF' %}
         {% elif kind == 'h5p' %}
-          {% set kind_label = 'Interactive guide' %}
           {% set kind_short = 'H5P' %}
         {% elif kind == 'audio' %}
-          {% set kind_label = 'Audio' %}
           {% set kind_short = 'AUDIO' %}
         {% elif kind in ('doc', 'docx') %}
-          {% set kind_label = 'Document' %}
           {% set kind_short = 'DOC' %}
         {% elif kind %}
-          {% set kind_label = kind|upper %}
           {% set kind_short = kind|upper %}
         {% elif catalog %}
-          {% set kind_label = catalog.type_pill()|title %}
           {% set kind_short = catalog.type_pill() %}
         {% else %}
-          {% set kind_label = 'Guide' %}
           {% set kind_short = 'GUIDE' %}
         {% endif %}
-        {% set can_read = course_readable.get(item.id) %}
-        {% set dl = namespace(url=none, external=false) %}
-        {% if item.download_url %}
-          {% set dl.url = item.download_url %}
-          {% set dl.external = true %}
-        {% elif item.file_key %}
-          {% set dl.url = url_for('main.shop_download', purchase_id=item.id) %}
-        {% elif can_read and asset %}
-          {% set dl.url = url_for('main.course_file', purchase_id=item.id, asset_id=asset.id, download=1) %}
+        {# What it is, as it was sold: a course stays a course whatever the
+           first file inside it happens to be. Only a purchase with no product
+           left behind it goes by the file. #}
+        {% if catalog %}
+          {% set kind_label = catalog.type_pill()|title %}
+        {% elif kind == 'h5p' %}
+          {% set kind_label = 'Interactive guide' %}
+        {% elif kind == 'audio' %}
+          {% set kind_label = 'Audio' %}
+        {% elif kind == 'pdf' %}
+          {% set kind_label = 'PDF Document' %}
+        {% elif kind in ('doc', 'docx') %}
+          {% set kind_label = 'Document' %}
+        {% else %}
+          {% set kind_label = 'Guide' %}
         {% endif %}
+        {% set can_read = course_readable.get(item.id) %}
         {% set put_away = item.status == 'removed' %}
         <article class="lib-card{{ ' lib-card--away' if put_away }}" data-lib-bucket="{{ lib_bucket }}" style="--lib-cover: {{ cover }};">
           {{ bloom_cover(item.product_name, kind_short, cover, cover_image) }}
@@ -547,12 +547,7 @@
                 {% if pct > 0 and pct < 100 %}Continue reading{% elif pct >= 100 %}Read again{% else %}Open &amp; read{% endif %}
               </a>
               {% endif %}
-              {% if dl.url %}
-              <a class="btn lib-card__btn lib-card__btn--ghost" href="{{ dl.url }}"{% if dl.external %} target="_blank" rel="noopener"{% endif %}>
-                <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M7.2 2h1.6v6.2l2-2 .9.9L8 11.8 4.3 7.1l.9-.9 2 2V2Zm-4 10.2h9.6V14H3.2v-1.8Z"/></svg>
-                Download
-              </a>
-              {% elif not can_read %}
+              {% if not can_read %}
               <p class="field-help lib-card__wait">
                 {% if not catalog %}
                 This course has been taken down.
