@@ -1633,14 +1633,15 @@ html.is-page-loading { cursor: progress; }
   list-style: none; margin: 0; padding: 0;
   display: flex; flex-wrap: wrap; gap: 8px;
 }
-.reader-pieces__item > a {
+.reader-pieces__item { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.reader-pieces__item > a:not(.reader-pieces__notes) {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 12px; border-radius: 999px; text-decoration: none;
   border: 1px solid rgba(61, 20, 49, 0.16); color: var(--ink);
   background: #fff;
 }
 .reader-pieces__item > a:hover { border-color: var(--plum); }
-.reader-pieces__item.is-active > a {
+.reader-pieces__item.is-active > a:not(.reader-pieces__notes) {
   background: var(--plum); color: #fff8f3; border-color: var(--plum);
 }
 .reader-pieces__kind {
@@ -1717,12 +1718,6 @@ html.is-page-loading { cursor: progress; }
     display: flex; flex-wrap: wrap; gap: 6px;
   }
   .reader__toc-item { flex: 0 0 auto; }
-  /* On a phone a split stage grows to what it holds instead of halving a
-     short viewport; each half then scrolls on its own. A file with nothing
-     written about it keeps the full-height stage it always had. */
-  .reader__stage--split { height: auto; max-height: none; }
-  .reader__stage--split .reader__viewer { max-height: 42vh; overflow-y: auto; }
-  .reader__stage--split .reader__notes { max-height: 46vh; }
 }
 .reader__sidebar-label {
   margin: 0 0 8px;
@@ -1784,13 +1779,12 @@ html.is-page-loading { cursor: progress; }
   overflow-y: auto;
 }
 .reader__viewer--fill { flex: 1 1 auto; overflow: hidden; }
-.reader__notes {
-  flex: 0 1 auto;
-  max-height: 45%;
-  overflow-y: auto;
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px solid rgba(61, 20, 49, 0.12);
+/* Its own card under the reading pane: what somebody wrote for a file is
+   worth as much as the file, and inside the pane it went unread. */
+.reader-extracts {
+  margin: 16px 0 0; padding: 14px 18px; scroll-margin-top: 24px;
+  border: 1px solid rgba(61, 20, 49, 0.12); border-radius: 14px;
+  background: rgba(255, 255, 255, 0.6);
 }
 .reader-doc--note { padding-top: 0; }
 .reader-doc--note h2 {
@@ -1800,8 +1794,14 @@ html.is-page-loading { cursor: progress; }
   margin-top: 14px; padding-top: 14px;
   border-top: 1px dashed rgba(61, 20, 49, 0.14);
 }
-.reader-pieces__notes { font-size: 12px; color: var(--gold, #B58A3F); }
-.reader-pieces__item.is-active .reader-pieces__notes { color: rgba(255, 248, 243, 0.85); }
+.reader-pieces__notes {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 11px; border-radius: 999px;
+  font-size: 12px; font-weight: 700; text-decoration: none;
+  color: var(--plum-deep); background: var(--gold-soft, rgba(240, 200, 120, 0.22));
+  border: 1px solid rgba(181, 138, 63, 0.4);
+}
+.reader-pieces__notes:hover { border-color: var(--plum); }
 .course-reader__pdf-wrap {
   display: flex;
   align-items: center;
@@ -2027,7 +2027,6 @@ html.is-page-loading { cursor: progress; }
 .reader__stage--media .reader__viewer {
   align-items: center; justify-content: center; overflow: visible;
 }
-.reader__stage--media .reader__notes { max-height: none; overflow: visible; }
 @media (max-width: 820px) {
   /* Less sits above the player on a phone, so it can have more of the screen. */
   .course-reader__video { max-height: clamp(200px, calc(100vh - 430px), 520px); }

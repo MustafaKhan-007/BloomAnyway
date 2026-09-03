@@ -135,16 +135,16 @@
           <a href="{{ url_for('main.course_reader', purchase_id=purchase.id, module=module or None, item=piece.id) }}">
             <span class="reader-pieces__kind reader-pieces__kind--{{ piece.kind }}">{{ piece.kind_label() }}</span>
             <span class="reader-pieces__name">{{ piece.display_title() }}</span>
-            {% if piece.notes %}
-            <span class="reader-pieces__notes"
-                  title="{{ piece.notes|length }} written extract{{ '' if piece.notes|length == 1 else 's' }} come with this">
-              <span aria-hidden="true">&#9998;</span>
-              <span class="sr-only">
-                {{ piece.notes|length }} written extract{{ '' if piece.notes|length == 1 else 's' }}
-              </span>
-            </span>
-            {% endif %}
           </a>
+          {# Says how much is written for this file and goes straight to it,
+             rather than leaving it to be found below the file itself. #}
+          {% if piece.notes %}
+          <a class="reader-pieces__notes"
+             href="{{ url_for('main.course_reader', purchase_id=purchase.id, module=module or None, item=piece.id) }}#reader-extracts">
+            <span aria-hidden="true">&#9998;</span>
+            {{ piece.notes|length }} extract{{ '' if piece.notes|length == 1 else 's' }}
+          </a>
+          {% endif %}
         </li>
         {% endfor %}
       </ol>
@@ -214,7 +214,7 @@
       </aside>
 
       <div class="reader__main">
-        <div class="reader__stage{{ ' reader__stage--split' if asset.notes }}{{ ' reader__stage--media' if asset.kind in ('video', 'audio', 'image') }}"
+        <div class="reader__stage{{ ' reader__stage--media' if asset.kind in ('video', 'audio', 'image') }}"
              id="reader-stage">
           <p class="reader__page-chip" id="reader-page-chip" {% if asset.kind != 'pdf' %}hidden{% endif %}>
             Page <span id="reader-chip-page">{{ start_page }}</span> of <span id="reader-chip-total">—</span>
@@ -271,16 +271,6 @@
           {% endif %}
           </div>
 
-          {% if asset.notes %}
-          <aside class="reader__notes" aria-label="Written extracts for this piece">
-            {% for note in asset.notes %}
-            <article class="reader-doc reader-doc--written reader-doc--note">
-              {% if note.title %}<h2>{{ note.title }}</h2>{% endif %}
-              {{ note.body | markdown }}
-            </article>
-            {% endfor %}
-          </aside>
-          {% endif %}
         </div>
 
         <div class="reader__footer" id="reader-toolbar" {% if asset.kind != 'pdf' %}hidden{% endif %}>
@@ -292,6 +282,25 @@
           </label>
           <button type="button" class="btn reader__nav-btn reader__nav-btn--primary" id="reader-next">Next →</button>
         </div>
+
+        {# Anything written for this file sits under it in the open, rather
+           than folded into a corner of the pane the file is read in, where it
+           was easy to have and never find. #}
+        {% if asset.notes %}
+        <section class="reader-extracts" id="reader-extracts"
+                 aria-labelledby="reader-extracts-title">
+          <p class="reader-pieces__title" id="reader-extracts-title">
+            Written with this {{ asset.kind_label()|lower if asset.kind in ('video', 'audio', 'image') else 'file' }}
+          </p>
+          {% for note in asset.notes %}
+          <article class="reader-doc reader-doc--written reader-doc--note"
+                   id="extract-{{ note.id }}">
+            {% if note.title %}<h2>{{ note.title }}</h2>{% endif %}
+            {{ note.body | markdown }}
+          </article>
+          {% endfor %}
+        </section>
+        {% endif %}
 
         {% if asset.kind not in ('pdf',) %}
         <div class="reader__footer reader__footer--simple">

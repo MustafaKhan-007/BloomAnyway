@@ -6805,12 +6805,18 @@ ok("The reader shows the file and everything written for it together",
    and "Before you press play" in _rbody
    and "Have a pen <strong>ready</strong>." in _rbody
    and "Sit with it for a day." in _rbody)
-ok("The stage splits, with the player sized to fit and the notes beneath it",
-   "reader__notes" in _rbody and "reader__stage--split" in _rbody
-   and "reader__stage--media" in _rbody
-   and "reader__viewer--fill" not in _rbody)
-ok("A chip marks the file that carries writing",
-   "reader-pieces__notes" in _rbody)
+ok("The player is sized to fit, with what was written in a card below it",
+   "reader__stage--media" in _rbody and "reader__viewer--fill" not in _rbody
+   and 'id="reader-extracts"' in _rbody
+   and _rbody.index('id="reader-stage"') < _rbody.index('id="reader-extracts"'))
+ok("Which says what it is rather than trailing off the bottom of the pane",
+   "Written with this video" in _rbody)
+# Writing attached to a file used to be findable only by scrolling past the
+# file itself, and one left below a full-height page was never seen at all.
+ok("The piece it belongs to says how much there is and jumps to it",
+   "reader-pieces__notes" in _rbody
+   and f"item={video_item_id}#reader-extracts" in _rbody
+   and "2 extracts" in _rbody)
 ok("But an extract is never a chip of its own",
    f"item={_note_ids[0]}" not in _rbody)
 
