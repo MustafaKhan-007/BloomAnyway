@@ -108,8 +108,14 @@
           {% endif %}
         </header>
 
-        {% if product.description_md or product.audience %}
-        <div class="pd-body-grid{% if not product.description_md %} pd-body-grid--rail-only{% elif not product.audience %} pd-body-grid--about-only{% endif %}">
+        {# The write-up usually runs much longer than the few lines saying who
+           it is for, which left the right-hand column mostly empty. The facts
+           card fills it with what a buyer would ask next: how big it is, what
+           is in it, and what they keep. #}
+        {% set glance = product.glance_facts() %}
+        {% set rail = product.audience or glance %}
+        {% if product.description_md or rail %}
+        <div class="pd-body-grid{% if not product.description_md %} pd-body-grid--rail-only{% elif not rail %} pd-body-grid--about-only{% endif %}">
           {% if product.description_md %}
           <section class="pd-section pd-body-grid__about" aria-labelledby="pd-about-heading">
             <h2 id="pd-about-heading">About this {{ product.type_pill()|lower }}</h2>
@@ -117,12 +123,27 @@
           </section>
           {% endif %}
 
-          {% if product.audience %}
+          {% if rail %}
           <div class="pd-body-grid__rail">
+            {% if product.audience %}
             <section class="pd-section" aria-labelledby="pd-audience-heading">
               <h2 id="pd-audience-heading">Who this is for</h2>
               <div class="pd-prose">{{ product.audience|markdown }}</div>
             </section>
+            {% endif %}
+            {% if glance %}
+            <section class="pd-section" aria-labelledby="pd-glance-heading">
+              <h2 id="pd-glance-heading">At a glance</h2>
+              <dl class="pd-glance">
+                {% for label, value in glance %}
+                <div class="pd-glance__row">
+                  <dt>{{ label }}</dt>
+                  <dd>{{ value }}</dd>
+                </div>
+                {% endfor %}
+              </dl>
+            </section>
+            {% endif %}
           </div>
           {% endif %}
         </div>
@@ -185,7 +206,6 @@
                 <li>
                   <span class="pd-curriculum__lesson-num">Lesson {{ loop.index }}</span>
                   <span class="pd-curriculum__lesson-title">{{ lesson.title }}</span>
-                  {% if lesson.description %}<span class="pd-curriculum__lesson-note">{{ lesson.description }}</span>{% endif %}
                 </li>
                 {% endfor %}
               </ul>
