@@ -5175,6 +5175,23 @@ with app.app_context():
        and drip_purchase.status == "linked" and dripper.membership == "creator",
        f"membership={getattr(dripper, 'membership', None)}")
     drip_purchase_id = drip_purchase.id
+    # The tier went up and nothing said so, which is no use to somebody who
+    # bought a course and never opens the membership card on their account.
+    _perk_notes = (_Note.query.filter_by(user_id=dripper.id, kind="membership")
+                   .all())
+    ok("And says so, naming what came with it and how long it lasts",
+       len(_perk_notes) == 1
+       and "3 months of Creator membership" in _perk_notes[0].body
+       and "Drip Course" in _perk_notes[0].body
+       and (_perk_notes[0].url or "") == "/account",
+       f"got {[n.body for n in _perk_notes]}")
+# Linking a purchase happens more than once — checkout, signup, a webhook
+# retry — and each pass used to be a fresh chance to say it again.
+client.post("/webhooks/stripe", data=drip_payload, headers=_stripe_headers(drip_payload))
+with app.app_context():
+    dripper = User.query.filter_by(email="dripper@example.com").first()
+    ok("Told once, not once per webhook",
+       _Note.query.filter_by(user_id=dripper.id, kind="membership").count() == 1)
 
 drip_client = app.test_client()
 drip_client.post("/login", data={"email": "dripper@example.com", "password": USER_PW})
@@ -6606,6 +6623,27 @@ try:
        and "Attached: guide.pdf" in _carried["text"]
        and _carried["params"].get("ATTACHED") == "guide.pdf",
        f"got {_carried}")
+    # Free membership months arrive silently: the tier simply goes up, and
+    # the only place it is written down is a card on the account page.
+    with app.app_context():
+        _mailer.send_order_receipt(
+            "buyer@example.com", order_id="R-2",
+            product_name="Perk Guide", amount="$20",
+            order_date="Sep 02, 2026",
+            perk="3 months of Creator membership")
+    ok("A receipt says what membership came with the purchase",
+       "3 months of Creator membership" in _carried["text"]
+       and "already on your account" in _carried["text"]
+       and _carried["params"].get("MEMBERSHIP_INCLUDED")
+       == "3 months of Creator membership",
+       f"got {_carried}")
+    with app.app_context():
+        _mailer.send_order_receipt(
+            "buyer@example.com", order_id="R-3", product_name="Plain Guide",
+            amount="$20", order_date="Sep 02, 2026")
+    ok("And says nothing about one when there isn't one",
+       "already on your account" not in _carried["text"]
+       and not _carried["params"].get("MEMBERSHIP_INCLUDED"))
 finally:
     _mailer.send_email = _real_send_email
 

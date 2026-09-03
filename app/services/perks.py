@@ -9,7 +9,8 @@ from __future__ import annotations
 from calendar import monthrange
 from datetime import datetime
 
-from ..models import Product, ShopPurchase, higher_membership, utcnow
+from ..models import (MEMBERSHIP_LABELS, Product, ShopPurchase,
+                      higher_membership, utcnow)
 
 
 def add_months(start: datetime, months: int) -> datetime:
@@ -113,6 +114,55 @@ def perk_state(user) -> dict:
     else:
         out["until"] = None
     return out
+
+
+def perk_summary_for(purchase) -> str:
+    """"3 months of Creator membership" for what this purchase carried, or ""."""
+    product = _match(purchase, perk_products()) if purchase is not None else None
+    if product is None or not product.has_perk():
+        return ""
+    months = product.perk_months()
+    label = MEMBERSHIP_LABELS.get(product.perk_tier(), product.perk_tier())
+    return f"{months} month{'' if months == 1 else 's'} of {label} membership"
+
+
+def announce(user, purchase) -> bool:
+    """Tell a buyer their purchase carried free membership months. Once.
+
+    Nothing said so at the time: the tier simply went up, and the only place
+    it was written down was the membership card on their account, which
+    somebody who has just bought a guide has no reason to open.
+
+    Skipped for a buyer already on that tier or better, where the months
+    change nothing they can see today.
+    """
+    from ..models import Notification
+    from .social_graph import notify
+
+    if user is None or purchase is None or not getattr(user, "id", None):
+        return False
+    product = _match(purchase, perk_products())
+    if product is None or not product.has_perk():
+        return False
+    held = getattr(user, "membership", None) or "none"
+    if higher_membership(held, product.perk_tier()) == held:
+        return False
+    until = add_months(purchase.purchased_at or utcnow(), product.perk_months())
+    if until <= utcnow():
+        return False
+
+    body = (f"“{product.title}” came with {perk_summary_for(purchase)} — "
+            f"it is on your account now, until "
+            f"{until.strftime('%b %d, %Y')}.")[:300]
+    # Linking a purchase happens more than once — at checkout, at signup, on a
+    # webhook retry — and each one runs through here.
+    already = (Notification.query
+               .filter_by(user_id=user.id, kind="membership", body=body)
+               .first())
+    if already is not None:
+        return False
+    notify(user.id, kind="membership", body=body, url="/account")
+    return True
 
 
 def perk_end_display(user) -> str:
