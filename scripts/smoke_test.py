@@ -6281,6 +6281,31 @@ with app.app_context():
     ok("And a receipt that does carry one names it",
        "attaching guide.pdf" in _all_said, f"got {_all_said}")
 
+    # Anything that isn't a course or a bundle is something the buyer should
+    # simply have, whatever kind of reading file it is.
+    _rc.set_types(["template"])
+    _ast.add_asset(_rc, _FileStorage(BytesIO(b"PK\x03\x04 a template"),
+                                     filename="worksheet.docx",
+                                     content_type="application/vnd.openxml"))
+    db.session.commit()
+    ok("A template goes out, and not only if it is a PDF",
+       sorted(f["name"] for f in _ast.receipt_files(_rc))
+       == ["guide.pdf", "worksheet.docx"],
+       f"got {[f['name'] for f in _ast.receipt_files(_rc)]}")
+    _rc.set_types(["course"])
+    db.session.commit()
+    ok("A course is read on the site, not posted out",
+       _ast.receipt_files(_rc) == [])
+    _rc.set_types(["bundle"])
+    db.session.commit()
+    ok("Nor is a bundle", _ast.receipt_files(_rc) == [])
+    _rc.set_types(["guide", "course"])
+    db.session.commit()
+    ok("And a guide that is also a course counts as the course",
+       _ast.receipt_files(_rc) == [])
+    _rc.set_types(["guide"])
+    db.session.commit()
+
     # A drip-fed course must not arrive whole on day one.
     _rc.drip_enabled = True
     _rc.set_curriculum([{"title": "One"}, {"title": "Two"}])
@@ -6290,7 +6315,8 @@ with app.app_context():
                    module_index=2)
     db.session.commit()
     ok("But a module they haven't reached yet doesn't",
-       [f["name"] for f in _ast.receipt_files(_rc)] == ["guide.pdf"],
+       "week-two.pdf" not in [f["name"] for f in _ast.receipt_files(_rc)]
+       and "guide.pdf" in [f["name"] for f in _ast.receipt_files(_rc)],
        f"got {[f['name'] for f in _ast.receipt_files(_rc)]}")
     _cat_svc._purge_product(db.session.get(Product, _rc.id))
     db.session.commit()

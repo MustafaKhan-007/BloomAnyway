@@ -181,19 +181,47 @@ def _looks_like_h5p(data: bytes, filename: str) -> bool:
 RECEIPT_MAX_BYTES = 8 * 1024 * 1024
 RECEIPT_MAX_FILES = 3
 
+#: Products read on the site rather than posted out. A course is worked
+#: through module by module, often on a schedule; a bundle is a wrapper around
+#: other things rather than something to read itself.
+RECEIPT_HELD_BACK = ("course", "bundle")
+
+#: Things worth reading in an inbox. Video and audio are left out: they are far
+#: past what an email carries, and they play properly in the reader. Some
+#: readable formats have no kind of their own, so the extension is a fallback.
+RECEIPT_KINDS = ("pdf", "doc", "docx")
+RECEIPT_EXTS = (".pdf", ".doc", ".docx", ".epub", ".rtf", ".odt")
+
+
+def _worth_posting(asset) -> bool:
+    """A file the buyer would want in their inbox rather than only on the site."""
+    if (asset.kind or "") in RECEIPT_KINDS:
+        return True
+    ext = os.path.splitext(asset.filename or "")[1].lower()
+    return ext in RECEIPT_EXTS
+
 
 def receipt_files(product, *, budget: int = RECEIPT_MAX_BYTES,
                   limit: int = RECEIPT_MAX_FILES) -> list[dict]:
-    """The PDFs to send with a purchase receipt.
+    """The reading files to send with a purchase receipt.
 
-    Only what the buyer could open the moment they paid: on a drip-fed course
-    the modules arrive on their own schedule, so sending them by email would
-    hand over the whole thing on day one. Anything too big to post is left out
-    and stays where it always was, in their library.
+    Anything that isn't a course or a bundle is something the buyer should
+    simply have: a guide, a workbook, a template. Those go out with the
+    receipt. A course is worked through module by module, often on a schedule,
+    and a bundle is a wrapper around other things, so neither is posted.
+
+    Left out either way: video and audio, which are far past what an email
+    carries; a module a drip schedule hasn't opened; and anything too large,
+    which stays in the library where it always was.
     """
     out: list[dict] = []
     if product is None:
         log.info("receipt: no product behind this payment, nothing to attach")
+        return out
+    held = [k for k in RECEIPT_HELD_BACK if product.has_type(k)]
+    if held:
+        log.info("receipt for %s: nothing attached — a %s is read on the site",
+                 product.slug, " and ".join(held))
         return out
     dripped = product.is_dripped()
     spent = 0
@@ -203,8 +231,8 @@ def receipt_files(product, *, budget: int = RECEIPT_MAX_BYTES,
     skipped: list[str] = []
     for asset in product.top_level_assets():
         name = asset.filename or f"asset {asset.id}"
-        if asset.kind != "pdf":
-            skipped.append(f"{name}: not a PDF ({asset.kind})")
+        if not _worth_posting(asset):
+            skipped.append(f"{name}: not something to read ({asset.kind})")
             continue
         if dripped and asset.module_index:
             skipped.append(f"{name}: in module {asset.module_index}, not open yet")
