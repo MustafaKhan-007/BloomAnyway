@@ -6718,9 +6718,10 @@ ok("The reader shows the file and everything written for it together",
    and "Before you press play" in _rbody
    and "Have a pen <strong>ready</strong>." in _rbody
    and "Sit with it for a day." in _rbody)
-ok("The stage splits so the notes get their own scrolling pane",
+ok("The stage splits, with the player sized to fit and the notes beneath it",
    "reader__notes" in _rbody and "reader__stage--split" in _rbody
-   and "reader__viewer--fill" in _rbody)
+   and "reader__stage--media" in _rbody
+   and "reader__viewer--fill" not in _rbody)
 ok("A chip marks the file that carries writing",
    "reader-pieces__notes" in _rbody)
 ok("But an extract is never a chip of its own",

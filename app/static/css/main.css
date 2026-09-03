@@ -2010,11 +2010,24 @@ html.is-page-loading { cursor: progress; }
   border-radius: 12px;
 }
 .course-reader__video {
-  /* Fills the pane it is in rather than the viewport, so a written extract
-     underneath it doesn't push the controls off the bottom of the stage. */
-  display: block; width: 100%; max-height: 100%; border-radius: 12px;
+  /* Whole and in one piece: the player is sized by what will fit on screen
+     rather than stretched to the pane, so nothing needs scrolling to reach
+     the controls — a tall phone-shot lesson included. */
+  display: block; margin: 0 auto;
+  width: auto; height: auto;
+  /* Sized by the room left under the module bar, so the player and its
+     controls land above the fold on an ordinary window at ordinary zoom. */
+  max-width: 100%; max-height: clamp(200px, calc(100vh - 600px), 520px);
+  border-radius: 12px;
   background: #1a0f16;
 }
+/* A player, a picture or a sound file is as tall as it is; only a document
+   needs the full-height stage to page through. */
+.reader__stage--media { height: auto; max-height: none; }
+.reader__stage--media .reader__viewer {
+  align-items: center; justify-content: center; overflow: visible;
+}
+.reader__stage--media .reader__notes { max-height: none; overflow: visible; }
 .course-reader__audio {
   padding: 28px 12px; display: grid; place-items: center;
 }
