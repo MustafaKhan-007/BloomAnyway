@@ -1840,7 +1840,10 @@ html.is-page-loading { cursor: progress; }
   min-height: min-content;
 }
 .course-reader-page[data-zoom="lg"] .course-reader__pdf-wrap {
+  /* Centred while it fits, pinned to the top once it doesn't, so the top of
+     a tall page is never pushed out of reach above the scroll. */
   align-items: flex-start;
+  align-items: safe center;
 }
 .reader__page-chip {
   position: absolute; top: 14px; right: 18px; margin: 0;
