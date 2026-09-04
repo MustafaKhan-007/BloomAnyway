@@ -1634,22 +1634,59 @@ html.is-page-loading { cursor: progress; }
   display: flex; flex-wrap: wrap; gap: 8px;
 }
 .reader-pieces__item { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+/* Big enough to read at a glance and to hit with a thumb: these are how a
+   buyer moves between the video and the worksheet inside a lesson. */
 .reader-pieces__item > a:not(.reader-pieces__notes) {
-  display: flex; align-items: center; gap: 8px;
-  padding: 8px 12px; border-radius: 999px; text-decoration: none;
+  display: flex; align-items: center; gap: 9px;
+  padding: 11px 16px; border-radius: 14px; text-decoration: none;
   border: 1px solid rgba(61, 20, 49, 0.16); color: var(--ink);
   background: #fff;
 }
 .reader-pieces__item > a:hover { border-color: var(--plum); }
 .reader-pieces__item.is-active > a:not(.reader-pieces__notes) {
   background: var(--plum); color: #fff8f3; border-color: var(--plum);
+  box-shadow: 0 2px 12px rgba(90, 49, 88, 0.28);
 }
 .reader-pieces__kind {
-  font-size: 10px; font-weight: 800; letter-spacing: 0.06em;
+  font-size: 10.5px; font-weight: 800; letter-spacing: 0.06em;
   text-transform: uppercase; color: var(--ink-soft);
 }
 .reader-pieces__item.is-active .reader-pieces__kind { color: rgba(255, 248, 243, 0.75); }
-.reader-pieces__name { font-weight: 700; font-size: 14px; }
+.reader-pieces__name { font-weight: 700; font-size: 15px; }
+/* The one being read says so, rather than leaving it to the colour alone. */
+.reader-pieces__open {
+  padding: 2px 8px; border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+  font-size: 10.5px; font-weight: 800; letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+/* One fold per lesson: the name and how much is in it stay on show. */
+.reader-lesson {
+  border: 1px solid rgba(61, 20, 49, 0.12); border-radius: 14px;
+  background: #fff; margin-bottom: 8px;
+}
+.reader-lesson:last-child { margin-bottom: 0; }
+.reader-lesson.is-open-here { border-color: rgba(90, 49, 88, 0.45); }
+.reader-lesson__head {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px;
+  padding: 11px 14px; cursor: pointer; list-style: none;
+  border-radius: 14px;
+}
+.reader-lesson__head::-webkit-details-marker { display: none; }
+.reader-lesson__head::after {
+  content: "\25BE"; margin-left: auto;
+  color: var(--ink-soft); font-size: 12px; transition: transform 0.15s ease;
+}
+.reader-lesson[open] > .reader-lesson__head::after { transform: rotate(180deg); }
+.reader-lesson__head:hover { background: rgba(90, 49, 88, 0.05); }
+.reader-lesson__num {
+  font-size: 10.5px; font-weight: 800; letter-spacing: 0.07em;
+  text-transform: uppercase; color: var(--plum-deep);
+}
+.reader-lesson__title { font-weight: 700; font-size: 15px; color: var(--ink); }
+.reader-lesson__count { font-size: 12px; color: var(--ink-soft); }
+.reader-lesson__body { padding: 0 14px 13px; }
+.reader-pieces--lessons { display: block; }
 .reader-doc--written { padding: 8px 4px; }
 .reader-doc--written h2 { margin-top: 0; }
 .reader-modules__head {

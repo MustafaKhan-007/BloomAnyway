@@ -6982,6 +6982,44 @@ ok("The piece it belongs to says how much there is and jumps to it",
    "reader-pieces__notes" in _rbody
    and f"item={video_item_id}#reader-extracts" in _rbody
    and "2 extracts" in _rbody)
+# A module with lessons in it used to print every file in every lesson at
+# once. Each lesson folds now, and the one being read is the one left open.
+r = admin.post("/admin/products/new", data=_MultiDict([
+    ("title", "Lesson Fold"), ("track", "building"), ("types", "course"),
+    ("promise", "Lessons that fold."), ("price", "10.00"),
+    ("stripe", "price_lesson_fold"), ("live", "1"),
+    ("mod1_title", "Week one"),
+    ("mod1_lesson_title", "Niche Selection"), ("mod1_lesson_desc", "Pick one."),
+    ("mod1_lesson_title", "Content Basics"), ("mod1_lesson_desc", ""),
+    ("mod1_lesson1_file", (BytesIO(_pdf), "niche.pdf")),
+    ("mod1_lesson2_file", (BytesIO(_pdf), "basics.pdf")),
+]), content_type="multipart/form-data", follow_redirects=True)
+_fold_pay = _payment_payload("9401", "dripper@example.com", "price_lesson_fold",
+                             amount=1000, product_name="Lesson Fold")
+client.post("/webhooks/stripe", data=_fold_pay,
+            headers=_stripe_headers(_fold_pay))
+with app.app_context():
+    _fold_row = ShopPurchase.query.filter_by(lemon_squeezy_order_id="9401").first()
+    _fold_id = _fold_row.id if _fold_row is not None else 0
+    _fold_prod = Product.query.filter_by(slug="lesson-fold").first()
+    _fold_lessons = _fold_prod.modules()[0]["lessons"] if _fold_prod else []
+    _second_file = (_fold_lessons[1]["contents"][0].id
+                    if len(_fold_lessons) > 1 and _fold_lessons[1]["contents"]
+                    else 0)
+    ok("A course whose files hang off its lessons is bought and readable",
+       r.status_code == 200 and _fold_id and _second_file,
+       f"purchase={_fold_id} file={_second_file}")
+_les = drip_client.get(
+    f"/account/courses/{_fold_id}?item={_second_file}").get_data(as_text=True)
+ok("Each lesson is a fold of its own, named and counted",
+   _les.count("reader-lesson__head") == 2 and "reader-lesson__count" in _les
+   and "Niche Selection" in _les and "Content Basics" in _les)
+_folds_open = len(re.findall(r'<details class="reader-lesson[^"]*"[^>]*\sopen>', _les))
+ok("Only the lesson holding what is open starts open",
+   _folds_open == 1 and _les.count("is-open-here") == 1,
+   f"{_folds_open} of 2 folds open")
+ok("And the file being read says so, rather than being a shade darker",
+   'class="reader-pieces__open">Open<' in _les and 'aria-current="true"' in _les)
 ok("But an extract is never a chip of its own",
    f"item={_note_ids[0]}" not in _rbody)
 
