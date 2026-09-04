@@ -106,8 +106,17 @@ def create_app(config_class=None):
 
     # Resolve where uploaded videos live: a mounted persistent disk in
     # production (VIDEO_STORAGE_DIR), or the instance folder locally.
-    video_dir = (app.config.get("VIDEO_STORAGE_DIR") or "").strip() \
-        or _os.path.join(app.instance_path, "videos")
+    #
+    # Failing that, they go on whichever disk the course files are on. One
+    # attached disk and one setting is how this is usually run, and a Content
+    # Hub video landing in the container's own filesystem looks fine until the
+    # next deploy takes it — with nothing said, because the row survives.
+    course_configured = (app.config.get("COURSE_FILES_DIR") or "").strip()
+    video_dir = (app.config.get("VIDEO_STORAGE_DIR") or "").strip()
+    if not video_dir and course_configured:
+        video_dir = _os.path.join(_os.path.dirname(
+            course_configured.rstrip("/") or "/"), "videos")
+    video_dir = video_dir or _os.path.join(app.instance_path, "videos")
     app.config["VIDEO_STORAGE_DIR"] = video_dir
     try:
         _os.makedirs(video_dir, exist_ok=True)

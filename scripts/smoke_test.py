@@ -6487,7 +6487,7 @@ _alarm = admin.get("/admin", follow_redirects=True).get_data(as_text=True)
 ok("Studio says so on the dashboard, not only on the file",
    "no longer on the server" in _alarm, "no warning")
 ok("And drops the all-is-well line while it isn't",
-   "all present" not in _alarm)
+   "Uploaded files are kept" not in _alarm)
 ok("And keeps saying it while it is still true",
    "no longer on the server"
    in admin.get("/admin", follow_redirects=True).get_data(as_text=True))
