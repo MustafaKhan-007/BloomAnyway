@@ -58,8 +58,23 @@
           {% else %}
           <div class="pd-hero__price">
             <strong>{{ product.price_display() or '—' }}</strong>
-            {% if product.compare_at_display() %}<s>{{ product.compare_at_display() }}</s>{% endif %}
+            {% if product.shows_compare_at() %}<s>{{ product.compare_at_display() }}</s>{% endif %}
           </div>
+          {% endif %}
+          {# Both of these are days already set in Studio, and both change what
+             this costs or whether it can be bought at all, so they are said
+             plainly here rather than arriving as a surprise. #}
+          {% if product.price_reverts_display() %}
+          <p class="pd-hero__deadline">
+            Reverting to {{ product.compare_at_display() }} on
+            {{ product.price_reverts_display() }}.
+          </p>
+          {% endif %}
+          {% if product.off_shelf_at and not product.is_off_shelf() %}
+          <p class="pd-hero__deadline">
+            Off the shelves on {{ product.off_shelf_display() }}. Buy it before
+            then and it stays yours for good.
+          </p>
           {% endif %}
           {% if product.has_perk() %}
           <p class="pd-hero__perk">Also included: {{ product.perk_summary() }}</p>

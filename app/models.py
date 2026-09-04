@@ -428,6 +428,10 @@ class Product(db.Model):
 
     price_cents = db.Column(db.Integer)
     compare_at_cents = db.Column(db.Integer)
+    #: When the price goes back up to the compare-at one, stored UTC. A launch
+    #: price with a date on it says so on the product page, and stops calling
+    #: itself a saving once the date is past.
+    price_reverts_at = db.Column(db.DateTime)
     #: A running promo: what it costs with the code, and the code to type at
     #: Stripe checkout. Both or neither — a price with no code is a mystery and
     #: a code with no price is nothing to advertise.
@@ -903,6 +907,33 @@ class Product(db.Model):
 
     def compare_at_display(self):
         return self._money_display(self.compare_at_cents)
+
+    # --- a launch price with a day it goes back up ----------------------------
+    def price_is_held_down(self) -> bool:
+        """True while this is being sold under its compare-at price."""
+        return bool(self.compare_at_cents and self.price_cents is not None
+                    and self.compare_at_cents > self.price_cents)
+
+    def price_reverted(self) -> bool:
+        """The day it was meant to go back up has been and gone.
+
+        What Stripe charges is set in Stripe, so nothing here can put the
+        price up on its own. It stops advertising the old price as a saving
+        instead, and Studio says the date has passed.
+        """
+        return bool(self.price_reverts_at
+                    and self.price_reverts_at <= utcnow())
+
+    def shows_compare_at(self) -> bool:
+        """Whether to strike the old price through beside this one."""
+        return self.price_is_held_down() and not self.price_reverted()
+
+    def price_reverts_display(self) -> str:
+        """The day the price goes back up, in the reader's own day, or empty."""
+        if not self.price_reverts_at or not self.shows_compare_at():
+            return ""
+        from .services.timefmt import format_local
+        return format_local(self.price_reverts_at, "%b %d, %Y")
 
     # --- what this product is ------------------------------------------------
     # ``type`` holds the primary kind and is what cards, filters and the bundle

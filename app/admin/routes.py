@@ -545,6 +545,17 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
     elif compare is not None:
         product.compare_at_cents = compare
 
+    reverts_date = (form.get("price_reverts_date") or "").strip()
+    if reverts_date:
+        product.price_reverts_at = parse_owner_parts(
+            reverts_date,
+            (form.get("price_reverts_time") or "").strip() or "23:59", tz_name)
+        if product.price_reverts_at is None:
+            flash("That date for the price going back up didn't look right, so "
+                  "the page won't mention one.", "info")
+    else:
+        product.price_reverts_at = None
+
     # A promo needs both halves. Clearing either one takes the banner down,
     # rather than leaving a code with no price or a price with no code.
     promo_code = (form.get("promo_code") or "").strip().upper()[:40]

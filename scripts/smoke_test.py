@@ -1287,6 +1287,48 @@ with app.app_context():
     db.session.get(Product, _multi_id).set_types(["course", "template"])
     db.session.commit()
 
+# --- a launch price with a day it goes back up --------------------------------
+# What Stripe charges is set in Stripe, so nothing here can put a price up on
+# its own. The page can at least say when it is going to.
+_soon = utcnow() + timedelta(days=6)
+r = admin.post(f"/admin/products/{_multi_id}/edit",
+               data=dict(_promo_fields, promo_price="", promo_code="",
+                         compare_at="49.00",
+                         price_reverts_date=_soon.strftime("%Y-%m-%d"),
+                         price_reverts_time="23:59"),
+               follow_redirects=True)
+with app.app_context():
+    _p = db.session.get(Product, _multi_id)
+    ok("Studio saves the day a price goes back up",
+       r.status_code == 200 and _p.price_reverts_at is not None
+       and _p.compare_at_cents == 4900, f"got {_p.price_reverts_at}")
+    ok("Until then it is still a price held down",
+       _p.price_is_held_down() and _p.shows_compare_at()
+       and not _p.price_reverted())
+_pd = client.get("/courses/rebuild-your-week").get_data(as_text=True)
+ok("The product page says what it goes back to, and when",
+   "Reverting to $49 on" in _pd and "<s>$49</s>" in _pd, "no notice of the rise")
+with app.app_context():
+    _p = db.session.get(Product, _multi_id)
+    _p.price_reverts_at = utcnow() - timedelta(minutes=1)
+    db.session.commit()
+    ok("Once the day has passed it stops calling the old price a saving",
+       _p.price_reverted() and not _p.shows_compare_at()
+       and _p.price_reverts_display() == "")
+_pd = client.get("/courses/rebuild-your-week").get_data(as_text=True)
+ok("So the page drops the notice and the struck-through price with it",
+   "Reverting to" not in _pd and "<s>$49</s>" not in _pd and "$24" in _pd)
+_sbody = admin.get(f"/admin/products/{_multi_id}/edit").get_data(as_text=True)
+ok("And Studio says the day has passed, since only Stripe can put it up",
+   "That day has passed" in _sbody and "swap the Stripe price ID" in _sbody)
+admin.post(f"/admin/products/{_multi_id}/edit",
+           data=dict(_promo_fields, compare_at="", price_reverts_date=""),
+           follow_redirects=True)
+with app.app_context():
+    _p = db.session.get(Product, _multi_id)
+    ok("Clearing the date puts it back to an ordinary price",
+       _p.price_reverts_at is None and not _p.shows_compare_at())
+
 # Anything still posting one type keeps working, and so does a product that
 # has only ever had one.
 r = admin.post("/admin/products/new", data={
@@ -5417,6 +5459,12 @@ with app.app_context():
        and _p.off_shelf_at.year == 2027, f"got {_p.off_shelf_at}")
     ok("A date still to come leaves it selling as normal",
        not _p.is_off_shelf() and _p.buyable_by(None))
+_pd = client.get("/courses/drip-course").get_data(as_text=True)
+# A last day worth knowing about before it arrives, not only afterwards.
+ok("The product page says the day it comes off the shelves, while it still sells",
+   "Off the shelves on" in _pd and "Buy now" in _pd, "no warning of the date")
+with app.app_context():
+    _p = db.session.get(Product, drip_prod_id)
     _p.off_shelf_at = utcnow() - timedelta(minutes=1)
     db.session.commit()
     ok("Once the date passes it stops being sold",
