@@ -6692,8 +6692,40 @@ try:
     ok("And says nothing about one when there isn't one",
        "already on your account" not in _carried["text"]
        and not _carried["params"].get("MEMBERSHIP_INCLUDED"))
+    # A product's name is rarely enough to remind somebody in a month what
+    # they bought, so the owner writes the line the receipt uses.
+    with app.app_context():
+        _mailer.send_order_receipt(
+            "buyer@example.com", order_id="R-4", product_name="Perk Guide",
+            amount="$20", order_date="Sep 02, 2026",
+            description="  Eight weeks of prompts,\n  one a day.  ")
+    ok("A receipt carries the product's own description",
+       _carried["params"].get("PRODUCT_DESCRIPTION")
+       == "Eight weeks of prompts, one a day."
+       and "Eight weeks of prompts, one a day." in _carried["text"],
+       f"got {_carried['params'].get('PRODUCT_DESCRIPTION')!r}")
 finally:
     _mailer.send_email = _real_send_email
+
+# Studio writes that line, and a product with nothing written falls back to
+# the promise rather than sending a receipt that only names the thing.
+r = admin.post(f"/admin/products/{_multi_id}/edit",
+               data=dict(_promo_fields,
+                         receipt_description="  Five weeks of\n  planning pages.  "),
+               follow_redirects=True)
+with app.app_context():
+    _p = db.session.get(Product, _multi_id)
+    ok("Studio saves the line a receipt should carry",
+       r.status_code == 200
+       and _p.receipt_blurb() == "Five weeks of planning pages.",
+       f"got {_p.receipt_blurb()!r}")
+    ok("And the editor hands it back to be changed",
+       "receipt_description" in admin.get(
+           f"/admin/products/{_multi_id}/edit").get_data(as_text=True))
+    _p.receipt_description = None
+    db.session.commit()
+    ok("With nothing written, the promise stands in for it",
+       _p.receipt_blurb() == _p.promise)
 
 # When a PDF still won't open, the reader has to say why and leave a way in.
 _reader_js = client.get("/static/js/course-reader.js").get_data(as_text=True)

@@ -461,6 +461,10 @@ class Product(db.Model):
 
     meta_title = db.Column(db.String(160))
     meta_description = db.Column(db.String(200))
+    #: What the receipt email says this is. The page has room to sell it; the
+    #: receipt has a line, and the product's own name is rarely enough to
+    #: remind somebody in a month what they bought.
+    receipt_description = db.Column(db.Text)
 
     # Drip-feed: hand out the modules below one at a time, each unlocking
     # ``drip_interval_days`` after the one before it (counted from purchase).
@@ -860,6 +864,18 @@ class Product(db.Model):
         label = MEMBERSHIP_LABELS.get(self.perk_tier(), self.perk_tier())
         unit = "month" if months == 1 else "months"
         return f"{months} {unit} of {label} membership, free"
+
+    def receipt_blurb(self) -> str:
+        """The line about this product for its receipt email.
+
+        Falls back to the one-line promise, so a receipt says something about
+        what was bought even when nothing was written for it.
+        """
+        for text in (self.receipt_description, self.promise):
+            cleaned = " ".join((text or "").split())
+            if cleaned:
+                return cleaned[:600]
+        return ""
 
     def price_display(self):
         return self._money_display(self.price_cents)

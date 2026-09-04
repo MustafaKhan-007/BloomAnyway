@@ -519,6 +519,7 @@ def send_order_receipt(
     order_date: str,
     attachments=None,
     perk: str = "",
+    description: str = "",
 ) -> bool:
     """Send Brevo order-receipt template (#4) after a successful product purchase.
 
@@ -526,6 +527,8 @@ def send_order_receipt(
     in the buyer's inbox rather than only waiting in their library. ``perk`` is
     the free membership time the product carries, if any: it is added to the
     account there and then, and the receipt is where somebody would look.
+    ``description`` is what the owner wrote for this product's own receipt —
+    what they just bought, in their words, rather than only its name.
     """
     template_id = _int_config("BREVO_TEMPLATE_RECEIPT", 4) or None
     oid = str(order_id or "").strip()
@@ -544,11 +547,13 @@ def send_order_receipt(
         "sign in with this address and it's there."
         if included else ""
     )
+    blurb = " ".join((description or "").split())
     text = (
         "Thanks for your purchase on Bloom Anyway.\n\n"
         f"Order #: {oid}\n"
         f"Item: {product}\n"
-        f"Amount paid: {paid}\n"
+        + (f"{blurb}\n" if blurb else "")
+        + f"Amount paid: {paid}\n"
         f"Date: {when}"
         f"{came_with}{membership}\n\n"
         "— Bloom Anyway"
@@ -564,6 +569,7 @@ def send_order_receipt(
         "ORDER_DATE": when,
         "ATTACHED": ", ".join(n for n in attached if n),
         "MEMBERSHIP_INCLUDED": included,
+        "PRODUCT_DESCRIPTION": blurb,
     }
     return send_email(
         to,
