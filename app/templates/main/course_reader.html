@@ -304,7 +304,7 @@
 
         {% if asset.kind not in ('pdf',) %}
         <div class="reader__footer reader__footer--simple">
-          <button type="button" class="btn reader__nav-btn reader__nav-btn--primary" id="reader-mark-done">Mark complete</button>
+          <button type="button" class="btn reader__nav-btn reader__nav-btn--primary" id="reader-mark-done">Course completed</button>
           <a class="btn reader__nav-btn reader__nav-btn--ghost" href="{{ url_for('main.account', tab='saved') }}">Save &amp; close</a>
         </div>
         {% endif %}

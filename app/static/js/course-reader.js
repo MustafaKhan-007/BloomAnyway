@@ -648,7 +648,7 @@
       state.page = Math.max(state.page, state.total || 1);
       state.total = Math.max(state.total, 1);
       saveProgress({ percent: 100 });
-      markBtn.textContent = "Completed";
+      markBtn.textContent = "Marked as completed";
       markBtn.disabled = true;
     });
   }
