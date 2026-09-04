@@ -147,6 +147,19 @@
         </div>
       </div>
       <div class="form-row">
+        <div class="field" style="flex:2;">
+          <label for="receipt_description">Receipt description</label>
+          <textarea id="receipt_description" name="receipt_description" rows="2"
+                    maxlength="600" data-md-field
+                    placeholder="What they just bought, in a line or two.">{{ product.receipt_description or '' }}</textarea>
+          <p class="field-help">
+            Goes in the confirmation email as <code>PRODUCT_DESCRIPTION</code>,
+            so the receipt says what this is rather than only its name. Left
+            empty it falls back to the one-line promise above.
+          </p>
+        </div>
+      </div>
+      <div class="form-row">
         <div class="field">
           <label for="accent">Card colour</label>
           <div class="studio-accent-row">

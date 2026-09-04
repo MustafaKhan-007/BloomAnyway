@@ -411,6 +411,8 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
     product.badge = (form.get("badge") or "").strip()[:30] or None
     product.promise = (form.get("promise") or "").strip()[:120] or None
     product.meta_line = (form.get("meta_line") or "").strip()[:200] or None
+    product.receipt_description = (
+        form.get("receipt_description") or "").strip()[:600] or None
     product.description_md = (form.get("description") or "").strip() or None
     product.audience = (form.get("audience") or "").strip() or None
     product.contents_text = (form.get("contents") or "").strip() or None
