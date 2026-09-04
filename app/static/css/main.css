@@ -9287,6 +9287,15 @@ a.at-handle:hover { text-decoration: underline; }
   border: 1px solid rgba(90, 49, 88, 0.16);
   font-size: 13px; font-weight: 600; color: var(--plum-deep);
 }
+/* A day this stops being what it is today: the price going back up, or the
+   last day it can be bought at all. */
+.pd-hero__deadline {
+  flex: 1 1 100%; margin: 0;
+  padding: 7px 11px; border-radius: 10px;
+  background: rgba(181, 138, 63, 0.12);
+  border: 1px solid rgba(181, 138, 63, 0.35);
+  font-size: 13px; font-weight: 600; color: var(--plum-deep);
+}
 .pd-body-grid {
   display: grid;
   /* The write-up is the long half, so it gets the wider column: the shorter

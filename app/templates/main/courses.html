@@ -215,7 +215,7 @@
           <div class="cg-bundle__foot">
             <p class="cg-bundle__price">
               <strong>{{ hb.price_display() }}</strong>
-              {% if hb.compare_at_display() %}<s>{{ hb.compare_at_display() }}</s>{% endif %}
+              {% if hb.shows_compare_at() %}<s>{{ hb.compare_at_display() }}</s>{% endif %}
             </p>
             <a class="btn cg-bundle__btn" href="{{ url_for('main.course_detail', slug=hb.slug) }}">View Healing Bundle &rarr;</a>
           </div>
@@ -228,7 +228,7 @@
           <div class="cg-bundle__foot">
             <p class="cg-bundle__price">
               <strong>{{ cb.price_display() }}</strong>
-              {% if cb.compare_at_display() %}<s>{{ cb.compare_at_display() }}</s>{% endif %}
+              {% if cb.shows_compare_at() %}<s>{{ cb.compare_at_display() }}</s>{% endif %}
             </p>
             <a class="btn cg-bundle__btn cg-bundle__btn--gold" href="{{ url_for('main.course_detail', slug=cb.slug) }}">View Creator Bundle &rarr;</a>
           </div>

@@ -212,6 +212,26 @@
           <input type="text" id="compare_at" name="compare_at" placeholder="49.00"
                  value="{{ '%.2f'|format(product.compare_at_cents / 100) if product.compare_at_cents is not none else '' }}">
         </div>
+        <div class="field">
+          <label for="price_reverts_date">Back to compare-at on</label>
+          <div class="studio-accent-row">
+            <input type="date" id="price_reverts_date" name="price_reverts_date"
+                   value="{{ product.price_reverts_at|localtime('%Y-%m-%d') if product.price_reverts_at else '' }}">
+            <input type="time" id="price_reverts_time" name="price_reverts_time"
+                   value="{{ product.price_reverts_at|localtime('%H:%M') if product.price_reverts_at else '23:59' }}">
+          </div>
+          <p class="field-help">
+            Optional. The product page counts down to it — “Reverting to
+            {{ product.compare_at_display() or 'the original price' }} on that
+            day” — so a launch price reads as one.
+            {%- if product.price_reverted() %}
+            <strong>That day has passed.</strong> Put the price up here and
+            swap the Stripe price ID to match: the old price has stopped
+            showing as a saving, but Stripe is still charging
+            {{ product.price_display() or 'the old price' }}.
+            {%- endif %}
+          </p>
+        </div>
         <div class="field" style="flex:2;">
           <label for="stripe">Stripe price ID</label>
           <input type="text" id="stripe" name="stripe" placeholder="price_…"
