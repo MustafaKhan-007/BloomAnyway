@@ -39,6 +39,7 @@
         <a href="{{ url_for('admin.products') }}" class="{{ 'active' if here.startswith('/admin/products') }}">Courses &amp; Guides</a>
 
         <p class="admin-nav__label">Content</p>
+        <a href="{{ url_for('admin.announcements') }}" class="{{ 'active' if here.startswith('/admin/announcements') }}">Announcements</a>
         <a href="{{ url_for('admin.spotlight') }}" class="{{ 'active' if here.startswith('/admin/spotlight') }}">Home spotlight</a>
         <a href="{{ url_for('admin.videos') }}" class="{{ 'active' if here.startswith('/admin/videos') }}">Content Hub</a>
         <a href="{{ url_for('admin.reel_reviews') }}" class="{{ 'active' if here.startswith('/admin/reel-reviews') }}">Reel reviews</a>

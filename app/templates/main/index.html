@@ -8,7 +8,12 @@
   {% if announcements or hub_drops %}
   <div class="home-hero__notices">
     <div class="container home-hero__notices-inner">
-      {% for note in announcements %}
+      {# Said the same way as what the hub drops in, and coloured differently,
+         so which of the two a notice is reads at a glance. Several at once
+         share one card rather than stacking a bar apiece. #}
+      {% if announcements %}
+      {% if announcements|length == 1 %}
+      {% set note = announcements[0] %}
       {% if note.url %}
       <a class="hero-announcement hero-announcement--link" href="{{ note.url }}"
          {% if note.external %}target="_blank" rel="noopener noreferrer"{% endif %}
@@ -22,7 +27,26 @@
         <span class="hero-announcement__text">{{ note.body }}</span>
       </div>
       {% endif %}
-      {% endfor %}
+      {% else %}
+      <div class="hero-announcement hero-announcement--many" role="region"
+           aria-label="Announcements">
+        <span class="hero-announcement__head">
+          <span class="hero-announcement__spark" aria-hidden="true">&#10022;</span>
+          <span class="hero-announcement__text">From Bloom Anyway</span>
+        </span>
+        <span class="hero-announcement__list">
+          {% for note in announcements %}
+          {% if note.url %}
+          <a class="hero-announcement__one" href="{{ note.url }}"
+             {% if note.external %}target="_blank" rel="noopener noreferrer"{% endif %}>{{ note.body }}</a>
+          {% else %}
+          <span class="hero-announcement__one">{{ note.body }}</span>
+          {% endif %}
+          {% endfor %}
+        </span>
+      </div>
+      {% endif %}
+      {% endif %}
       {# Everything published to the hub today, each staying its own 24 hours. #}
       {% if hub_drops %}
       {% set lone = hub_drops|length == 1 and hub_drops[0]['items']|length == 1 %}

@@ -1,0 +1,152 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Announcements{% endblock %}
+
+{% block content %}
+<div class="studio-page">
+  <div class="page-head">
+    <div>
+      <p class="eyebrow">Home page</p>
+      <h1>Announcements</h1>
+      <p class="field-help" style="margin: 6px 0 0; max-width: 64ch;">
+        What is on the home page right now, and the box to write one more.
+        Yours sit in the warm card; anything the Content Hub drops in sits in
+        the plum one beside it, and goes on its own after a day.
+      </p>
+    </div>
+  </div>
+
+  <section class="admin-panel studio-card">
+    <h2 style="margin-top: 0;">Showing now</h2>
+    {% if quick or live or hub_groups %}
+    <ul class="studio-live-notices">
+      {% if quick %}
+      <li class="studio-live-notices__row studio-live-notices__row--mine">
+        <span class="studio-live-notices__tag">Yours</span>
+        <span class="studio-live-notices__body">{{ quick }}</span>
+        <span class="field-help">
+          {%- if quick_expires %}until {{ quick_expires }}{% else %}no end date{% endif -%}
+          {%- if quick_url %} &middot; linked{% endif -%}
+        </span>
+        <form method="post">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="clear_announcement" value="1">
+          <button class="btn btn--secondary btn--sm" type="submit">Remove</button>
+        </form>
+      </li>
+      {% endif %}
+      {% for a in live %}
+      <li class="studio-live-notices__row studio-live-notices__row--mine">
+        <span class="studio-live-notices__tag">Yours</span>
+        <span class="studio-live-notices__body">{{ a.body }}</span>
+        <span class="field-help">
+          {%- if a.expires %}until {{ a.expires.isoformat() }}{% else %}no end date{% endif -%}
+          {%- if a.link_url %} &middot; linked{% endif -%}
+        </span>
+        <form method="post">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="remove_announcement" value="{{ a.id }}">
+          <button class="btn btn--secondary btn--sm" type="submit">Remove</button>
+        </form>
+      </li>
+      {% endfor %}
+      {% for group in hub_groups %}
+      <li class="studio-live-notices__row studio-live-notices__row--hub">
+        <span class="studio-live-notices__tag">Content Hub</span>
+        <span class="studio-live-notices__body">
+          {{ group.label }}: {{ group['items']|map(attribute='title')|join(' · ') }}
+        </span>
+        <span class="field-help">members only &middot; gone a day after posting</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="field-help" style="margin: 0;">
+      Nothing on the home page at the moment. Write one below and it is there
+      the moment you press Add.
+    </p>
+    {% endif %}
+  </section>
+
+  <section class="admin-panel studio-card">
+    <h2 style="margin-top: 0;">Write one</h2>
+    <p class="field-help" style="margin-top: 0;">
+      Run several at once and they share one card on the home page. Each has
+      its own end date, and stops showing on its own once that day is past.
+    </p>
+    <form method="post" class="announce-add">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="add_announcement" value="1">
+      <div class="form-row form-row--announce">
+        <div class="field form-row--announce__body">
+          <label for="ann_body">Announcement</label>
+          <input type="text" id="ann_body" name="ann_body" maxlength="300"
+                 placeholder="e.g. New reel this week ☀">
+        </div>
+        <div class="field">
+          <label for="ann_expires">Show until</label>
+          <input type="date" id="ann_expires" name="ann_expires" value="{{ default_expires }}">
+          <p class="field-help">Defaults to one week from now.</p>
+        </div>
+        <div class="field form-row--announce__action">
+          <label class="sr-only" for="ann-add">Add announcement</label>
+          <button class="btn btn--primary btn--sm" id="ann-add" type="submit">Add</button>
+        </div>
+      </div>
+      <div class="field" style="margin-top: 8px;">
+        <label for="ann_url">Optional link</label>
+        <input type="text" id="ann_url" name="ann_url" maxlength="500"
+               inputmode="url" autocomplete="off"
+               placeholder="https://… or /membership">
+        <p class="field-help">
+          Leave blank for a plain notice. With a link, the whole card is the
+          button and the URL stays hidden.
+        </p>
+      </div>
+    </form>
+  </section>
+
+  {% if rows %}
+  <section class="admin-panel studio-card">
+    <h2 style="margin-top: 0;">Everything written</h2>
+    {% with form_id='bulk-announcements',
+            action=url_for('admin.announcements'),
+            confirm_template='Remove {n} selected announcement(s)?',
+            confirm_title='Remove selected announcements?',
+            confirm_ok='Remove',
+            button_label='Remove selected',
+            hidden={'bulk_remove_announcements': '1'} %}
+      {% include "admin/_bulk_bar.html" %}
+    {% endwith %}
+    <table class="admin-table" style="margin-top: 16px;">
+      <thead>
+        <tr>
+          <th class="studio-bulk__check"><span class="visually-hidden">Select</span></th>
+          <th>Announcement</th><th>Link</th><th>Expires</th><th>Status</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in rows %}
+        <tr>
+          <td class="studio-bulk__check">
+            <input type="checkbox" name="ids" value="{{ a.id }}" form="bulk-announcements"
+                   data-bulk-item aria-label="Select announcement">
+          </td>
+          <td>{{ a.body }}</td>
+          <td>{% if a.link_url %}<span class="field-help" title="{{ a.link_url }}">Linked</span>{% else %}—{% endif %}</td>
+          <td>{{ a.expires.isoformat() if a.expires else '—' }}</td>
+          <td>{{ 'Live' if a.is_live() else 'Expired' }}</td>
+          <td>
+            <form method="post" style="display:inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="remove_announcement" value="{{ a.id }}">
+              <button class="btn btn--danger btn--sm" type="submit">Remove</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

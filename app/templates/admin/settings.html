@@ -153,25 +153,12 @@
           Leave it empty to hide it everywhere.
         </p>
       </div>
-      <div class="form-row">
-        <div class="field">
-          <label for="announcement_text">Announcement bar (leave empty to hide)</label>
-          <input type="text" id="announcement_text" name="announcement_text" value="{{ values.announcement_text }}"
-                 placeholder="e.g. The new course opens Monday ☀">
-        </div>
-        <div class="field">
-          <label for="announcement_expires">Show until</label>
-          <input type="date" id="announcement_expires" name="announcement_expires"
-                 value="{{ values.announcement_expires or default_expires }}">
-          <p class="field-help">Defaults to one week from now if you leave this blank.</p>
-        </div>
-      </div>
       <div class="field">
-        <label for="announcement_url">Optional link</label>
-        <input type="text" id="announcement_url" name="announcement_url" value="{{ values.announcement_url }}"
-               inputmode="url" autocomplete="off"
-               placeholder="https://… or /courses">
-        <p class="field-help">Visitors won’t see the URL — the whole announcement becomes the button.</p>
+        <span class="field__label">Announcements</span>
+        <p class="field-help" style="margin-top: 0;">
+          Written on <a href="{{ url_for('admin.announcements') }}">their own page</a>
+          now, which says which of them are still running.
+        </p>
       </div>
     </section>
 
@@ -250,83 +237,6 @@
 
     <button class="btn btn--primary" type="submit">Save settings</button>
   </form>
-
-  {% if values.announcement_text %}
-  <form method="post" style="margin-top: 14px;">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <input type="hidden" name="clear_announcement" value="1">
-    <button class="btn btn--secondary btn--sm" type="submit">Remove announcement</button>
-    <span class="field-help" style="margin-left: 8px;">Clears the quick announcement above and its date.</span>
-  </form>
-  {% endif %}
-
-  <section class="admin-panel studio-card">
-    <h2>More announcements</h2>
-    <p class="field-help">Run several at once &mdash; they stack tidily on the home page. Each can have its own expiry and optional link.</p>
-
-    <form method="post" class="announce-add">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="add_announcement" value="1">
-      <div class="form-row form-row--announce">
-        <div class="field form-row--announce__body">
-          <label for="ann_body">Announcement</label>
-          <input type="text" id="ann_body" name="ann_body" maxlength="300" placeholder="e.g. New reel this week ☀">
-        </div>
-        <div class="field">
-          <label for="ann_expires">Show until</label>
-          <input type="date" id="ann_expires" name="ann_expires" value="{{ default_expires }}">
-          <p class="field-help">Defaults to one week from now.</p>
-        </div>
-        <div class="field form-row--announce__action">
-          <label class="sr-only" for="ann-add">Add announcement</label>
-          <button class="btn btn--primary btn--sm" id="ann-add" type="submit">Add</button>
-        </div>
-      </div>
-      <div class="field" style="margin-top: 8px;">
-        <label for="ann_url">Optional link</label>
-        <input type="text" id="ann_url" name="ann_url" maxlength="500"
-               inputmode="url" autocomplete="off"
-               placeholder="https://… or /membership">
-        <p class="field-help">Leave blank for a plain notice. With a link, the whole card is the button (URL stays hidden).</p>
-      </div>
-    </form>
-
-    {% if announcements %}
-    {% with form_id='bulk-announcements',
-            action=url_for('admin.settings'),
-            confirm_template='Remove {n} selected announcement(s)?',
-            confirm_title='Remove selected announcements?',
-            confirm_ok='Remove',
-            button_label='Remove selected',
-            hidden={'bulk_remove_announcements': '1'} %}
-      {% include "admin/_bulk_bar.html" %}
-    {% endwith %}
-    <table class="admin-table" style="margin-top: 16px;">
-      <thead><tr><th class="studio-bulk__check"><span class="visually-hidden">Select</span></th><th>Announcement</th><th>Link</th><th>Expires</th><th>Status</th><th></th></tr></thead>
-      <tbody>
-        {% for a in announcements %}
-        <tr>
-          <td class="studio-bulk__check">
-            <input type="checkbox" name="ids" value="{{ a.id }}" form="bulk-announcements" data-bulk-item
-                   aria-label="Select announcement">
-          </td>
-          <td>{{ a.body }}</td>
-          <td>{% if a.link_url %}<span class="field-help" title="{{ a.link_url }}">Linked</span>{% else %}—{% endif %}</td>
-          <td>{{ a.expires.isoformat() if a.expires else '—' }}</td>
-          <td>{{ 'Live' if a.is_live() else 'Expired' }}</td>
-          <td>
-            <form method="post" style="display:inline">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <input type="hidden" name="remove_announcement" value="{{ a.id }}">
-              <button class="btn btn--danger btn--sm" type="submit">Remove</button>
-            </form>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% endif %}
-  </section>
 
   <dialog class="avatar-crop" id="site-image-crop" aria-labelledby="site-image-crop-title">
     <div class="avatar-crop__panel">

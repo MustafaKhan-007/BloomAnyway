@@ -1108,25 +1108,56 @@ ok("Account still has courses & guides section",
 base_settings = {"site_title": "Bloom Anyway", "instagram_url": "", "hero_image_url": "",
                  "portrait_url": "", "contact_email": ""}
 future = (date.today() + timedelta(days=3)).isoformat()
-admin.post("/admin/settings", data={**base_settings,
-           "announcement_text": "Doors open Monday", "announcement_expires": future},
-           follow_redirects=True)
+admin.post("/admin/announcements",
+           data={"add_announcement": "1", "ann_body": "Doors open Monday",
+                 "ann_expires": future}, follow_redirects=True)
 r = client.get("/")
 ok("Announcement shows before its expiry", "Doors open Monday" in r.get_data(as_text=True))
-past = (date.today() - timedelta(days=1)).isoformat()
-admin.post("/admin/settings", data={**base_settings,
-           "announcement_text": "Doors open Monday", "announcement_expires": past},
-           follow_redirects=True)
+with app.app_context():
+    from app.models import Announcement as _Ann
+    _doors = _Ann.query.filter_by(body="Doors open Monday").first()
+    _doors.expires = date.today() - timedelta(days=1)
+    db.session.commit()
+    _doors_id = _doors.id
+# The bell tells members about a new one too, so the home page is read for
+# the notice card itself rather than for the words anywhere on it.
 r = client.get("/")
-ok("Expired announcement is hidden", "Doors open Monday" not in r.get_data(as_text=True))
-admin.post("/admin/settings", data={"clear_announcement": "1"}, follow_redirects=True)
+ok("Expired announcement is hidden", "hero-announcement" not in r.get_data(as_text=True))
+_studio_ann = admin.get("/admin/announcements").get_data(as_text=True)
+ok("Studio says which of them have stopped, rather than leaving it a mystery",
+   "Doors open Monday" in _studio_ann and "Expired" in _studio_ann)
+admin.post("/admin/announcements",
+           data={"remove_announcement": str(_doors_id)}, follow_redirects=True)
+with app.app_context():
+    from app.models import Announcement as _Ann
+    ok("Remove takes it away for good", _Ann.query.get(_doors_id) is None)
+r = client.get("/")
+ok("No announcement markup after removal", "hero-announcement" not in r.get_data(as_text=True))
+
+# An announcement written before it had a page of its own lives in settings
+# keys, and a settings save must not quietly wipe it.
+with app.app_context():
+    from app.services.settings import invalidate_cache, set_setting
+    set_setting("announcement_text", "Written the old way")
+    set_setting("announcement_expires", future)
+    db.session.commit()
+    invalidate_cache()
+ok("One written the old way still shows",
+   "Written the old way" in client.get("/").get_data(as_text=True))
+admin.post("/admin/settings", data=base_settings, follow_redirects=True)
+ok("And saving settings leaves it exactly where it was",
+   "Written the old way" in client.get("/").get_data(as_text=True),
+   "a settings save blanked it")
+_studio_ann = admin.get("/admin/announcements").get_data(as_text=True)
+ok("The announcements page shows it alongside the rest",
+   "Written the old way" in _studio_ann)
+admin.post("/admin/announcements", data={"clear_announcement": "1"},
+           follow_redirects=True)
 with app.app_context():
     from app.services.settings import get_setting, invalidate_cache
     invalidate_cache()
     cleared_text = get_setting("announcement_text")
 ok("Remove announcement clears it", cleared_text == "")
-r = client.get("/")
-ok("No announcement markup after removal", "hero-announcement" not in r.get_data(as_text=True))
 
 # --- 5e. memberships, videos, subjects, spotlight ---------------------------
 # free member: community is members-only (Healing / Creator)
@@ -2189,9 +2220,9 @@ ok("Shop purchase links to buyer email (not gift recipient)",
    and gift_shop.status == "pending_link")
 
 # Multiple announcements stack; blank expiry defaults to +7 days
-admin.post("/admin/settings", data={"add_announcement": "1",
+admin.post("/admin/announcements", data={"add_announcement": "1",
            "ann_body": "First bloom of spring"}, follow_redirects=True)
-admin.post("/admin/settings", data={"add_announcement": "1",
+admin.post("/admin/announcements", data={"add_announcement": "1",
            "ann_body": "Second gentle note"}, follow_redirects=True)
 hbody = app.test_client().get("/").get_data(as_text=True)
 ok("Multiple announcements stack on the home page",
@@ -2204,23 +2235,41 @@ ok("Announcement defaults to a one-week expiry",
    fresh is not None and fresh.expires == expected_exp, f"got {getattr(fresh, 'expires', None)}")
 ok("Home announcements use hero notice cards",
    "home-hero__notices" in hbody and "hero-announcement" in hbody)
+ok("And several share one card rather than a bar apiece",
+   "hero-announcement--many" in hbody
+   and hbody.count("hero-announcement__one") >= 2)
+# Studio's own page for them: what is live, whoever wrote it, and the box to
+# write another. Settings used to hold this, halfway down a long form.
+_ann_page = admin.get("/admin/announcements").get_data(as_text=True)
+ok("Studio has a page for announcements, listing the live ones",
+   "First bloom of spring" in _ann_page and "Second gentle note" in _ann_page
+   and "Showing now" in _ann_page)
+ok("With the box to write one more on it",
+   'name="add_announcement"' in _ann_page and 'name="ann_body"' in _ann_page)
+ok("And it is in the Studio menu",
+   ">Announcements<" in admin.get("/admin/").get_data(as_text=True))
+ok("Settings sends you there rather than keeping a second copy",
+   "/admin/announcements" in admin.get("/admin/settings").get_data(as_text=True)
+   and 'name="announcement_text"'
+   not in admin.get("/admin/settings").get_data(as_text=True))
 
-# Linked announcement: card is the button; URL text stays hidden
-admin.post("/admin/settings", data={"add_announcement": "1",
+# Linked announcement: the line is the button; URL text stays hidden. With
+# several live they share a card, so each one carries its own link.
+admin.post("/admin/announcements", data={"add_announcement": "1",
            "ann_body": "Grab founder pricing",
            "ann_url": "/membership"}, follow_redirects=True)
 linked = app.test_client().get("/").get_data(as_text=True)
 ok("Linked announcement shows the message text", "Grab founder pricing" in linked)
-ok("Linked announcement wraps the card as a link",
-   "hero-announcement--link" in linked
-   and 'href="/membership"' in linked)
+ok("Linked announcement is a link where it sits",
+   'class="hero-announcement__one" href="/membership"' in linked)
 ok("Linked announcement keeps the URL out of the visible text",
-   "hero-announcement__text\">Grab founder pricing</span>" in linked
-   or "hero-announcement__text\">Grab founder pricing</span>" in linked.replace("\n", ""))
+   ">Grab founder pricing</a>" in linked
+   and "/membership</" not in linked)
 ok("Same-site announcement path stays in the current tab",
-   'href="/membership"' in linked and "target=\"_blank\"" not in linked.split("Grab founder pricing")[0][-200:])
+   'href="/membership"' in linked
+   and "target=\"_blank\"" not in linked.split("Grab founder pricing")[0][-200:])
 
-admin.post("/admin/settings", data={"add_announcement": "1",
+admin.post("/admin/announcements", data={"add_announcement": "1",
            "ann_body": "Visit Instagram",
            "ann_url": "https://instagram.com/bloomanyway"}, follow_redirects=True)
 ext = app.test_client().get("/").get_data(as_text=True)
