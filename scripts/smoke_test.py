@@ -6310,6 +6310,11 @@ finally:
 _trial_page = plain_client.get("/membership").get_data(as_text=True)
 ok("The membership page offers it where someone is deciding",
    "Start with 2 weeks free" in _trial_page, "not offered")
+# The button is the last thing read before deciding, so it says what pressing
+# it starts rather than what joining is called.
+ok("And the button itself offers the trial rather than naming the plan",
+   "Start your free trial now" in _trial_page
+   and "Join Healing" not in _trial_page)
 ok("And says it once at the top before any of the prices",
    "Every paid plan starts with 2 weeks free" in _trial_page,
    "nothing at the top")
