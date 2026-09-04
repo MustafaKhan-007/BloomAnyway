@@ -176,6 +176,7 @@ def dashboard():
     from ..services import storage_health
     try:
         storage = storage_health.check()
+        storage["videos"] = storage_health.video_check()
     except Exception:
         log.exception("dashboard: storage check failed")
         storage = {"wiped": False}

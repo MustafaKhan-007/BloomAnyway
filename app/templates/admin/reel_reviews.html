@@ -75,6 +75,7 @@
               {% if a.size %}&middot; {{ (a.size / 1024 / 1024)|round(1) }} MB{% endif %}</span>
             {% if a.has_raw_video() %}
             <a class="btn btn--{{ 'gold' if a.selected else 'secondary' }} btn--sm"
+               data-no-loader
                href="{{ url_for('admin.reel_reviews_raw_download', app_id=a.id) }}">Download raw</a>
             {% endif %}
             {% if is_live %}

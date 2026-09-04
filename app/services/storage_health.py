@@ -54,6 +54,41 @@ def _write_marker(value: str) -> bool:
 SCAN_LIMIT = 300
 
 
+def video_check() -> dict:
+    """How many Content Hub videos and reel reviews have lost their file.
+
+    Videos live on a disk of their own setting, and a row with nothing behind
+    it plays as an empty box with no clue why. The count is the difference
+    between "that one upload failed" and "the disk under all of them is gone".
+    """
+    from ..models import ReelReview, Video
+
+    folder = (current_app.config.get("VIDEO_STORAGE_DIR") or "").strip()
+    state = {"dir": folder, "files": 0, "missing": 0, "checked": False}
+    if not folder:
+        return state
+    try:
+        rows = [(v.disk_name, bool(v.data)) for v in
+                Video.query.filter(Video.disk_name.isnot(None))
+                .limit(SCAN_LIMIT).all()]
+        rows += [(r.review_disk_name, False) for r in
+                 ReelReview.query.filter(ReelReview.review_disk_name.isnot(None))
+                 .limit(SCAN_LIMIT).all()]
+    except Exception:
+        return state
+    state["checked"] = True
+    state["files"] = len(rows)
+    for disk_name, in_db in rows:
+        if in_db:
+            continue
+        if not os.path.isfile(os.path.join(folder, os.path.basename(disk_name))):
+            state["missing"] += 1
+    if state["missing"]:
+        log.error("storage: %s of %s hub video(s) are not at %s",
+                  state["missing"], state["files"], folder)
+    return state
+
+
 def check() -> dict:
     """How many uploaded files are missing, and whether the disk changed.
 

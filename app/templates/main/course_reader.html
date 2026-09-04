@@ -127,34 +127,64 @@
     </nav>
     {% endif %}
 
+    {% macro chips(list, module) %}
+    <ol class="reader-pieces__list">
+      {% for piece in list %}
+      {% set open_now = asset and piece.id == asset.id %}
+      <li class="reader-pieces__item{{ ' is-active' if open_now }}">
+        <a href="{{ url_for('main.course_reader', purchase_id=purchase.id, module=module or None, item=piece.id) }}"
+           {% if open_now %}aria-current="true"{% endif %}>
+          <span class="reader-pieces__kind reader-pieces__kind--{{ piece.kind }}">{{ piece.kind_label() }}</span>
+          <span class="reader-pieces__name">{{ piece.display_title() }}</span>
+          {% if open_now %}<span class="reader-pieces__open">Open</span>{% endif %}
+        </a>
+        {# Says how much is written for this file and goes straight to it,
+           rather than leaving it to be found below the file itself. #}
+        {% if piece.notes %}
+        <a class="reader-pieces__notes"
+           href="{{ url_for('main.course_reader', purchase_id=purchase.id, module=module or None, item=piece.id) }}#reader-extracts">
+          <span aria-hidden="true">&#9998;</span>
+          {{ piece.notes|length }} extract{{ '' if piece.notes|length == 1 else 's' }}
+        </a>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ol>
+    {% endmacro %}
+
     {% macro pieces(label, list, module, description=None) %}
     <nav class="reader-pieces" aria-label="{{ label }}">
       <p class="reader-pieces__title">{{ label }}</p>
       {% if description %}
       <div class="reader-pieces__desc reader-doc reader-doc--written">{{ description|markdown }}</div>
       {% endif %}
-      {% if list %}
-      <ol class="reader-pieces__list">
-        {% for piece in list %}
-        <li class="reader-pieces__item{{ ' is-active' if asset and piece.id == asset.id }}">
-          <a href="{{ url_for('main.course_reader', purchase_id=purchase.id, module=module or None, item=piece.id) }}">
-            <span class="reader-pieces__kind reader-pieces__kind--{{ piece.kind }}">{{ piece.kind_label() }}</span>
-            <span class="reader-pieces__name">{{ piece.display_title() }}</span>
-          </a>
-          {# Says how much is written for this file and goes straight to it,
-             rather than leaving it to be found below the file itself. #}
-          {% if piece.notes %}
-          <a class="reader-pieces__notes"
-             href="{{ url_for('main.course_reader', purchase_id=purchase.id, module=module or None, item=piece.id) }}#reader-extracts">
-            <span aria-hidden="true">&#9998;</span>
-            {{ piece.notes|length }} extract{{ '' if piece.notes|length == 1 else 's' }}
-          </a>
-          {% endif %}
-        </li>
-        {% endfor %}
-      </ol>
-      {% endif %}
+      {% if list %}{{ chips(list, module) }}{% endif %}
     </nav>
+    {% endmacro %}
+
+    {# A module with several lessons was a wall of everything at once. Each
+       lesson is its own fold now, named and counted, and the one holding what
+       is open starts open so nothing has to be hunted for. #}
+    {% macro lesson_fold(lesson, module) %}
+    {% set holds_open = asset and asset.id in (lesson.contents|map(attribute='id')|list) %}
+    <details class="reader-lesson{{ ' is-open-here' if holds_open }}"
+             {% if holds_open %}open{% endif %}>
+      <summary class="reader-lesson__head">
+        <span class="reader-lesson__num">Lesson {{ lesson.number }}</span>
+        <span class="reader-lesson__title">{{ lesson.title or 'Untitled lesson' }}</span>
+        <span class="reader-lesson__count">
+          {%- if lesson.contents -%}
+          {{ lesson.contents|length }} piece{{ '' if lesson.contents|length == 1 else 's' }}
+          {%- else -%}Written only{%- endif -%}
+        </span>
+      </summary>
+      <div class="reader-lesson__body">
+        {% if lesson.description %}
+        <div class="reader-pieces__desc reader-doc reader-doc--written">{{ lesson.description|markdown }}</div>
+        {% endif %}
+        {% if lesson.contents %}{{ chips(lesson.contents, module) }}{% endif %}
+      </div>
+    </details>
     {% endmacro %}
 
     {% set active = (modules|selectattr('number', 'equalto', active_module)|first) if (active_module and modules) else none %}
@@ -162,11 +192,18 @@
       {% if active.intro %}
       {{ pieces('Module intro', active.intro, active_module) }}
       {% endif %}
-      {% for lesson in active.lessons %}
+      {% set shown_lessons = active.lessons|selectattr('contents')|list
+                             or active.lessons|selectattr('description')|list %}
+      {% if shown_lessons %}
+      <nav class="reader-pieces reader-pieces--lessons" aria-label="Lessons">
+        <p class="reader-pieces__title">Lessons</p>
+        {% for lesson in active.lessons %}
         {% if lesson.contents or lesson.description %}
-        {{ pieces('Lesson ' ~ lesson.number ~ (': ' ~ lesson.title if lesson.title else ''), lesson.contents, active_module, lesson.description) }}
+        {{ lesson_fold(lesson, active_module) }}
         {% endif %}
-      {% endfor %}
+        {% endfor %}
+      </nav>
+      {% endif %}
     {% elif module_items and module_items|length > 1 %}
     {{ pieces('In this module', module_items, active_module) }}
     {% endif %}

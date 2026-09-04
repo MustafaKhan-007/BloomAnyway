@@ -37,6 +37,32 @@
     {{ storage.files }} there now, all present.
   </p>
   {% endif %}
+  {# Content Hub videos sit on a disk of their own setting, so they can go
+     missing while every course file is exactly where it was. #}
+  {% if storage and storage.videos and storage.videos.missing %}
+  <div class="admin-panel studio-card studio-alarm">
+    <h2 style="margin-top: 0;">
+      {{ storage.videos.missing }} Content Hub video{{ '' if storage.videos.missing == 1 else 's' }}
+      {{ 'has' if storage.videos.missing == 1 else 'have' }} no file behind
+      {{ 'it' if storage.videos.missing == 1 else 'them' }}
+    </h2>
+    <p>
+      The tip or review is still listed, but the video isn't at
+      <code>{{ storage.videos.dir }}</code>, so it plays as an empty box.
+      Videos are kept on whichever disk that path is on — if it isn't inside a
+      persistent disk, every one of them goes with the next deploy.
+    </p>
+    <p class="field-help" style="margin: 0;">
+      Point <code>VIDEO_STORAGE_DIR</code> at a folder on the attached disk,
+      then upload them again.
+    </p>
+  </div>
+  {% elif storage and storage.videos and storage.videos.checked and storage.videos.files %}
+  <p class="studio-storage-ok">
+    Content Hub videos are kept at <code>{{ storage.videos.dir }}</code> —
+    {{ storage.videos.files }} there now, all present.
+  </p>
+  {% endif %}
   <div class="page-head studio-dash__head">
     <div>
       <h1>Dashboard</h1>

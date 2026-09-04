@@ -2068,8 +2068,12 @@ def reel_review_stream(review_id):
     path = os.path.join(current_app.config["VIDEO_STORAGE_DIR"], review.review_disk_name)
     if not os.path.exists(path):
         abort(404)
+    # Conditional, so a range request is answered with the range asked for.
+    # It said Accept-Ranges and then sent the whole file regardless, which is
+    # what a player takes as "this cannot be seeked" — and some refuse to
+    # start a long one at all on that basis.
     resp = send_file(path, mimetype=review.review_mime or "video/mp4",
-                     conditional=False, download_name=review.review_filename or "review",
+                     conditional=True, download_name=review.review_filename or "review",
                      as_attachment=False)
     resp.headers["Accept-Ranges"] = "bytes"
     resp.headers["Cache-Control"] = "private, no-store"

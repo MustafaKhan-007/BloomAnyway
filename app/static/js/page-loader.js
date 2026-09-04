@@ -6,23 +6,48 @@
   if (!el) return;
 
   var hideTimer = null;
+  var safetyTimer = null;
+  var leftPage = false;
   var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // Nothing this side of the browser is told that a navigation was refused —
+  // a "Leave site?" answered with Stay, a Save As cancelled, a file picker
+  // closed. Without a way out the spinner sits there for the rest of the
+  // visit, over a page that is working perfectly well.
+  var SAFETY_MS = 12000;
 
   function show() {
     if (hideTimer) {
       clearTimeout(hideTimer);
       hideTimer = null;
     }
+    leftPage = false;
+    if (safetyTimer) clearTimeout(safetyTimer);
+    safetyTimer = setTimeout(hide, SAFETY_MS);
     el.hidden = false;
     el.setAttribute("aria-hidden", "false");
     document.documentElement.classList.add("is-page-loading");
   }
 
   function hide() {
+    if (safetyTimer) {
+      clearTimeout(safetyTimer);
+      safetyTimer = null;
+    }
     el.hidden = true;
     el.setAttribute("aria-hidden", "true");
     document.documentElement.classList.remove("is-page-loading");
   }
+
+  // A native dialog takes focus off the page and hands it back when it is
+  // dismissed. Getting it back with the page still here means whatever was
+  // asked for isn't happening.
+  window.addEventListener("blur", function () {
+    if (!el.hidden) leftPage = true;
+  });
+  window.addEventListener("focus", function () {
+    if (!el.hidden && leftPage) hide();
+  });
 
   function softHide() {
     // Brief linger so fast navigations still feel intentional.
@@ -54,7 +79,12 @@
     if (!a) return;
     if (a.target && a.target !== "_self") return;
     if (a.hasAttribute("download")) return;
+    if (a.getAttribute("data-no-loader") != null) return;
     var href = a.getAttribute("href") || "";
+    // A link that hands back a file leaves the page exactly where it is, so
+    // there is no navigation coming to take the spinner away.
+    if (href.indexOf("download=1") !== -1
+        || /\/download(\?|$)/.test(href.split("#")[0])) return;
     if (!href || href.charAt(0) === "#") return;
     if (href.indexOf("javascript:") === 0 || href.indexOf("mailto:") === 0
         || href.indexOf("tel:") === 0) return;

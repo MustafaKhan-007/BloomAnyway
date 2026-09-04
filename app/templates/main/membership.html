@@ -15,6 +15,15 @@
 {# A membership follows the email address that paid for it, so there has to be
    an account for it to reach. Signed out, the button goes to sign-in rather
    than to Stripe. #}
+{# What the button offers depends on where they are. Somebody already paying
+   for a plan is switching, and gets no trial for it — checkout hands the free
+   days to new members only, so only they are offered them here. #}
+{% macro join_label(plan, joining, switching) %}
+  {%- if current and current != 'none' -%}{{ switching }}
+  {%- elif plan and plan.trial_display() -%}Start your free trial now
+  {%- else -%}{{ joining }}{%- endif -%}
+{% endmacro %}
+
 {% macro plan_cta(url, style, label, soon_label) %}
   {% if not url %}
   <span class="btn btn--secondary btn--block is-disabled">{{ soon_label }}</span>
@@ -220,12 +229,13 @@
           {% else %}
           <span class="mem-cta mem-cta--month">
             {{ plan_cta(healing_checkout_m, 'btn--primary',
-                        'Switch to Healing' if current and current != 'none' else 'Join Healing',
+                        join_label(healing, 'Join Healing', 'Switch to Healing'),
                         'Coming soon') }}
           </span>
           <span class="mem-cta mem-cta--year">
             {{ plan_cta(healing_checkout_y, 'btn--primary',
-                        'Switch to Healing annually' if current and current != 'none' else 'Get Healing annually',
+                        join_label(healing, 'Get Healing annually',
+                                   'Switch to Healing annually'),
                         'Annual coming soon') }}
           </span>
           {% endif %}
@@ -315,12 +325,13 @@
           {% else %}
           <span class="mem-cta mem-cta--month">
             {{ plan_cta(creator_checkout_m, 'btn--gold',
-                        'Switch to Creator' if current and current != 'none' else 'Become a Creator',
+                        join_label(creator, 'Become a Creator', 'Switch to Creator'),
                         'Coming soon') }}
           </span>
           <span class="mem-cta mem-cta--year">
             {{ plan_cta(creator_checkout_y, 'btn--gold',
-                        'Switch to Creator annually' if current and current != 'none' else 'Get Creator annually',
+                        join_label(creator, 'Get Creator annually',
+                                   'Switch to Creator annually'),
                         'Annual coming soon') }}
           </span>
           {% endif %}
@@ -413,12 +424,13 @@
           {% else %}
           <span class="mem-cta mem-cta--month">
             {{ plan_cta(full_checkout_m, 'btn--bloom',
-                        'Switch to Full Bloom' if current and current != 'none' else 'Go Full Bloom',
+                        join_label(full, 'Go Full Bloom', 'Switch to Full Bloom'),
                         'Coming soon') }}
           </span>
           <span class="mem-cta mem-cta--year">
             {{ plan_cta(full_checkout_y, 'btn--bloom',
-                        'Switch to Full Bloom annually' if current and current != 'none' else 'Get Full Bloom annually',
+                        join_label(full, 'Get Full Bloom annually',
+                                   'Switch to Full Bloom annually'),
                         'Annual coming soon') }}
           </span>
           {% endif %}
