@@ -83,7 +83,23 @@ def unlock_times(product, anchor: datetime | None) -> list[datetime | None]:
     return out
 
 
-def module_rows(product, started_at, now=None) -> list[dict]:
+def reads_it_whole(viewer) -> bool:
+    """True for an owner reading their own shelf.
+
+    A schedule is for buyers. An owner is the person who has to check the
+    course works, and waiting a fortnight to see whether module three opens is
+    not checking anything. Asking to see the site as a member puts the wait
+    back, since that is what that switch is for.
+    """
+    if viewer is None or not getattr(viewer, "is_admin", False):
+        return False
+    try:
+        return not viewer.preview_tier()
+    except Exception:
+        return True
+
+
+def module_rows(product, started_at, now=None, viewer=None) -> list[dict]:
     """This product's modules with their file and lock state for one buyer.
 
     ``started_at`` is the buyer's purchase time; ``None`` (unknown, e.g. an old
@@ -93,7 +109,7 @@ def module_rows(product, started_at, now=None) -> list[dict]:
     if not rows:
         return []
     anchor = schedule_start(product, started_at)
-    dripped = product.is_dripped() and (
+    dripped = product.is_dripped() and not reads_it_whole(viewer) and (
         anchor is not None or product.drip_mode_key() == "dates")
     now = now or utcnow()
     times = unlock_times(product, anchor) if dripped else []
@@ -108,10 +124,12 @@ def module_rows(product, started_at, now=None) -> list[dict]:
     return rows
 
 
-def asset_unlocked(product, asset, started_at, now=None) -> bool:
+def asset_unlocked(product, asset, started_at, now=None, viewer=None) -> bool:
     """False only for a file pinned to a module this buyer hasn't reached yet."""
     number = getattr(asset, "module_index", None)
     if not number or product is None or not product.is_dripped():
+        return True
+    if reads_it_whole(viewer):
         return True
     anchor = schedule_start(product, started_at)
     if anchor is None and product.drip_mode_key() != "dates":

@@ -7300,6 +7300,44 @@ ok("Preview will not bounce the owner off-site",
    r.status_code == 302 and "evil.test" not in (r.headers.get("Location") or ""))
 admin.post("/admin/preview", data={"tier": "off"})
 
+# --- an owner reads their own shelf whole -----------------------------------
+# A drip schedule is for buyers. The owner is the one who has to check the
+# course works, and waiting a fortnight to see module three is not a check.
+_own_buy = _payment_payload("9302", "owner@example.com", "price_drip_course",
+                            amount=3900, product_name="Drip Course")
+client.post("/webhooks/stripe", data=_own_buy, headers=_stripe_headers(_own_buy))
+with app.app_context():
+    _own_row = ShopPurchase.query.filter_by(lemon_squeezy_order_id="9302").first()
+    _own_id = _own_row.id if _own_row is not None else 0
+    ok("An owner can buy their own drip-fed course",
+       _own_row is not None and _own_row.status == "linked")
+_obody = admin.get(f"/account/courses/{_own_id}").get_data(as_text=True)
+ok("And every module is open to them from the first minute",
+   "Unlocks" not in _obody and "Every module is open" in _obody,
+   "still on the buyer's schedule")
+r = admin.get(f"/account/courses/{_own_id}/file/{mod3_asset_id}")
+ok("Including the file in a module a buyer would still be waiting for",
+   r.status_code == 200)
+admin.post("/admin/preview", data={"tier": "real"})
+_obody = admin.get(f"/account/courses/{_own_id}").get_data(as_text=True)
+ok("Asking to be treated as a member hands the wait back",
+   "Unlocks" in _obody and "Every module is open" not in _obody)
+r = admin.get(f"/account/courses/{_own_id}/file/{mod3_asset_id}")
+ok("And shuts the module they haven't reached", r.status_code == 404)
+admin.post("/admin/preview", data={"tier": "off"})
+with app.app_context():
+    from app.services import drip as _drip_svc
+    _dp = db.session.get(Product, drip_prod_id)
+    _owner_row = User.query.filter_by(email="owner@example.com").first()
+    _buyer_open = [row["number"] for row
+                   in _drip_svc.module_rows(_dp, utcnow()) if row["unlocked"]]
+    _owner_open = [row["number"] for row
+                   in _drip_svc.module_rows(_dp, utcnow(), viewer=_owner_row)
+                   if row["unlocked"]]
+    ok("While anybody who bought today still gets one module at a time",
+       _buyer_open == [1] and _owner_open == [1, 2, 3],
+       f"buyer={_buyer_open} owner={_owner_open}")
+
 # the perk is still the owner's to override, and it ends on its own
 with app.app_context():
     from app.services.memberships import reconcile_user, set_manual_tier

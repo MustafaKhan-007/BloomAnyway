@@ -1103,7 +1103,8 @@ def course_reader(purchase_id):
     if purchase is None:
         abort(404)
     product = reader_svc.catalog_product_for_purchase(purchase)
-    modules = drip_svc.module_rows(product, purchase.purchased_at)
+    modules = drip_svc.module_rows(product, purchase.purchased_at,
+                                   viewer=current_user)
     wanted_item = request.args.get("item", type=int)
     # Files with no module are open from day one, even on a drip schedule.
     extras = [a for a in (product.top_level_assets() if product else [])
@@ -1156,6 +1157,10 @@ def course_reader(purchase_id):
         extras=extras,
         active_module=active_module,
         next_locked=drip_svc.next_locked(modules),
+        # Nothing is locked for an owner, so the reader says why rather than
+        # leaving them to wonder whether the schedule works at all.
+        reads_whole=(drip_svc.reads_it_whole(current_user)
+                     and product is not None and product.is_dripped()),
         progress=progress,
         bookmarks=bookmarks,
         download_url=download_url,
@@ -1184,7 +1189,8 @@ def course_file(purchase_id, asset_id):
         log.info("course file %s refused: no such file on purchase %s",
                  asset_id, purchase_id)
         abort(404)
-    if not drip_svc.asset_unlocked(product, asset, purchase.purchased_at):
+    if not drip_svc.asset_unlocked(product, asset, purchase.purchased_at,
+                                   viewer=current_user):
         log.info("course file %s refused: module %s hasn't opened for purchase %s",
                  asset_id, asset.module_index, purchase_id)
         abort(404)
@@ -1236,7 +1242,8 @@ def course_h5p_file(purchase_id, asset_id, filename):
     if (product is None or asset is None or asset.product_id != product.id
             or asset.kind != "h5p"):
         abort(404)
-    if not drip_svc.asset_unlocked(product, asset, purchase.purchased_at):
+    if not drip_svc.asset_unlocked(product, asset, purchase.purchased_at,
+                                   viewer=current_user):
         abort(404)
     try:
         reader_svc.ensure_h5p_extracted(asset)
