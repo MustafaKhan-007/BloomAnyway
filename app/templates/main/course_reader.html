@@ -84,6 +84,11 @@
           {{ next_locked.unlock_at|localtime('%b %d, %Y at %I:%M %p') }} your time
           ({{ next_locked.days_away }} day{{ '' if next_locked.days_away == 1 else 's' }} away).
         </p>
+        {% elif reads_whole %}
+        <p class="reader-modules__note">
+          Every module is open — this one is yours. To see the schedule a buyer
+          gets, view the site as a member in Studio.
+        </p>
         {% endif %}
       </div>
       <ol class="reader-modules__list">
