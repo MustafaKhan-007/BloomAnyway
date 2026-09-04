@@ -419,23 +419,63 @@ input[type="file"]:not(.sr-only):not(.file-pick__input):hover::-webkit-file-uplo
   .preview-bar__text { flex: 1 1 calc(100% - 24px); margin-right: 0; }
 }
 
-/* -------------------------- hero announcement ---------------------------- */
+/* -------------------------- hero announcement ----------------------------
+   Built like the card the Content Hub drops into (.hero-newvideo), in the
+   warm half of the palette rather than the plum: two notices side by side
+   then read as two different kinds of thing without either being explained. */
 .hero-announcement {
   display: inline-flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   max-width: 100%;
-  margin: 0 0 22px;
-  padding: 14px 22px;
-  background: linear-gradient(100deg, #fff6e8 0%, #f5d9a8 100%);
-  border: 1px solid rgba(122, 46, 98, 0.16);
+  margin: 0;
+  padding: 10px 18px;
+  background: linear-gradient(135deg, var(--rose) 0%, var(--gold) 100%);
   border-radius: 16px;
-  color: var(--ink);
-  font-size: 16px;
+  color: var(--plum-deep);
+  font-size: 15px;
   font-weight: 700;
   line-height: 1.45;
-  box-shadow: 0 10px 24px rgba(224, 138, 109, 0.22);
+  box-shadow: 0 8px 20px rgba(224, 138, 109, 0.24);
 }
+/* Several live at once: the same one card, a line apiece. */
+.hero-announcement--many {
+  flex-direction: column; align-items: stretch; gap: 8px;
+  padding: 11px 20px 13px;
+}
+.hero-announcement__head { display: inline-flex; align-items: center; gap: 8px; }
+.hero-announcement--many .hero-announcement__head .hero-announcement__text {
+  font-size: 11px; font-weight: 800; letter-spacing: 0.09em;
+  text-transform: uppercase; opacity: 0.85;
+}
+.hero-announcement__list {
+  display: flex; flex-direction: column; gap: 4px;
+}
+.hero-announcement__one { color: inherit; font-weight: 700; text-decoration: none; }
+a.hero-announcement__one:hover,
+a.hero-announcement__one:focus-visible { text-decoration: underline; }
+
+/* Studio: what is on the home page this minute, whoever wrote it. */
+.studio-live-notices { list-style: none; margin: 0; padding: 0; }
+.studio-live-notices__row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+  padding: 11px 14px; margin-bottom: 8px;
+  border-radius: 12px; border: 1px solid rgba(61, 20, 49, 0.12);
+  background: #fff;
+}
+.studio-live-notices__row:last-child { margin-bottom: 0; }
+.studio-live-notices__row--mine {
+  border-left: 4px solid var(--rose);
+}
+.studio-live-notices__row--hub {
+  border-left: 4px solid var(--plum);
+}
+.studio-live-notices__tag {
+  font-size: 10.5px; font-weight: 800; letter-spacing: 0.07em;
+  text-transform: uppercase; color: var(--plum-deep);
+}
+.studio-live-notices__body { flex: 1 1 240px; font-weight: 600; }
+.studio-live-notices__row form { margin: 0; }
 a.hero-announcement--link {
   text-decoration: none;
   color: inherit;
@@ -455,11 +495,11 @@ a.hero-announcement--link:focus-visible {
   flex: none;
   display: inline-grid;
   place-items: center;
-  width: 30px; height: 30px;
+  width: 24px; height: 24px;
   border-radius: 50%;
-  background: var(--horizon, var(--gold));
-  color: #fff;
-  font-size: 15px;
+  background: rgba(255, 255, 255, 0.6);
+  color: var(--plum-deep);
+  font-size: 13px;
   animation: spark-pulse 2.6s ease-in-out infinite;
 }
 .hero-announcement__text { min-width: 0; }

@@ -1892,16 +1892,31 @@ def settings_test_email():
     return redirect(url_for("admin.settings"))
 
 
-@bp.route("/settings", methods=["GET", "POST"])
+#: Announcements are written on their own page, so a settings save must leave
+#: them exactly as they are rather than blanking what isn't on the form.
+_ANNOUNCEMENT_KEYS = ("announcement_text", "announcement_expires",
+                      "announcement_url")
+
+
+@bp.route("/announcements", methods=["GET", "POST"])
 @admin_required
-def settings():
+def announcements():
+    """Everything showing on the home page, and the box to write one more.
+
+    Announcements used to live near the bottom of Settings, where nothing
+    said whether one was still running: an owner who wrote one a fortnight
+    ago and saw nothing on the home page had no way to tell that it had
+    quietly passed its date. Here they are the page.
+    """
+    from ..services.homepage import content_hub_groups
+    from ..services.settings import active_announcement, sanitize_announcement_url
+
     if request.method == "POST":
         if request.form.get("clear_announcement"):
-            set_setting("announcement_text", "")
-            set_setting("announcement_expires", "")
-            set_setting("announcement_url", "")
+            for key in _ANNOUNCEMENT_KEYS:
+                set_setting(key, "")
             flash("Announcement removed.", "success")
-            return redirect(url_for("admin.settings"))
+            return redirect(url_for("admin.announcements"))
         if request.form.get("add_announcement"):
             body = (request.form.get("ann_body") or "").strip()[:300]
             if body:
@@ -1912,9 +1927,9 @@ def settings():
                         expires = date.fromisoformat(raw)
                     except ValueError:
                         pass
-                from ..services.settings import sanitize_announcement_url
                 link = sanitize_announcement_url(request.form.get("ann_url"))
-                db.session.add(Announcement(body=body, expires=expires, link_url=link or None))
+                db.session.add(Announcement(body=body, expires=expires,
+                                            link_url=link or None))
                 from ..services.social_graph import notify_everyone
                 told = notify_everyone(
                     kind="announcement",
@@ -1927,7 +1942,7 @@ def settings():
                 flash("Announcement added." + _told_suffix(told), "success")
             else:
                 flash("Write something first.", "error")
-            return redirect(url_for("admin.settings"))
+            return redirect(url_for("admin.announcements"))
         remove_id = request.form.get("remove_announcement")
         if remove_id and remove_id.isdigit():
             ann = db.session.get(Announcement, int(remove_id))
@@ -1935,7 +1950,7 @@ def settings():
                 db.session.delete(ann)
                 db.session.commit()
             flash("Announcement removed.", "success")
-            return redirect(url_for("admin.settings"))
+            return redirect(url_for("admin.announcements"))
         remove_ids = _form_ids()
         if request.form.get("bulk_remove_announcements") and remove_ids:
             deleted = 0
@@ -1950,10 +1965,37 @@ def settings():
                 f"Removed {deleted} announcement{'s' if deleted != 1 else ''}.",
                 "success" if deleted else "info",
             )
-            return redirect(url_for("admin.settings"))
+            return redirect(url_for("admin.announcements"))
+        flash("Nothing to do with that.", "info")
+        return redirect(url_for("admin.announcements"))
+
+    rows = (Announcement.query
+            .order_by(Announcement.sort_order,
+                      Announcement.created_at.desc()).all())
+    quick = active_announcement()
+    return render_template(
+        "admin/announcements.html",
+        rows=rows,
+        live=[a for a in rows if a.is_live()],
+        quick=quick,
+        quick_expires=get_setting("announcement_expires", ""),
+        quick_url=get_setting("announcement_url", ""),
+        # What the hub has dropped into the same strip, so the page shows
+        # everything a member is seeing rather than only half of it.
+        hub_groups=content_hub_groups(),
+        today=date.today(),
+        default_expires=(date.today() + timedelta(days=7)).isoformat(),
+    )
+
+
+@bp.route("/settings", methods=["GET", "POST"])
+@admin_required
+def settings():
+    if request.method == "POST":
         values = {key: (request.form.get(key) or "").strip()
                   for key in SETTING_DEFAULTS
-                  if key not in _SPOTLIGHT_KEYS and key not in _IMAGE_URL_KEYS}
+                  if key not in _SPOTLIGHT_KEYS and key not in _IMAGE_URL_KEYS
+                  and key not in _ANNOUNCEMENT_KEYS}
         # Site images: uploaded, cleared, or left exactly as they were.
         from ..services.site_images import (SiteImageError, clear as clear_site_image,
                                             process_and_save)
@@ -1973,22 +2015,13 @@ def settings():
         except SiteImageError as exc:
             flash(str(exc), "error")
             return redirect(url_for("admin.settings"))
-        # quick announcement: blank expiry defaults to one week
-        if values.get("announcement_text") and not values.get("announcement_expires"):
-            values["announcement_expires"] = (date.today() + timedelta(days=7)).isoformat()
-        from ..services.settings import sanitize_announcement_url
-        values["announcement_url"] = sanitize_announcement_url(values.get("announcement_url"))
         for key, val in values.items():
             set_setting(key, val)
         flash("Settings saved.", "success")
         return redirect(url_for("admin.settings"))
     values = all_settings()
-    announcements = (Announcement.query
-                     .order_by(Announcement.sort_order, Announcement.created_at.desc()).all())
-    default_expires = (date.today() + timedelta(days=7)).isoformat()
     return render_template("admin/settings.html", values=values,
-                           announcements=announcements, today=date.today(),
-                           default_expires=default_expires)
+                           today=date.today())
 
 
 # ============================ MARKETPLACE ====================================
