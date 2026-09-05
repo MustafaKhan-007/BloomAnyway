@@ -24,6 +24,11 @@ log = logging.getLogger(__name__)
 #: Word files are text; one this big is a folder of photographs in a wrapper.
 MAX_BYTES = 25 * 1024 * 1024
 
+#: Drawing takes a moment per paragraph, and somebody is waiting on the other
+#: end of the upload. A manuscript's worth of them is better exported to PDF by
+#: the program that already knows how than drawn a line at a time here.
+MAX_BLOCKS = 8000
+
 #: Word measures in English Metric Units; PDFs here are drawn in points.
 EMU_PER_PT = 12700
 
@@ -107,6 +112,11 @@ def to_pdf(data: bytes) -> bytes:
             "That doesn't open as a Word file. If it is an older .doc, or it "
             "came from somewhere else, save it as a PDF and upload that.") from exc
 
+    if _body_length(doc) > MAX_BLOCKS:
+        raise DocError(
+            "That document is very long. Save it as a PDF from Word and "
+            "upload that instead.")
+
     page, margins = _paper(doc)
     pdf = FPDF(unit="pt", format=page)
     pdf.set_margins(margins[0], margins[1], margins[2])
@@ -115,13 +125,13 @@ def to_pdf(data: bytes) -> bytes:
     pdf.add_page()
     pdf.set_font("Helvetica", "", BODY_PT)
 
-    drew, lists = False, _Lists(doc)
+    drew, book = False, _Book(doc)
     for block in _blocks(doc):
         try:
             if getattr(block, "_tbl", None) is not None:
                 drew = _draw_table(pdf, block) or drew
             else:
-                drew = _draw_paragraph(pdf, doc, block, lists) or drew
+                drew = _draw_paragraph(pdf, doc, block, book) or drew
         except Exception:
             log.debug("docs: skipped a block that wouldn't draw", exc_info=True)
     if not drew:
@@ -145,6 +155,13 @@ def _paper(doc) -> tuple[tuple[float, float], tuple[float, float, float, float]]
     if left + right > width * 0.8 or top + bottom > height * 0.8:
         left = right = top = bottom = MARGIN
     return (width, height), (left, top, right, bottom)
+
+
+def _body_length(doc) -> int:
+    try:
+        return sum(1 for _ in doc.element.body.iterchildren())
+    except Exception:
+        return 0
 
 
 def _blocks(doc):
@@ -172,9 +189,9 @@ def _style_chain(style):
     return seen
 
 
-def _inherited(paragraph, attr):
+def _inherited(chain, attr):
     """A font setting the paragraph leaves to its style, or the style's style."""
-    for style in _style_chain(getattr(paragraph, "style", None)):
+    for style in chain:
         try:
             value = getattr(style.font, attr)
         except Exception:
@@ -184,8 +201,69 @@ def _inherited(paragraph, attr):
     return None
 
 
-def _heading_level(paragraph) -> int:
-    name = (getattr(getattr(paragraph, "style", None), "name", "") or "").lower()
+class _Look:
+    """Everything a paragraph takes from its style, read once.
+
+    Asking python-docx for a paragraph's style means resolving the document's
+    default style from scratch, which is by far the slowest thing here. Every
+    paragraph in a long document shares a handful of styles, so each one is
+    worked out the first time it is seen and remembered by name.
+    """
+
+    __slots__ = ("level", "size", "align", "bold", "italic", "underline",
+                 "numbering")
+
+    def __init__(self, style):
+        chain = _style_chain(style)
+        name = (getattr(style, "name", "") or "").lower()
+        self.level = _named_level(name)
+        self.size = None
+        size = _inherited(chain, "size")
+        if size is not None:
+            try:
+                self.size = float(size.pt)
+            except Exception:
+                self.size = None
+        self.bold = _inherited(chain, "bold")
+        self.italic = _inherited(chain, "italic")
+        self.underline = _inherited(chain, "underline")
+        self.align = None
+        for step in chain:
+            found = getattr(
+                getattr(getattr(step, "paragraph_format", None), "alignment", None),
+                "value", None)
+            if found is not None:
+                self.align = found
+                break
+        self.numbering = [step.element for step in chain
+                          if getattr(step, "element", None) is not None]
+
+
+class _Book:
+    """One document's styles and lists, held while it is being drawn."""
+
+    def __init__(self, doc):
+        self.doc = doc
+        self.lists = _Lists(doc)
+        self._looks: dict[str | None, _Look] = {}
+
+    def look(self, paragraph) -> _Look:
+        key = _style_name(paragraph)
+        found = self._looks.get(key)
+        if found is None:
+            found = self._looks[key] = _Look(getattr(paragraph, "style", None))
+        return found
+
+
+def _style_name(paragraph) -> str | None:
+    """The style a paragraph names, straight off its XML and without resolving it."""
+    from docx.oxml.ns import qn
+    props = paragraph._p.find(qn("w:pPr"))
+    named = props.find(qn("w:pStyle")) if props is not None else None
+    return named.get(qn("w:val")) if named is not None else None
+
+
+def _named_level(name: str) -> int:
     if name.startswith("title"):
         return 1
     if name.startswith("subtitle"):
@@ -196,33 +274,24 @@ def _heading_level(paragraph) -> int:
     return int(tail) if tail.isdigit() else 1
 
 
-def _size(paragraph, level: int) -> float:
+def _size(paragraph, look: _Look) -> float:
     for run in paragraph.runs:
         try:
             if run.font.size is not None:
                 return float(run.font.size.pt)
         except Exception:
             continue
-    inherited = _inherited(paragraph, "size")
-    if inherited is not None:
-        try:
-            return float(inherited.pt)
-        except Exception:
-            pass
-    if level:
-        return HEADING_PT.get(level, BODY_PT)
+    if look.size is not None:
+        return look.size
+    if look.level:
+        return HEADING_PT.get(look.level, BODY_PT)
     return BODY_PT
 
 
-def _align(paragraph) -> str:
+def _align(paragraph, look: _Look) -> str:
     value = getattr(getattr(paragraph, "alignment", None), "value", None)
     if value is None:
-        for style in _style_chain(getattr(paragraph, "style", None)):
-            value = getattr(
-                getattr(getattr(style, "paragraph_format", None), "alignment", None),
-                "value", None)
-            if value is not None:
-                break
+        value = look.align
     return _ALIGN.get(value, "L")
 
 
@@ -243,7 +312,7 @@ def _rgb(color) -> tuple[int, int, int] | None:
         return ((value >> 16) & 255, (value >> 8) & 255, value & 255)
 
 
-def _list_ref(paragraph) -> tuple[int, int] | None:
+def _list_ref(paragraph, look: _Look) -> tuple[int, int] | None:
     """Which list and which rung of it this line is on, if it is in one.
 
     Word writes the list onto the paragraph when somebody clicks the bullet
@@ -251,10 +320,7 @@ def _list_ref(paragraph) -> tuple[int, int] | None:
     have to be asked.
     """
     from docx.oxml.ns import qn
-    holders = [paragraph._p]
-    holders += [style.element for style in _style_chain(getattr(paragraph, "style", None))
-                if getattr(style, "element", None) is not None]
-    for holder in holders:
+    for holder in [paragraph._p] + look.numbering:
         props = holder.find(qn("w:pPr"))
         numbering = props.find(qn("w:numPr")) if props is not None else None
         if numbering is None:
@@ -355,19 +421,19 @@ def _spacing(paragraph, size: float) -> tuple[float, float, float]:
     return max(size, min(size * 3, line)), before, after
 
 
-def _face(run, paragraph, level: int) -> str:
+def _face(run, look: _Look) -> str:
     """Bold, italic and underline, from the run or from the style behind it."""
     def ask(attr):
         try:
-            value = getattr(run.font, attr)
+            value = getattr(run.font, attr) if run is not None else None
         except Exception:
             value = None
         if value is None:
-            value = _inherited(paragraph, attr)
+            value = getattr(look, attr)
         return bool(value)
 
-    style = ("B" if ask("bold") or level else "") + ("I" if ask("italic") else "")
-    return style + ("U" if ask("underline") else "")
+    face = ("B" if ask("bold") or look.level else "") + ("I" if ask("italic") else "")
+    return face + ("U" if ask("underline") else "")
 
 
 # --- drawing -----------------------------------------------------------------
@@ -379,11 +445,11 @@ def _page_break(paragraph) -> bool:
                for br in paragraph._p.iter(qn("w:br")))
 
 
-def _draw_paragraph(pdf, doc, paragraph, lists) -> bool:
+def _draw_paragraph(pdf, doc, paragraph, book: _Book) -> bool:
     if _page_break(paragraph):
         pdf.add_page()
-    level = _heading_level(paragraph)
-    size = _size(paragraph, level)
+    look = book.look(paragraph)
+    size = _size(paragraph, look)
     line, before, after = _spacing(paragraph, size)
 
     drew = False
@@ -400,7 +466,7 @@ def _draw_paragraph(pdf, doc, paragraph, lists) -> bool:
         pdf.ln(before)
     left = pdf.l_margin
     indent = _indent(paragraph)
-    ref = _list_ref(paragraph)
+    ref = _list_ref(paragraph, look)
     if ref is not None:
         indent = max(indent, 0.0) + ref[1] * 16.0
     if pdf.w - pdf.r_margin - left - indent < 40:
@@ -414,15 +480,15 @@ def _draw_paragraph(pdf, doc, paragraph, lists) -> bool:
         gutter = max(14.0, size * 1.25)
         pdf.set_font("Helvetica", "", size)
         pdf.set_text_color(26, 26, 26)
-        pdf.cell(gutter, line, text=lists.marker(ref))
+        pdf.cell(gutter, line, text=book.lists.marker(ref))
         pdf.set_left_margin(left + indent + gutter)
 
-    align = _align(paragraph)
-    if align == "L" and _mixed(paragraph, level):
-        _write_runs(pdf, paragraph, level, size, line)
+    align = _align(paragraph, look)
+    if align == "L" and _mixed(paragraph, look):
+        _write_runs(pdf, paragraph, look, size, line)
     else:
         width = pdf.w - pdf.r_margin - pdf.get_x()
-        pdf.set_font("Helvetica", _face(_first_run(paragraph), paragraph, level), size)
+        pdf.set_font("Helvetica", _face(_first_run(paragraph), look), size)
         pdf.set_text_color(*(_run_colour(paragraph) or (26, 26, 26)))
         pdf.multi_cell(max(20.0, width), line, text=text, align=align,
                        new_x="LMARGIN", new_y="NEXT")
@@ -446,21 +512,22 @@ def _run_colour(paragraph):
     return None
 
 
-def _mixed(paragraph, level: int) -> bool:
+def _mixed(paragraph, look: _Look) -> bool:
     """Whether the line changes face part-way, and so has to be written run by run."""
-    faces = {_face(run, paragraph, level) for run in paragraph.runs}
+    faces = {_face(run, look) for run in paragraph.runs}
     return len(faces) > 1
 
 
-def _write_runs(pdf, paragraph, level: int, size: float, line: float) -> None:
+def _write_runs(pdf, paragraph, look: _Look, size: float, line: float) -> None:
     """One line built from its runs, so a bold word in it stays bold."""
     for piece, link in _inline(paragraph):
         text = _t(piece.text)
         if not text:
             continue
-        pdf.set_font("Helvetica", _face(piece, paragraph, level)
-                     + ("U" if link and "U" not in _face(piece, paragraph, level) else ""),
-                     size)
+        face = _face(piece, look)
+        if link and "U" not in face:
+            face += "U"
+        pdf.set_font("Helvetica", face, size)
         colour = _rgb(getattr(piece.font, "color", None))
         pdf.set_text_color(*(colour or ((21, 71, 145) if link else (26, 26, 26))))
         pdf.write(line, text, link=link or "")
