@@ -42,7 +42,7 @@
     <strong>{{ author_name(c.author, c.anonymous, post.id) }}</strong>
     {% if not c.anonymous and c.user_id == post.user_id %}<span class="op-tag">OP</span>{% endif %}
     {{ byline_badge(c.author, c.anonymous) }}
-    <span class="comment__date">{{ c.created_at|localtime }}</span>
+    <span class="comment__date">{{ c.created_at|when }}</span>
   </div>
   <div class="forum-body">{{ c.body|mentions }}</div>
   <div class="forum-actions">
@@ -106,7 +106,7 @@
         {{ author_name(post.author, post.anonymous, post.id) }}
         <span class="op-tag">OP</span>
         {{ byline_badge(post.author, post.anonymous) }}
-        &middot; {{ post.created_at|localtime }}
+        &middot; {{ post.created_at|when }}
       </p>
       <div class="forum-body">{{ post.body|mentions }}</div>
       <div class="forum-actions">

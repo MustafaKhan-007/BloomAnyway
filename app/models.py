@@ -131,6 +131,8 @@ class User(UserMixin, db.Model):
     goals_json = db.Column(db.Text)          # JSON list of intent keys
     default_anonymous = db.Column(db.Boolean, nullable=False, default=False)
     timezone = db.Column(db.String(64))      # IANA tz from browser, e.g. Europe/Berlin
+    # Chosen by hand in settings, so the browser stops overwriting it each visit.
+    timezone_pinned = db.Column(db.Boolean, nullable=False, default=False)
 
     # forum moderation
     forum_warnings = db.Column(db.Integer, nullable=False, default=0)

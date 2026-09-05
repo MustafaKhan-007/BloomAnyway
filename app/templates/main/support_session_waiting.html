@@ -15,7 +15,7 @@
     <h1>{{ meeting.circle.title if meeting.circle else 'Peer circle' }}</h1>
     {% if meeting.scheduled_at %}
     <p class="sg-wait__when" data-sg-when>
-      Starts {{ meeting.scheduled_at|localtime('%A, %b %d · %I:%M %p') }}
+      Starts {{ meeting.scheduled_at|when('%A, %b %d · %I:%M %p') }}
       · {{ duration_min }} minutes
     </p>
     {% endif %}

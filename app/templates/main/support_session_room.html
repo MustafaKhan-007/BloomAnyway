@@ -9,7 +9,7 @@
         <p class="sg-room__eyebrow">Support session</p>
         <h1>{{ meeting.circle.title if meeting.circle else 'Peer circle' }}</h1>
         {% if meeting.scheduled_at %}
-        <p class="sg-room__when">{{ meeting.scheduled_at|localtime('%A, %b %d · %I:%M %p') }}</p>
+        <p class="sg-room__when">{{ meeting.scheduled_at|when('%A, %b %d · %I:%M %p') }}</p>
         {% endif %}
       </div>
       <div class="sg-room__actions">

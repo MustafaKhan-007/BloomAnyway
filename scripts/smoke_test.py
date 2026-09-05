@@ -5295,16 +5295,16 @@ ok("Reader shows the later module as locked",
    "Week two" in _rbody and "Unlocks" in _rbody)
 # "Opens the 15th" is no use without the hour, and the hour is no use on the
 # server's clock, so the wait is written out on the reader's own.
-_when = re.search(r"unlocks\s+([A-Z][a-z]{2} \d{2}, \d{4} at \d{2}:\d{2} [AP]M)"
-                  r"\s+your time", _rbody)
+_WHEN_RE = (r"unlocks\s+<time datetime=\"[0-9T:-]+Z\" data-when=\"[^\"]+\">"
+            r"([A-Z][a-z]{2} \d{2}, \d{4} at \d{2}:\d{2} [AP]M)</time>")
+_when = re.search(_WHEN_RE + r"\s+your time", _rbody)
 ok("And says what time it opens, on their clock", bool(_when),
    "no local unlock time in the module bar")
 _ny = app.test_client()
 _ny.set_cookie("tz", "America/New_York", domain="localhost")
 _ny.post("/login", data={"email": "dripper@example.com", "password": USER_PW})
 _nybody = _ny.get(f"/account/courses/{drip_purchase_id}").get_data(as_text=True)
-_ny_when = re.search(r"unlocks\s+([A-Z][a-z]{2} \d{2}, \d{4} at \d{2}:\d{2} [AP]M)",
-                     _nybody)
+_ny_when = re.search(_WHEN_RE, _nybody)
 ok("Somebody reading it from another timezone is told their own hour",
    bool(_ny_when) and bool(_when) and _ny_when.group(1) != _when.group(1),
    f"got {_ny_when and _ny_when.group(1)} for both")
@@ -7756,6 +7756,104 @@ ok("My space renders one of the four greetings",
    and any(g in _gbody for g in ("Good morning", "Good afternoon",
                                  "Good evening", "Still awake")),
    "no greeting found in the page")
+
+# --- every timestamp lands on the reader's own clock -----------------------
+# The zone comes from the browser, never from anyone's location. The catch is
+# the first page of a first visit, which the server has to write in UTC because
+# nothing has told it otherwise, so each timestamp carries the instant and the
+# wording for the browser to put right where it stands.
+with app.app_context():
+    from app.services.timefmt import local_tag as _tag
+
+    with app.test_request_context("/", headers={"Cookie": "tz=Asia/Karachi"}):
+        _moment = datetime(2026, 9, 5, 13, 5)
+        _drawn = str(_tag(_moment, "%b %d, %Y at %I:%M %p"))
+        ok("A timestamp is written on the reader's clock",
+           "Sep 05, 2026 at 06:05 PM" in _drawn, _drawn)
+        ok("And carries the instant and the wording, for a browser to redraw",
+           'datetime="2026-09-05T13:05:00Z"' in _drawn
+           and 'data-when="%b %d, %Y at %I:%M %p"' in _drawn, _drawn)
+        _fixed = str(_tag(_moment, "%I:%M %p", "America/New_York"))
+        ok("A time deliberately shown in another zone is left alone",
+           "09:05 AM" in _fixed and "data-when" not in _fixed, _fixed)
+        ok("Nothing at all still comes out as nothing",
+           str(_tag(None)) == "")
+        ok("A plain date has no clock to move it to",
+           str(_tag(date(2026, 9, 5), "%b %d, %Y")) == "Sep 05, 2026")
+
+_tzc = app.test_client()
+_tzc.post("/login", data={"email": "buyer@example.com", "password": USER_PW})
+_first = _tzc.get("/forums/").get_data(as_text=True)
+ok("A page says which clock the server wrote it on",
+   'data-tz="UTC"' in _first, "no data-tz on the page")
+_tzc.set_cookie("tz", "Asia/Karachi", domain="localhost")
+_second = _tzc.get("/forums/").get_data(as_text=True)
+ok("Once the browser has said, the server writes the next page in that zone",
+   'data-tz="Asia/Karachi"' in _second)
+# Cookies used to be written escaped, and nothing unescaped them, so every
+# signed-out reader quietly got the server's UTC.
+_esc = app.test_client()
+_esc.set_cookie("tz", "America%2FDenver", domain="localhost")
+ok("A zone escaped into an older cookie is still read as a place",
+   'data-tz="America/Denver"' in _esc.get("/forums/").get_data(as_text=True))
+
+# a zone chosen by hand stays chosen, and the quiet browser report leaves it be
+r = _tzc.post("/account/timezone",
+              data={"timezone": "Europe/Berlin", "csrf_token": "x"},
+              follow_redirects=True)
+_tzbody = r.get_data(as_text=True)
+ok("Choosing a timezone in settings takes", r.status_code == 200
+   and "Times are now shown in Europe/Berlin" in _tzbody)
+ok("And the settings page says so", "Europe/Berlin (UTC+" in _tzbody)
+_tzc.post("/account/timezone", json={"timezone": "Asia/Karachi"})
+with app.app_context():
+    _tzuser = User.query.filter_by(email="buyer@example.com").first()
+    ok("The browser doesn't overwrite a zone somebody chose",
+       _tzuser.timezone == "Europe/Berlin" and _tzuser.timezone_pinned)
+_pinned_page = _tzc.get("/forums/").get_data(as_text=True)
+ok("Pages are written on the chosen clock, not the browser's",
+   'data-tz="Europe/Berlin"' in _pinned_page)
+ok("And the browser is told to leave those times alone",
+   'data-tz-pinned="1"' in _pinned_page)
+
+r = _tzc.post("/account/timezone",
+              data={"follow_browser": "yes", "timezone": "Asia/Karachi",
+                    "csrf_token": "x"}, follow_redirects=True)
+ok("Handing it back lets the device lead again",
+   "Times will follow whatever clock your device keeps" in r.get_data(as_text=True))
+_tzc.post("/account/timezone", json={"timezone": "Pacific/Auckland"})
+with app.app_context():
+    _tzuser = User.query.filter_by(email="buyer@example.com").first()
+    ok("And the next page the browser loads moves the clock again",
+       _tzuser.timezone == "Pacific/Auckland" and not _tzuser.timezone_pinned)
+r = _tzc.post("/account/timezone", data={"timezone": "Mars/Olympus",
+                                         "csrf_token": "x"},
+              follow_redirects=True)
+ok("A zone nobody keeps is turned away",
+   "look like a timezone we know" in r.get_data(as_text=True))
+
+# Studio used to print the server's UTC in its tables
+_sbody = admin.get("/admin/inbox").get_data(as_text=True)
+ok("Studio's inbox stamps its rows on the owner's clock, not the server's",
+   'class="inbox-cell--when"><time datetime=' in _sbody
+   and 'data-when="%b %d, %H:%M"' in _sbody, "inbox still prints raw UTC")
+_sbody = admin.get("/admin/members").get_data(as_text=True)
+ok("So does the member list", 'data-when="%b %d, %Y"' in _sbody)
+
+# --- the stylesheet is still readable text ---------------------------------
+# Twice now an edit has been saved with UTF-8 read back as Latin-1, which turns
+# a "–" in a `content:` rule into "â" and two boxes on the page. It is invisible
+# in a diff and nobody notices until it is live, so the file is checked here.
+_css = (Path(__file__).resolve().parents[1]
+        / "app" / "static" / "css" / "main.css").read_text(encoding="utf-8")
+_mangled = [n for n, line in enumerate(_css.split("\n"), 1)
+            if "\ufffd" in line or any(0x80 <= ord(c) <= 0x9f for c in line)]
+ok("No mangled characters left in the stylesheet", not _mangled,
+   f"lines {_mangled}")
+_glyphs = [n for n, line in enumerate(_css.split("\n"), 1)
+           if "content:" in line and any(ord(c) > 127 for c in line)]
+ok("Every drawn marker is written as an escape, so it cannot mangle again",
+   not _glyphs, f"lines {_glyphs}")
 
 r = client.get("/this-page-does-not-exist-xyz")
 ok("404 offers problem report", r.status_code == 404 and b"Report this problem" in r.data)

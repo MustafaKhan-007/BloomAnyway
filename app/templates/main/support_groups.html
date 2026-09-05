@@ -38,7 +38,7 @@
         {% set seated = s.session_seats.get(m.id, 0) %}
         <li class="sg-upcoming__item">
           <div>
-            <strong>{{ m.scheduled_at|localtime('%a %b %d · %I:%M %p') }}</strong>
+            <strong>{{ m.scheduled_at|when('%a %b %d · %I:%M %p') }}</strong>
             <p class="field-help" style="margin:2px 0 0;">
               {% if c.slug.startswith('custom-') and m.notes %}
               <span class="sg-upcoming__topic">{{ m.notes }}</span> ·
@@ -252,7 +252,7 @@
           <div>
             <strong>{{ m.notes or 'Facilitator session' }}</strong>
             <p class="field-help" style="margin:2px 0 0;">
-              {{ m.scheduled_at|localtime('%a %b %d · %I:%M %p') }}
+              {{ m.scheduled_at|when('%a %b %d · %I:%M %p') }}
               · {{ seated }}/{{ m.capacity or facilitator_cap }} seated
             </p>
           </div>
@@ -320,7 +320,7 @@
           <div>
             <strong>1:1 with {{ m.notes or 'a founder' }}</strong>
             <p class="field-help" style="margin:2px 0 0;">
-              {{ m.scheduled_at|localtime('%a %b %d · %I:%M %p') }}
+              {{ m.scheduled_at|when('%a %b %d · %I:%M %p') }}
               · {{ one_on_one_minutes }} min · in-site video
             </p>
             <p class="field-help sg-refund{% if not refundable %} sg-refund--closed{% endif %}"

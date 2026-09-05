@@ -232,7 +232,7 @@
             {% endif %}
           </div>
           <div class="post-row__aside">
-            <time datetime="{{ post.created_at.isoformat() }}">{{ post.created_at|localtime('%b %d · %I:%M %p') }}</time>
+            {{ post.created_at|when('%b %d · %I:%M %p') }}
             <span>{{ comment_n }} {{ 'reply' if comment_n == 1 else 'replies' }}</span>
           </div>
           {% if current_user.is_authenticated and (current_user.id == post.user_id or current_user.is_admin) %}

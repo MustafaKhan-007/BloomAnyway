@@ -12,7 +12,7 @@
       </span>
       <h1>{{ video.title }}</h1>
       <p class="tip-read__meta">
-        <span>{{ video.created_at|localtime('%B %d, %Y') }}</span>
+        <span>{{ video.created_at|when('%B %d, %Y') }}</span>
         {% if video.read_minutes() %}<span>{{ video.read_minutes() }} min read</span>{% endif %}
         {% if video.has_video() %}<span>Video included</span>{% endif %}
         <span class="video-access-tag {{ 'video-access-tag--yours' if can_play }}">{{ access_label }}</span>
@@ -85,7 +85,7 @@
         </div>
         <div class="video-card__body">
           <h3>{{ v.title }}</h3>
-          <span class="video-card__date">{{ v.created_at|localtime('%b %d, %Y') }}</span>
+          <span class="video-card__date">{{ v.created_at|when('%b %d, %Y') }}</span>
         </div>
       </a>
       {% endfor %}

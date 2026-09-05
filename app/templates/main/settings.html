@@ -194,6 +194,44 @@
     </div>
 
     <div class="settings-block">
+      <h3>Times and dates</h3>
+      <p class="field-help">
+        Session times, unlock dates and everything else are written on your own
+        clock. We read the timezone your device is set to — never your location —
+        and follow it as it changes.
+      </p>
+      <p class="field-help">
+        Right now you're seeing times in <strong>{{ tz_label }}</strong>{% if tz_pinned %},
+        which you chose here{% endif %}.
+        <span data-tz-device-only hidden>Your device says <strong data-tz-detected>—</strong>.</span>
+      </p>
+      <form method="post" action="{{ url_for('main.save_timezone') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="field">
+          <label for="settings-tz">Show times in</label>
+          <select name="timezone" id="settings-tz">
+            {% for group in tz_groups %}
+            <optgroup label="{{ group.label }}">
+              {% for opt in group.options %}
+              <option value="{{ opt.value }}"{{ ' selected' if opt.value == tz_now }}>{{ opt.label }}</option>
+              {% endfor %}
+            </optgroup>
+            {% endfor %}
+          </select>
+        </div>
+        <button class="btn btn--secondary btn--sm" type="submit">Use this timezone</button>
+      </form>
+      {% if tz_pinned %}
+      <form method="post" action="{{ url_for('main.save_timezone') }}" style="margin-top: 10px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="follow_browser" value="yes">
+        <input type="hidden" name="timezone" data-tz-detected value="">
+        <button class="btn--quiet" type="submit">Follow my device again</button>
+      </form>
+      {% endif %}
+    </div>
+
+    <div class="settings-block">
       <h3>Password</h3>
       <p class="field-help">Change the password you use to sign in.</p>
       <a class="btn btn--secondary btn--sm" href="{{ url_for('main.change_password') }}">Change password</a>

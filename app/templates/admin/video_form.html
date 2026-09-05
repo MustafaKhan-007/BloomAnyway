@@ -116,7 +116,7 @@
           <span class="tip-read__cat" data-tip-preview-cat>Creator tip</span>
           <h1 data-tip-preview-title>Untitled tip</h1>
           <p class="tip-read__meta">
-            <span>{{ video.created_at|localtime('%B %d, %Y') if video else 'Today' }}</span>
+            <span>{{ video.created_at|when('%B %d, %Y') if video else 'Today' }}</span>
             <span data-tip-preview-read hidden></span>
             <span data-tip-preview-video hidden>Video included</span>
           </p>

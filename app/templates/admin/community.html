@@ -59,7 +59,7 @@
             {% for r in item.reports %}
             <li class="flagged-report">
               <div class="flagged-report__meta">
-                <time datetime="{{ r.created_at.isoformat() }}">{{ r.created_at.strftime('%b %d, %Y · %H:%M') }}</time>
+                {{ r.created_at|when('%b %d, %Y · %H:%M') }}
                 <span class="status-pill">{{ r.status }}</span>
                 {% if r.target_type == 'user' %}
                 <span class="inbox-report__tag">peer / member</span>
@@ -173,7 +173,7 @@
           <td><a href="{{ url_for('forums.post', post_id=post.id) }}">{{ post.title }}</a></td>
           <td>{{ post.category.name }}</td>
           <td>{{ post.author.public_name() }}{% if post.anonymous %} <em>(anon)</em>{% endif %}</td>
-          <td>{{ post.created_at.strftime('%b %d, %Y') }}</td>
+          <td>{{ post.created_at|when('%b %d, %Y') }}</td>
           <td>
             <form method="post" action="{{ url_for('admin.community_delete_post', post_id=post.id) }}"
                   data-confirm="Remove this post and its comments?">

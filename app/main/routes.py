@@ -1401,8 +1401,15 @@ def settings():
         db.session.commit()
     _sync_membership_cancel_flag(current_user)
     links = current_user.links()
+    from ..services.timefmt import (timezone_groups, timezone_label,
+                                    viewer_timezone)
+    tz_now = viewer_timezone()
     return render_template("main/settings.html", intents=INTENTS,
                            user_goals=set(current_user.goals()),
+                           tz_now=tz_now,
+                           tz_label=timezone_label(tz_now),
+                           tz_pinned=bool(current_user.timezone_pinned),
+                           tz_groups=timezone_groups(selected=tz_now),
                            links=links,
                            link_max=PROFILE_LINK_MAX,
                            can_link=current_user.has_feature("profile_links"),
@@ -2084,18 +2091,44 @@ def reel_review_stream(review_id):
 @bp.route("/account/timezone", methods=["POST"])
 @login_required
 def save_timezone():
-    """Remember the browser's IANA timezone for local timestamps."""
+    """Remember which clock to write times on.
+
+    Every page quietly reports the browser's own zone, which is right for
+    almost everybody and follows them when they move. Anyone who picks a zone
+    in settings has said otherwise, so that choice is pinned and the quiet
+    report stops overwriting it until they hand it back.
+    """
     from ..services.timefmt import normalize_timezone
+    from_browser = request.is_json or request.form.get("from") == "browser"
     raw = request.form.get("timezone")
     if raw is None and request.is_json:
         raw = (request.get_json(silent=True) or {}).get("timezone")
     tz = normalize_timezone(raw)
-    if tz and current_user.timezone != tz:
-        current_user.timezone = tz
+    follow = (request.form.get("follow_browser") or "").strip() == "yes"
+
+    if follow:
+        current_user.timezone_pinned = False
+        if tz:
+            current_user.timezone = tz
         db.session.commit()
+        flash("Times will follow whatever clock your device keeps.", "success")
+    elif from_browser:
+        if tz and not current_user.timezone_pinned and current_user.timezone != tz:
+            current_user.timezone = tz
+            db.session.commit()
+    elif tz:
+        if current_user.timezone != tz or not current_user.timezone_pinned:
+            current_user.timezone = tz
+            current_user.timezone_pinned = True
+            db.session.commit()
+        flash(f"Times are now shown in {tz}.", "success")
+    else:
+        flash("That doesn't look like a timezone we know.", "error")
+
     if request.headers.get("X-Requested-With") == "fetch" or request.is_json:
-        return {"ok": True, "timezone": tz or current_user.timezone}
-    return redirect(request.referrer or url_for("main.account"))
+        return {"ok": True, "timezone": current_user.timezone or tz,
+                "pinned": bool(current_user.timezone_pinned)}
+    return redirect(url_for("main.settings"))
 
 
 @bp.route("/account/password", methods=["GET", "POST"])
