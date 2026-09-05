@@ -90,17 +90,6 @@ def viewer_timezone() -> str:
     return cookie or DEFAULT_TZ
 
 
-def viewer_timezone_known() -> bool:
-    """Whether the zone above came from this reader, or is only the UTC default."""
-    if getattr(current_user, "is_authenticated", False):
-        if normalize_timezone(getattr(current_user, "timezone", None)):
-            return True
-    try:
-        return bool(normalize_timezone(request.cookies.get("tz")))
-    except RuntimeError:  # outside a request
-        return False
-
-
 def to_local(dt: datetime | None, tz_name: str | None = None) -> datetime | None:
     if dt is None:
         return None

@@ -133,8 +133,8 @@
     return out;
   }
 
-  function apply(root) {
-    (root || document).querySelectorAll("time[data-when]").forEach(function (el) {
+  function apply(within) {
+    (within || document).querySelectorAll("time[data-when]").forEach(function (el) {
       var stamp = el.getAttribute("datetime");
       var pattern = el.getAttribute("data-when");
       if (!stamp || !pattern) return;
