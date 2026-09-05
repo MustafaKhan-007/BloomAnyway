@@ -28,7 +28,7 @@
           </div>
           <p class="ms-exact__meta">
             {% if current_user.created_at %}
-            Member since {{ current_user.created_at|localtime('%B %Y') }}
+            Member since {{ current_user.created_at|when('%B %Y') }}
             {% endif %}
             <span class="ms-exact__meta-dot" aria-hidden="true">·</span>
             {% set upcoming_n = support_upcoming|length %}
@@ -305,7 +305,7 @@
             <li>
               {{ row.circle.title if row.circle else 'Support group' }}
               {% if row.meeting and row.meeting.scheduled_at %}
-              — {{ row.meeting.scheduled_at|localtime('%b %d · %I:%M %p') }}
+              — {{ row.meeting.scheduled_at|when('%b %d · %I:%M %p') }}
               {% endif %}
             </li>
             {% endfor %}
@@ -501,7 +501,7 @@
                   </li>
                   <li>
                     <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M5 1.2h1.1v1.1h3.8V1.2H11v1.1h1.2A1.7 1.7 0 0 1 14 4v8.3A1.7 1.7 0 0 1 12.2 14H3.8A1.7 1.7 0 0 1 2 12.3V4a1.7 1.7 0 0 1 1.8-1.7H5V1.2Zm7.2 4.2H3.8v7h8.4v-7Z"/></svg>
-                    Purchased on {{ item.purchased_at|localtime('%b %d, %Y') }}
+                    Purchased on {{ item.purchased_at|when('%b %d, %Y') }}
                   </li>
                   {% if prog and prog.bookmarks() %}
                   <li>Bookmarks · page {{ prog.bookmarks()|join(', ') }}</li>
@@ -610,7 +610,7 @@
         <tbody>
           {% for order in orders %}
           <tr>
-            <td>{{ order.created_at|localtime('%b %d, %Y') }}</td>
+            <td>{{ order.created_at|when('%b %d, %Y') }}</td>
             <td>{% if order.product %}{{ order.product.title }}{% else %}Order {{ order.ls_order_id }}{% endif %}</td>
             <td>{{ order.total_display() }}</td>
             <td><span class="status-pill status-pill--{{ order.status }}">{{ order.status }}</span></td>
@@ -776,7 +776,7 @@
         <li class="activity-list__item {{ 'is-unread' if not n.read_at }}">
           <p>{{ n.body }}</p>
           <p class="field-help">
-            {{ n.created_at|localtime }}
+            {{ n.created_at|when }}
             {% set href = n.href() %}
             {% if href %}
             &middot; <a href="{{ href }}">{% if n.kind == 'support_group' %}Join{% elif n.kind == 'support_group_alert' %}View{% else %}Open{% endif %}</a>

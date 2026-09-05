@@ -87,12 +87,12 @@
           <td>
             {{ row.source_label }}
             {% if row.source == 'perk' and row.perk_until %}
-            <span class="field-help" style="margin: 0; display: block;">until {{ row.perk_until.strftime('%b %d, %Y') }}</span>
+            <span class="field-help" style="margin: 0; display: block;">until {{ row.perk_until|when('%b %d, %Y') }}</span>
             {% elif row.source == 'order' %}
             <span class="field-help" style="margin: 0; display: block;">{{ row.orders }} membership order{{ '' if row.orders == 1 else 's' }}</span>
             {% endif %}
           </td>
-          <td>{{ row.last_paid.strftime('%b %d, %Y') if row.last_paid else '—' }}</td>
+          <td>{{ row.last_paid|when('%b %d, %Y') if row.last_paid else '—' }}</td>
         </tr>
         {% else %}
         <tr><td colspan="4">No paid members yet.</td></tr>

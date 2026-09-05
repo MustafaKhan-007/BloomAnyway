@@ -36,7 +36,7 @@
       <tbody>
         {% for m in message_rows %}
         <tr>
-          <td class="inbox-cell--when">{{ m.created_at.strftime('%b %d, %H:%M') }}</td>
+          <td class="inbox-cell--when">{{ m.created_at|when('%b %d, %H:%M') }}</td>
           <td>
             {{ m.name }}
             <div class="field-help"><a href="mailto:{{ m.email }}">{{ m.email }}</a></div>
@@ -73,7 +73,7 @@
       <tbody>
         {% for row in feedback_rows %}
         <tr>
-          <td class="inbox-cell--when">{{ row.created_at.strftime('%b %d, %H:%M') }}</td>
+          <td class="inbox-cell--when">{{ row.created_at|when('%b %d, %H:%M') }}</td>
           <td>
             <span class="status-pill">{{ row.kind }}</span>
             {% if row.status == 'reviewed' %}<div class="field-help">reviewed</div>{% endif %}
@@ -115,7 +115,7 @@
       {% set note_lines = (r.note or '').split('\n') %}
       <li class="inbox-report">
         <div class="inbox-report__meta">
-          <time datetime="{{ r.created_at.isoformat() }}">{{ r.created_at.strftime('%b %d, %H:%M') }}</time>
+          {{ r.created_at|when('%b %d, %H:%M') }}
           <span class="status-pill">{{ r.status }}</span>
           {% if r.auto_hidden %}<span class="inbox-report__tag">auto-hidden</span>{% endif %}
           {% if r.target_type == 'user' %}<span class="inbox-report__tag">silent flag</span>{% endif %}

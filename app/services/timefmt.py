@@ -3,17 +3,29 @@
 Timezone names come from the IANA database via ``zoneinfo`` (+ the ``tzdata``
 package on platforms that don't ship zoneinfo). Offsets are computed at
 request time so DST stays correct year-round.
+
+Which zone that is comes from the browser rather than from anyone's location:
+``Intl.DateTimeFormat().resolvedOptions().timeZone`` names the exact IANA zone
+the device is set to, with no permission prompt and no guessing from an IP
+address. It is remembered in a cookie and, once somebody signs in, on their
+account. Until that cookie exists — the very first page of a first visit —
+there is nothing to read, so times render in UTC and :func:`local_tag` leaves
+the browser enough to correct them in place.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
 from flask import request
 from flask_login import current_user
+from markupsafe import Markup, escape
 
 DEFAULT_TZ = "UTC"
+
+#: Day, then the hour in twelve-hour clock — how a time reads everywhere here.
+DEFAULT_FMT = "%b %d, %Y · %I:%M %p"
 
 # Prefer these near the top of Studio pickers (still in the full list too).
 _COMMON_TZ = (
@@ -73,6 +85,17 @@ def viewer_timezone() -> str:
     return cookie or DEFAULT_TZ
 
 
+def viewer_timezone_known() -> bool:
+    """Whether the zone above came from this reader, or is only the UTC default."""
+    if getattr(current_user, "is_authenticated", False):
+        if normalize_timezone(getattr(current_user, "timezone", None)):
+            return True
+    try:
+        return bool(normalize_timezone(request.cookies.get("tz")))
+    except RuntimeError:  # outside a request
+        return False
+
+
 def to_local(dt: datetime | None, tz_name: str | None = None) -> datetime | None:
     if dt is None:
         return None
@@ -82,12 +105,37 @@ def to_local(dt: datetime | None, tz_name: str | None = None) -> datetime | None
     return dt.astimezone(tz)
 
 
-def format_local(dt: datetime | None, fmt: str = "%b %d, %Y · %I:%M %p",
+def format_local(dt: datetime | None, fmt: str = DEFAULT_FMT,
                  tz_name: str | None = None) -> str:
     local = to_local(dt, tz_name)
     if local is None:
         return ""
     return local.strftime(fmt)
+
+
+def local_tag(dt, fmt: str = DEFAULT_FMT, tz_name: str | None = None) -> Markup:
+    """A timestamp the browser can put right if it keeps a different clock.
+
+    The text is the same as :func:`format_local` writes, so a page is already
+    correct for anyone we know the zone of and readable with no JavaScript at
+    all. Carrying the instant and the wording alongside it lets a first-time
+    visitor's browser — whose zone the server hasn't been told yet — redraw the
+    time where it stands, instead of showing UTC until the next page.
+    """
+    if dt is None:
+        return Markup("")
+    if not isinstance(dt, datetime):
+        if isinstance(dt, date):
+            return Markup(escape(dt.strftime(fmt)))
+        return Markup(escape(str(dt)))
+    aware = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    stamp = aware.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # A zone named at the call site is somebody else's clock on purpose — the
+    # hour a session was booked for, say — so the browser must leave it alone.
+    redraw = "" if normalize_timezone(tz_name) else f' data-when="{escape(fmt)}"'
+    return Markup(
+        f'<time datetime="{stamp}"{redraw}>'
+        f'{escape(format_local(dt, fmt, tz_name))}</time>')
 
 
 def local_now(tz_name: str | None = None) -> datetime:

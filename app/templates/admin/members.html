@@ -149,7 +149,7 @@
             <span class="field-help" style="margin:0;">Signs in as @{{ m.username }}</span>
             {%- else -%}{{ m.email }}{%- endif -%}
           </td>
-          <td>{{ m.created_at.strftime('%b %d, %Y') }}</td>
+          <td>{{ m.created_at|when('%b %d, %Y') }}</td>
           <td>
             <form class="inline-form" method="post" action="{{ url_for('admin.set_membership', user_id=m.id) }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

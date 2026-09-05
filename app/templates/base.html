@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-tz="{{ viewer_tz }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -121,6 +121,7 @@
   {% endif %}
 
   <script src="{{ url_for('static', filename='js/page-loader.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/localtime.js', v='20260905a') }}" defer></script>
   <script src="{{ url_for('static', filename='js/file-pick.js') }}" defer></script>
   <script src="{{ url_for('static', filename='js/responsive-table.js', v='20260829a') }}" defer></script>
   <script src="{{ url_for('static', filename='js/main.js') }}" defer></script>

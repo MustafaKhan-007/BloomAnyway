@@ -17,7 +17,7 @@
         <a class="reel-read__author" href="{{ url_for('main.profile', user_id=author.id) }}">
           {{ author.public_name() }}</a>
         {% endif %}
-        <span>{{ review.created_at|localtime('%B %d, %Y') }}</span>
+        <span>{{ review.created_at|when('%B %d, %Y') }}</span>
         {% if has_review_video %}<span>Video review</span>{% endif %}
         {% if application and application.selected %}
         <span class="reel-read__pick">Pick of the week</span>

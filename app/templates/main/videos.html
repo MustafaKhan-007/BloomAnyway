@@ -87,7 +87,7 @@
               <h3>{{ v.title }}</h3>
               {% if v.summary() %}<p>{{ v.summary() }}</p>{% endif %}
               <div class="hub-exact__tip-meta">
-                <span>{{ v.created_at|localtime('%b %d, %Y') }}</span>
+                <span>{{ v.created_at|when('%b %d, %Y') }}</span>
                 {% if v.read_minutes() %}<span>{{ v.read_minutes() }} min read</span>{% endif %}
                 {% if v.has_video() %}<span>Video</span>{% endif %}
                 <span class="hub-exact__tip-read">

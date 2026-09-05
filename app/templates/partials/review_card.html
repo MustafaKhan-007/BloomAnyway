@@ -22,6 +22,6 @@
       {{ rev.teaser(150) if not can_read else rev.body|truncate(150) }}</div>
     {% endif %}
     <span class="hub-exact__review-open">Read the review &rarr;</span>
-    <span class="hub-exact__review-date">{{ rev.created_at|localtime('%b %d, %Y') }}</span>
+    <span class="hub-exact__review-date">{{ rev.created_at|when('%b %d, %Y') }}</span>
   </div>
 </a>

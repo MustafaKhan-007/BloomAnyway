@@ -20,7 +20,7 @@
   <section class="admin-panel studio-card reply-their-message">
     <h2>What they wrote</h2>
     <p class="reply-their-message__meta">
-      {{ msg.created_at.strftime('%b %d, %Y at %H:%M') }} · {{ msg.email }}
+      {{ msg.created_at|when('%b %d, %Y at %H:%M') }} · {{ msg.email }}
     </p>
     <blockquote class="reply-their-message__body">{{ msg.body }}</blockquote>
   </section>

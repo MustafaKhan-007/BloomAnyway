@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-tz="{{ viewer_tz }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -12,7 +12,8 @@
   <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
 </head>
 <body class="admin-body{% if current_user.is_authenticated and current_user.admin_readonly %} is-studio-readonly{% endif %}"
-      {%- if current_user.is_authenticated %} data-csrf="{{ csrf_token() }}"{% endif %}>
+      {%- if current_user.is_authenticated %} data-csrf="{{ csrf_token() }}"
+      data-tz-sync="{{ url_for('main.save_timezone') }}"{% endif %}>
   {% include "partials/page_loader.html" %}
   {% include "partials/badge_defs.html" %}
   {% include "partials/preview_bar.html" %}
@@ -70,6 +71,7 @@
   </div>
   {% block scripts_pre %}{% endblock %}
   <script src="{{ url_for('static', filename='js/page-loader.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/localtime.js', v='20260905a') }}" defer></script>
   <script src="{{ url_for('static', filename='js/file-pick.js') }}" defer></script>
   <script src="{{ url_for('static', filename='js/image-crop.js') }}" defer></script>
   <script src="{{ url_for('static', filename='js/responsive-table.js', v='20260829a') }}" defer></script>

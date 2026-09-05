@@ -47,7 +47,7 @@
           </td>
           <td>{% if v.free_access %}Free and up{% elif v.healing_access %}Healing and up{% else %}Creator and up{% endif %}</td>
           <td><span class="status-pill status-pill--{{ 'published' if v.published else 'draft' }}">{{ 'live' if v.published else 'hidden' }}</span></td>
-          <td>{{ v.created_at.strftime('%b %d, %Y') }}</td>
+          <td>{{ v.created_at|when('%b %d, %Y') }}</td>
           <td style="white-space: nowrap;">
             <a class="btn btn--secondary btn--sm" href="{{ url_for('admin.video_form', video_id=v.id) }}">Edit</a>
             <form class="inline-form" method="post" action="{{ url_for('admin.video_delete', video_id=v.id) }}"

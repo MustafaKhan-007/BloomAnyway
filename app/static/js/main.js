@@ -497,28 +497,6 @@
     el.addEventListener("contextmenu", function (e) { e.preventDefault(); });
   });
 
-  /* ---- remember browser timezone for local timestamps ---- */
-  (function () {
-    var tz = "";
-    try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (e) {}
-    if (!tz) return;
-    document.cookie = "tz=" + encodeURIComponent(tz) + ";path=/;max-age=31536000;SameSite=Lax";
-    var url = document.body.getAttribute("data-tz-sync");
-    var csrf = document.body.getAttribute("data-csrf");
-    if (!url || !csrf) return;
-    fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-CSRFToken": csrf,
-        "X-Requested-With": "fetch",
-        "Accept": "application/json"
-      },
-      credentials: "same-origin",
-      body: JSON.stringify({ timezone: tz })
-    }).catch(function () {});
-  })();
-
   /* ---- marketplace listing form: show location box for services ---- */
   var listingForm = document.getElementById("listing-form");
   if (listingForm) {

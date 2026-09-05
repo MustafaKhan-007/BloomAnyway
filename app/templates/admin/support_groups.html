@@ -33,7 +33,7 @@
           <strong>{{ row.member.public_name() if row.member else 'Member' }}</strong>
           <span class="field-help">{{ row.member.email if row.member else '' }}</span>
           {% if intake.scheduled_at %}
-          <span class="field-help">· {{ intake.scheduled_at|localtime('%a %b %d · %I:%M %p') }}</span>
+          <span class="field-help">· {{ intake.scheduled_at|when('%a %b %d · %I:%M %p') }}</span>
           {% endif %}
         </summary>
         <div class="sg-intake__body">
@@ -81,7 +81,7 @@
           </div>
           {% elif intake.scheduled_at %}
           <p class="field-help" style="margin: 0 0 12px;">
-            Chosen slot: {{ intake.scheduled_at|localtime('%A, %b %d · %I:%M %p') }}
+            Chosen slot: {{ intake.scheduled_at|when('%A, %b %d · %I:%M %p') }}
             {% if intake.status == 'pending_payment' %} · waiting on checkout{% endif %}
           </p>
           {% endif %}
@@ -366,7 +366,7 @@
               {% endif %}
               {% if m.scheduled_at %}
               <p class="field-help" style="margin:4px 0 0;">
-                {{ m.scheduled_at|localtime('%A, %b %d · %I:%M %p') }}
+                {{ m.scheduled_at|when('%A, %b %d · %I:%M %p') }}
               </p>
               {% endif %}
             </div>
@@ -449,7 +449,7 @@
           <td>{{ m.kind or 'peer' }}</td>
           <td>
             {% if m.scheduled_at %}
-            {{ m.scheduled_at|localtime('%b %d, %Y · %I:%M %p') }}
+            {{ m.scheduled_at|when('%b %d, %Y · %I:%M %p') }}
             {% else %}
             —
             {% endif %}

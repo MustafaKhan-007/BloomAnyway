@@ -36,7 +36,7 @@
         {% else %}
         <span>{{ n.body }}</span>
         {% endif %}
-        <time>{{ n.created_at|localtime('%b %d · %I:%M %p') }}</time>
+        {{ n.created_at|when('%b %d · %I:%M %p') }}
       </li>
       {% endfor %}
     </ul>

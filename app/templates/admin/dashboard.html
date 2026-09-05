@@ -320,7 +320,7 @@
             {% for _ in range(f.stars or 0) %}&#9733;{% endfor %}
           </span>
           <p>{{ f.body or '(no comment)' }}</p>
-          <span class="field-help">{{ f.kind }} · {{ f.when|localtime('%b %d') if f.when else '' }}</span>
+          <span class="field-help">{{ f.kind }} · {{ f.when|when('%b %d') if f.when else '' }}</span>
         </li>
         {% endfor %}
       </ul>
