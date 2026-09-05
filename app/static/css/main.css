@@ -8963,7 +8963,12 @@ a.at-handle:hover { text-decoration: underline; }
     max-width: 100vw;
   }
   body {
-    overflow-wrap: anywhere;
+    /* A word breaks only when the line it is on genuinely cannot hold it.
+       `anywhere` also let every box shrink to a single letter, which is how a
+       row of chips on a phone came out reading VIDE / O. The few things that
+       really do carry unbreakable strings — addresses, links, filenames —
+       ask for `anywhere` themselves. */
+    overflow-wrap: break-word;
   }
   .container,
   .nav,

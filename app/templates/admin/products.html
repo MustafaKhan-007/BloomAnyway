@@ -26,7 +26,10 @@
             hidden={} %}
       {% include "admin/_bulk_bar.html" %}
     {% endwith %}
-    <table class="studio-table" style="margin-top: 16px;">
+    {# Seven columns don't fit a phone. `admin-table` is what turns a row into
+       a labelled card down there, the way every other Studio list already
+       does, rather than squeezing the words until they break. #}
+    <table class="studio-table admin-table" style="margin-top: 16px;">
       <thead>
         <tr>
           <th class="studio-bulk__check" scope="col"><span class="visually-hidden">Select</span></th>
