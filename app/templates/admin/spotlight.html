@@ -8,9 +8,11 @@
       <p class="eyebrow">Home page</p>
       <h1>Spotlight</h1>
       <p class="field-help" style="margin: 6px 0 0;">
-        Both cards on the home page are your own pick &mdash; nobody applies for
-        these. (The <a href="{{ url_for('admin.reel_reviews') }}">Reel reviews</a>
-        queue is the one members apply to.)
+        Both cards go live only when you save them &mdash; nobody applies for
+        these. Creator of the Month is worked out from who showed up most in
+        the comments this month. (The
+        <a href="{{ url_for('admin.reel_reviews') }}">Reel reviews</a> queue is
+        the one members apply to.)
       </p>
     </div>
     <a class="btn btn--secondary btn--sm" href="{{ url_for('main.index') }}#spotlight-heading" target="_blank" rel="noopener">
@@ -50,39 +52,60 @@
         <p class="field-help" style="margin-top: 0;">
           Creator and Full Bloom members who put an Instagram link on their
           Bloom Anyway profile (My space &rarr; Settings). That link is what
-          makes someone eligible, so this list is the whole draw.
+          makes someone pickable; the order is who turned up most in the
+          comments this month. Comments deleted by their author or by you
+          aren't counted, and neither are hidden ones.
         </p>
         <div class="spotlight-draw">
           <button class="btn btn--primary btn--sm" type="submit" name="pick_creator" value="1"
-                  {% if not eligible %}disabled{% endif %}>
-            Pick one at random
+                  {% if not top %}disabled{% endif %}>
+            Pick {{ month_start.strftime('%B') }}'s top commenter
           </button>
           <span class="field-help">
-            {{ eligible|length }} eligible right now.
-            {% if eligible %}We'll fill in their details below &mdash; edit anything, then save.{% endif %}
+            {{ eligible|length }} pickable right now.
+            {% if top %}
+            {{ top.name }} leads with {{ top.comments }} comment{{ '' if top.comments == 1 else 's' }}{%
+              if eligible|length > 1 and eligible[1].comments == top.comments %},
+            level with {{ eligible[1].name }} but there first{% endif %}
+            &mdash; we'll fill in their details below, edit anything, then save.
+            {% elif eligible %}
+            Nobody's commented this month yet.
+            {% endif %}
           </span>
         </div>
         {% if eligible %}
-        <ul class="spotlight-list">
+        <ol class="spotlight-list spotlight-standings">
           {% for c in eligible %}
           <li{% if draft and draft.user_id == c.user_id %} class="is-drawn"{% endif %}>
             <strong>{{ c.name }}</strong>
             <span class="field-help">{{ c.tier }}</span>
             &mdash; <a href="{{ c.profile_url }}" target="_blank" rel="noopener">&#64;{{ c.handle }}</a>
-            {% if draft and draft.user_id == c.user_id %}<span class="spotlight-drawn-tag">drawn</span>{% endif %}
+            <span class="spotlight-tally{% if not c.comments %} is-quiet{% endif %}">
+              {{ c.comments }} comment{{ '' if c.comments == 1 else 's' }}
+            </span>
+            {% if draft and draft.user_id == c.user_id %}<span class="spotlight-drawn-tag">picked</span>{% endif %}
           </li>
           {% endfor %}
-        </ul>
+        </ol>
         {% else %}
-        <p class="field-help">Nobody's eligible yet &mdash; Creator members need an
+        <p class="field-help">Nobody's pickable yet &mdash; Creator members need an
           Instagram link on their profile first.</p>
         {% endif %}
         {% if no_instagram %}
         <details class="spotlight-missing">
           <summary>{{ no_instagram|length }} Creator member{{ '' if no_instagram|length == 1 else 's' }} with no Instagram link</summary>
+          <p class="field-help" style="margin: 6px 0 0;">
+            Counted all the same &mdash; if someone here is out-commenting the
+            list above, a nudge to add their link is all it takes.
+          </p>
           <ul class="spotlight-list">
             {% for c in no_instagram %}
-            <li><strong>{{ c.name }}</strong> <span class="field-help">{{ c.email }}</span></li>
+            <li>
+              <strong>{{ c.name }}</strong> <span class="field-help">{{ c.email }}</span>
+              <span class="spotlight-tally{% if not c.comments %} is-quiet{% endif %}">
+                {{ c.comments }} comment{{ '' if c.comments == 1 else 's' }}
+              </span>
+            </li>
             {% endfor %}
           </ul>
         </details>
@@ -95,8 +118,10 @@
         <legend>Creator of the month</legend>
         {% if draft %}
         <p class="spotlight-draft-note">
-          Drawn at random: <strong>{{ draft.name }}</strong>. Nothing is live until
-          you press <strong>Save spotlight</strong>.
+          Picked: <strong>{{ draft.name }}</strong>, with
+          {{ draft.comments }} comment{{ '' if draft.comments == 1 else 's' }} in
+          {{ month_start.strftime('%B') }}. Nothing is live until you press
+          <strong>Save spotlight</strong>.
         </p>
         {% endif %}
         <div class="form-row">
