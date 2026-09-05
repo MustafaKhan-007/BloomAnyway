@@ -2646,6 +2646,17 @@ html.is-page-loading { cursor: progress; }
   margin: 12px 0 4px;
 }
 .spotlight-list li.is-drawn { background: rgba(122, 46, 98, 0.07); border-radius: 8px; padding-left: 8px; }
+/* the month's comment count, sitting at the end of each name */
+.spotlight-tally {
+  margin-left: 6px; padding: 1px 8px; border-radius: 999px; font-size: 11.5px;
+  font-weight: 700; background: var(--ivory-deep); color: var(--plum-deep);
+  white-space: nowrap;
+}
+.spotlight-tally.is-quiet { color: var(--ink-soft); font-weight: 600; }
+/* a standings list reads better numbered, but the numbers sit outside the
+   card, so bring them back in */
+.spotlight-standings { list-style: decimal; padding-left: 22px; margin-left: 0; }
+.spotlight-standings li { padding-left: 4px; }
 .spotlight-drawn-tag {
   margin-left: 6px; padding: 1px 8px; border-radius: 999px; font-size: 11px;
   font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
@@ -2709,6 +2720,8 @@ a.studio-member-filter.is-active span { color: #fff; }
 
 .btn--block { display: block; width: 100%; text-align: center; }
 .btn.is-disabled { opacity: 0.55; pointer-events: none; cursor: default; }
+/* a button the browser won't let you press should look like one */
+.btn:disabled, .btn[disabled] { opacity: 0.55; cursor: default; }
 
 .plan-grid {
   display: grid; gap: 22px;

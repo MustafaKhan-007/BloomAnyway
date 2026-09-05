@@ -4141,7 +4141,7 @@ with app.app_context():
     ok("Creator photo setting points at media route",
        get_setting("creator_image_url") == "/media/site/creator")
 
-# --- spotlight: eligible list, random draw, expiry notices ------------------
+# --- spotlight: eligible list, the month's top commenter, expiry notices ----
 from app.services import spotlight as _spot   # noqa: E402
 
 with app.app_context():
@@ -4151,11 +4151,17 @@ with app.app_context():
     _drawable.set_password("memberpass123")
     _drawable.set_links([{"label": "Instagram",
                           "url": "https://instagram.com/drawmeplease"}])
+    _chatty = User(email="chatty@example.com", display_name="Chatty One",
+                   username="chatty", membership="creator",
+                   email_verified_at=datetime.utcnow())
+    _chatty.set_password("memberpass123")
+    _chatty.set_links([{"label": "Instagram",
+                        "url": "https://instagram.com/chattyone"}])
     _quiet = User(email="quiet@example.com", display_name="No Links",
                   username="nolinks", membership="creator",
                   email_verified_at=datetime.utcnow())
     _quiet.set_password("memberpass123")
-    db.session.add_all([_drawable, _quiet])
+    db.session.add_all([_drawable, _chatty, _quiet])
     db.session.commit()
 
     _ready, _missing = _spot.eligible_split()
@@ -4167,21 +4173,97 @@ with app.app_context():
        not any(c["email"] in ("owner@example.com", "free@example.com")
                for c in _ready + _missing))
 
+# A month in the comments: who turned up, and what shouldn't count towards it.
+with app.app_context():
+    _heal = ForumCategory.query.filter_by(slug="healing").first()
+    _chatty_id = User.query.filter_by(email="chatty@example.com").first().id
+    _drawme_id = User.query.filter_by(email="drawme@example.com").first().id
+    _quiet_id = User.query.filter_by(email="quiet@example.com").first().id
+    _stage = ForumPost(category_id=_heal.id, user_id=_drawme_id,
+                       title="Spotlight tally stage", body="Say hello.")
+    _offstage = ForumPost(category_id=_heal.id, user_id=_drawme_id,
+                          title="Taken down", body="Gone from the boards.",
+                          hidden=True)
+    db.session.add_all([_stage, _offstage])
+    db.session.commit()
+
+    _month_start, _month_end, _ = _spot.month_window("UTC")
+    _now = datetime.utcnow()
+
+    def _said(user_id, text, ago_min, *, hidden=False, post=None):
+        db.session.add(ForumComment(
+            post_id=(post or _stage).id, user_id=user_id, body=text,
+            hidden=hidden, created_at=_now - timedelta(minutes=ago_min)))
+
+    for _i in range(6):
+        _said(_chatty_id, f"Chatty {_i}", 60 - _i)
+    _said(_drawme_id, "Just the one", 40)
+    _said(_drawme_id, "Hidden by moderation", 39, hidden=True)
+    _said(_drawme_id, "Under a hidden post", 38, post=_offstage)
+    # Deleted comments leave no row at all, so last month's is the only kind
+    # of "there but not counted" left to prove.
+    db.session.add(ForumComment(post_id=_stage.id, user_id=_drawme_id,
+                                body="Last month", hidden=False,
+                                created_at=_month_start - timedelta(minutes=1)))
+    _said(_quiet_id, "No Instagram, plenty to say", 30)
+    _said(_quiet_id, "Still no Instagram", 29)
+    db.session.commit()
+
+    _tally = _spot.comment_tally([_chatty_id, _drawme_id, _quiet_id], "UTC")
+    ok("This month's comment tally counts the ones still standing",
+       _tally[_chatty_id]["comments"] == 6
+       and _tally[_drawme_id]["comments"] == 1)
+    ok("Hidden comments, hidden posts and last month don't pad the tally",
+       ForumComment.query.filter_by(user_id=_drawme_id).count() == 4
+       and _tally[_drawme_id]["comments"] == 1)
+
+    _ready, _missing = _spot.eligible_split()
+    ok("The eligible list is ordered by who commented most",
+       _ready[0]["name"] == "Chatty One" and _ready[0]["comments"] == 6)
+    ok("Members with no Instagram link are still counted, just not pickable",
+       any(c["email"] == "quiet@example.com" and c["comments"] == 2
+           for c in _missing))
+    ok("The top commenter is who gets picked",
+       (_spot.pick_top_commenter() or {}).get("user_id") == _chatty_id)
+    ok("A month nobody commented in has nobody to hand the card to",
+       _spot.pick_top_commenter("UTC", now=_now + timedelta(days=400)) is None)
+
+    # Same total, finished sooner: the earlier of the two leads.
+    _tied = User(email="tied@example.com", display_name="Tied Early",
+                 username="tiedearly", membership="creator",
+                 email_verified_at=datetime.utcnow())
+    _tied.set_password("memberpass123")
+    _tied.set_links([{"label": "Instagram",
+                      "url": "https://instagram.com/tiedearly"}])
+    db.session.add(_tied)
+    db.session.commit()
+    for _i in range(6):
+        _said(_tied.id, f"Tied {_i}", 120 - _i)
+    db.session.commit()
+    ok("A tie goes to whoever got there first",
+       (_spot.pick_top_commenter() or {}).get("user_id") == _tied.id)
+    ForumComment.query.filter_by(user_id=_tied.id).delete(
+        synchronize_session=False)
+    db.session.delete(_tied)
+    db.session.commit()
+
 r = admin.get("/admin/spotlight")
 sbody = r.get_data(as_text=True)
 ok("Spotlight page lists who can be Creator of the month",
    r.status_code == 200 and "Draw Me" in sbody
    and 'name="pick_creator"' in sbody
    and "Reel reviews" in sbody)
+ok("Spotlight page shows the month's comment counts",
+   "6 comments" in sbody and sbody.index("Chatty One") < sbody.index("Draw Me"))
 
 r = admin.post("/admin/spotlight", data={"pick_creator": "1"},
                follow_redirects=True)
 dbody = r.get_data(as_text=True)
-ok("Random draw pre-fills the Creator of the month form",
-   'value="Draw Me"' in dbody and "Drawn at random" in dbody)
+ok("The month's top commenter pre-fills the Creator of the month form",
+   'value="Chatty One"' in dbody and "led the comments this month" in dbody)
 with app.app_context():
-    ok("Random draw doesn't publish anything by itself",
-       get_setting("creator_name") != "Draw Me")
+    ok("Picking the top commenter doesn't publish anything by itself",
+       get_setting("creator_name") != "Chatty One")
 
 with app.app_context():
     from datetime import date as _date

@@ -1689,18 +1689,24 @@ def spotlight():
 
     if request.method == "POST":
         if request.form.get("pick_creator"):
-            pick = spot.pick_random_creator(
-                get_setting("creator_instagram") or "")
+            pick = spot.pick_top_commenter()
             if pick is None:
-                flash(
-                    "No one is eligible yet — Creator members need an Instagram "
-                    "link on their Bloom Anyway profile to go in the draw.",
-                    "info",
-                )
+                ready, missing = spot.eligible_split()
+                if not ready and missing:
+                    note = ("No one's pickable yet — Creator members need an "
+                            "Instagram link on their Bloom Anyway profile.")
+                elif not ready:
+                    note = "No Creator members to pick from yet."
+                else:
+                    note = ("Nobody eligible has commented this month yet, so "
+                            "there's no one to hand the card to.")
+                flash(note, "info")
                 return redirect(url_for("admin.spotlight"))
+            count = pick["comments"]
             flash(
-                f"Drew {pick['name']} out of the hat. Check the details below "
-                "and hit Save spotlight to put them on the home page.",
+                f"{pick['name']} led the comments this month with {count} "
+                f"{'comment' if count == 1 else 'comments'}. Check the details "
+                "below and hit Save spotlight to put them on the home page.",
                 "success",
             )
             return redirect(url_for("admin.spotlight", draft=pick["user_id"]))
@@ -1803,6 +1809,10 @@ def spotlight():
         values=values,
         eligible=ready,
         no_instagram=missing,
+        # The list is ranked, so the leader is the front of it — when there is
+        # anything to lead with.
+        top=(ready[0] if ready and ready[0]["comments"] else None),
+        month_start=spot.month_of_record(),
         draft=draft,
         slots=spot.spotlight_slots(),
         reel_entries=rotw_svc.week_submissions(),
