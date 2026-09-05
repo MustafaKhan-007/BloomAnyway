@@ -518,11 +518,18 @@ def wrap_peers(meeting: SupportGroupMeeting, viewer: User) -> list[User]:
 
     Attended seats count: the wrap page is only ever reached after the session
     is over, and by then completing it has moved every seat off ``selected``.
+
+    The Studio account that hosts a 1:1 is left off. It is seated to make the
+    room, and putting it here would hand the member a profile card and a
+    report button for a name they never booked.
     """
+    one_on_one = (meeting.kind or "").strip().lower() == "one_on_one"
     peers = []
     for seat in meeting_seats(meeting, include_attended=True):
         user = seat.author
         if not user or user.deleted_at or user.id == viewer.id:
+            continue
+        if one_on_one and user.id == meeting.scheduled_by_user_id:
             continue
         peers.append(user)
     return peers
@@ -1197,13 +1204,32 @@ def _reminder_day_and_timing(
     return None, f"in about {hours} hour{'s' if hours != 1 else ''}"
 
 
-def _host_display_name(meeting: SupportGroupMeeting) -> str:
+def host_display_name(meeting: SupportGroupMeeting) -> str:
+    """Who is hosting, as the person who booked should see it.
+
+    A 1:1 is sold as an hour with Saman or with Ayesha. The Studio account
+    makes the room either way, so its own handle in that place tells a member
+    they're meeting a stranger they never booked.
+    """
+    if (meeting.kind or "").strip().lower() == "one_on_one":
+        coach = normalize_custom_topic(meeting.notes)
+        if coach:
+            return coach
     host = meeting.host
     if host is None and meeting.scheduled_by_user_id:
         host = db.session.get(User, meeting.scheduled_by_user_id)
     if not host or host.deleted_at:
         return "a member"
     return (host.public_name() or host.first_name() or "a member").strip() or "a member"
+
+
+def seat_display_name(meeting: SupportGroupMeeting, user: User) -> str:
+    """A name for the roster and for the video tile, the coach included."""
+    if (meeting.kind or "").strip().lower() == "one_on_one" and (
+            meeting.scheduled_by_user_id
+            and getattr(user, "id", None) == meeting.scheduled_by_user_id):
+        return host_display_name(meeting)
+    return (getattr(user, "public_name", lambda: "")() or "Member")
 
 
 def _session_date_and_time(user: User, scheduled_at: datetime | None
@@ -1301,7 +1327,7 @@ def _send_booked_email(meeting: SupportGroupMeeting, user: User) -> None:
         send_support_group_booked(
             user.email,
             group_topic=_circle_name(meeting),
-            host_name=_host_display_name(meeting),
+            host_name=host_display_name(meeting),
             session_date=day,
             session_time=time_s,
             button_url=room,
@@ -1317,7 +1343,7 @@ def _send_reminder_email(meeting: SupportGroupMeeting, user: User) -> None:
         send_support_group_reminder(
             user.email,
             group_topic=_circle_name(meeting),
-            host_name=_host_display_name(meeting),
+            host_name=host_display_name(meeting),
             session_date=day,
             session_time=time_s,
             button_url=room,

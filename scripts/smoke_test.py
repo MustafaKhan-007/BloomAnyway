@@ -4020,6 +4020,44 @@ with app.app_context():
     db.session.commit()
 r = wrap_client.get("/support-groups?purchased=1", follow_redirects=True)
 ok("And does say it plainly once there's nothing left waiting",
+   "You\u2019re booked" in r.get_data(as_text=True), flashes(r))
+
+# --- the room is the coach's, not the Studio account's ------------------------
+with app.app_context():
+    _ooo = db.session.get(SupportGroupMeeting, _ooo_mid)
+    _studio = db.session.get(User, _ooo.scheduled_by_user_id)
+    _studio_handle = _studio.public_name()
+    ok("Whoever hosts a 1:1 is presented as the coach who was booked",
+       sg_svc.host_display_name(_ooo) == "Ayesha"
+       and sg_svc.seat_display_name(_ooo, _studio) == "Ayesha",
+       f"{sg_svc.host_display_name(_ooo)} / {_studio_handle}")
+    ok("Everybody else keeps their own name",
+       sg_svc.seat_display_name(_ooo, db.session.get(User, _buyer_id))
+       == db.session.get(User, _buyer_id).public_name())
+
+_wait = wrap_client.get(
+    f"/support-groups/meetings/{_ooo_mid}/waiting").get_data(as_text=True)
+ok("The waiting room names the session she booked",
+   "1:1 with Ayesha" in _wait and "In this session" in _wait)
+ok("And the host waiting with her is Ayesha, not the Studio account",
+   ">Ayesha</span>" in _wait and _studio_handle not in _wait,
+   _studio_handle)
+
+with app.app_context():
+    _ooo = db.session.get(SupportGroupMeeting, _ooo_mid)
+    _ooo.scheduled_at = utcnow() - timedelta(minutes=1)
+    db.session.commit()
+_room = wrap_client.get(
+    f"/support-groups/meetings/{_ooo_mid}/room").get_data(as_text=True)
+ok("The room she joins says whose hour it is",
+   "1:1 with Ayesha" in _room and "Hosted by Ayesha" in _room
+   and "1:1 coaching" in _room and _studio_handle not in _room)
+_wrapped = wrap_client.get(
+    f"/support-groups/meetings/{_ooo_mid}/wrap").get_data(as_text=True)
+ok("And afterwards it's still Ayesha she spent the hour with",
+   "1:1 with Ayesha" in _wrapped and "your hour with Ayesha" in _wrapped
+   and _studio_handle not in _wrapped
+   and "only one seated" not in _wrapped)
 _sgbody = admin.get("/admin/support-groups").get_data(as_text=True)
 ok("Studio manages both founders' availability, and says whose is whose",
    "1:1 availability" in _sgbody and "Ayesha" in _sgbody and "Saman" in _sgbody)

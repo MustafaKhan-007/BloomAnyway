@@ -7,9 +7,13 @@
   <div class="sg-wrap__inner">
     <header class="sg-wrap__head">
       <p class="sg-wrap__eyebrow">After your session</p>
-      <h1>{{ meeting.circle.title if meeting.circle else 'Peer circle' }}</h1>
+      <h1>{{ title }}</h1>
       <p class="sg-wrap__lede">
+        {% if one_on_one %}
+        That’s your hour with {{ host_name }} done. Tell us how it went, or skip anytime.
+        {% else %}
         Here’s who was in the room with you. You can visit a profile or quietly report someone if needed — then skip anytime.
+        {% endif %}
       </p>
     </header>
 
@@ -54,7 +58,7 @@
       </li>
       {% endfor %}
     </ul>
-    {% else %}
+    {% elif not one_on_one %}
     <div class="sg-wrap__empty">
       <p>You were the only one seated for this session.</p>
     </div>
