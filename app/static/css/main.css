@@ -1433,6 +1433,9 @@ html.is-page-loading { cursor: progress; }
   box-shadow: var(--shadow-card); padding: 28px; margin: 16px 0 40px; }
 .forum-post h1 { margin-top: 0; }
 .forum-body { line-height: 1.6; margin: 16px 0; white-space: normal; }
+.forum-body ul, .forum-body ol { margin: 0 0 12px; padding-left: 1.3em; }
+.forum-body li { margin: 0 0 5px; }
+.forum-body li::marker { color: var(--plum); }
 .forum-actions {
   margin-top: 12px;
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
@@ -2128,6 +2131,9 @@ html.is-page-loading { cursor: progress; }
   font-family: var(--font-display);
 }
 .reader-doc img { max-width: 100%; height: auto; }
+.reader-doc ul, .reader-doc ol { margin: 0 0 14px; padding-left: 1.3em; }
+.reader-doc li { margin: 0 0 6px; }
+.reader-doc li::marker { color: var(--plum); }
 .reader-doc table { border-collapse: collapse; width: 100%; }
 .reader-doc td, .reader-doc th { border: 1px solid rgba(43, 38, 34, 0.16); padding: 6px 10px; }
 .reader-doc--empty { color: var(--ink-soft); text-align: center; }
@@ -9417,6 +9423,9 @@ a.at-handle:hover { text-decoration: underline; }
 .pd-prose { font-size: 1.02rem; line-height: 1.65; color: var(--ink); }
 .pd-prose p { margin: 0 0 12px; }
 .pd-prose p:last-child { margin-bottom: 0; }
+.pd-prose ul, .pd-prose ol { margin: 0 0 12px; padding-left: 1.3em; }
+.pd-prose li { margin: 0 0 5px; }
+.pd-prose li::marker { color: var(--plum); }
 .pd-gallery {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px;
 }
