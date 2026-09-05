@@ -1860,6 +1860,9 @@ html.is-page-loading { cursor: progress; }
 .reader__main { min-width: 0; }
 .reader__stage {
   position: relative;
+  /* The page travels here when a file is chosen; a little air above it so it
+     doesn't arrive flush against the top of the screen. */
+  scroll-margin-top: 14px;
   background: #fff;
   border-radius: 18px;
   padding: clamp(16px, 2.4vw, 28px);
