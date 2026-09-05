@@ -664,36 +664,44 @@ def fulfill_intake(intake_id: int, *, buyer_email: str | None = None) -> str | N
         db.session.commit()
         return "Chosen slot is no longer in the future — mark paid for Studio to reschedule."
 
-    meeting = SupportGroupMeeting(
-        circle_id=None,
-        capacity=sg_svc.ONE_ON_ONE_CAP,
-        kind="one_on_one",
-        scheduled_by_user_id=host.id if host else None,
-        status="draft",
-        notes=label,
-        created_at=utcnow(),
-    )
-    db.session.add(meeting)
-    db.session.flush()
+    # A second run picks up the session the first one started rather than
+    # opening another. Retrying is normal — the room Daily wouldn't make, the
+    # webhook that came twice — and a member should never end up with two.
+    meeting = (db.session.get(SupportGroupMeeting, intake.meeting_id)
+               if intake.meeting_id else None)
+    if meeting is not None and (meeting.status or "") == "cancelled":
+        meeting = None
+    if meeting is None:
+        meeting = SupportGroupMeeting(
+            circle_id=None,
+            capacity=sg_svc.ONE_ON_ONE_CAP,
+            kind="one_on_one",
+            scheduled_by_user_id=host.id if host else None,
+            status="draft",
+            notes=label,
+            created_at=utcnow(),
+        )
+        db.session.add(meeting)
+        db.session.flush()
 
-    if host is not None:
-        db.session.add(SupportGroupApplication(
-            user_id=host.id,
-            circle_id=None,
-            meeting_id=meeting.id,
-            message="",
-            status="selected",
-            created_at=utcnow(),
-        ))
-    if host is None or member.id != host.id:
-        db.session.add(SupportGroupApplication(
-            user_id=member.id,
-            circle_id=None,
-            meeting_id=meeting.id,
-            message="",
-            status="selected",
-            created_at=utcnow(),
-        ))
+        if host is not None:
+            db.session.add(SupportGroupApplication(
+                user_id=host.id,
+                circle_id=None,
+                meeting_id=meeting.id,
+                message="",
+                status="selected",
+                created_at=utcnow(),
+            ))
+        if host is None or member.id != host.id:
+            db.session.add(SupportGroupApplication(
+                user_id=member.id,
+                circle_id=None,
+                meeting_id=meeting.id,
+                message="",
+                status="selected",
+                created_at=utcnow(),
+            ))
     intake.status = "paid"
     intake.meeting_id = meeting.id
     db.session.commit()
@@ -716,6 +724,37 @@ def fulfill_intake(intake_id: int, *, buyer_email: str | None = None) -> str | N
     intake.status = "scheduled"
     db.session.commit()
     return None
+
+
+def unfinished_for_user(user, limit: int = 5) -> list[CoachingIntake]:
+    """Sessions this member paid for that never got as far as a room."""
+    if user is None or not getattr(user, "id", None):
+        return []
+    return (CoachingIntake.query
+            .filter(CoachingIntake.user_id == user.id,
+                    CoachingIntake.status == "paid")
+            .order_by(CoachingIntake.created_at.desc())
+            .limit(max(1, int(limit)))
+            .all())
+
+
+def finish_unscheduled(user, limit: int = 5) -> int:
+    """Finish anything already paid for, and say how many that came to.
+
+    Money can land without the booking ever finishing — a webhook that never
+    arrived, a room Daily wouldn't make — and the member is left holding a
+    charge and silence. Rather than wait for someone to notice, the next time
+    they come back the session is made and the confirmation goes out.
+    """
+    done = 0
+    for intake in unfinished_for_user(user, limit=limit):
+        try:
+            if fulfill_intake(intake.id) is None:
+                done += 1
+        except Exception:
+            log.exception("coaching: could not finish intake %s", intake.id)
+            db.session.rollback()
+    return done
 
 
 def fulfill_from_payment_metadata(meta: dict, *, buyer_email: str | None = None) -> None:

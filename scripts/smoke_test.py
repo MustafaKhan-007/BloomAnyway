@@ -3930,6 +3930,96 @@ ok("Paying for her 1:1 without answering first sends you back to the questions",
    r.status_code in (302, 303)
    and "/coaching/ayesha/book" in (r.headers.get("Location") or ""),
    f"got {r.headers.get('Location')}")
+
+# --- paying for a 1:1 books it, and says so ----------------------------------
+# The booking link ends in #coaching, and the session id used to be pinned on
+# after that — inside the fragment, which a browser keeps to itself. The page
+# came back with nothing to finish and said "you're booked" regardless.
+ok("Stripe's session id goes where the server can read it, not in the fragment",
+   pay._with_session_id("https://x.test/support-groups?purchased=1#coaching")
+   == ("https://x.test/support-groups?purchased=1"
+       "&session_id={CHECKOUT_SESSION_ID}#coaching"),
+   pay._with_session_id("https://x.test/support-groups?purchased=1#coaching"))
+ok("And is only added once",
+   pay._with_session_id("https://x.test/c?session_id=abc#x")
+   == "https://x.test/c?session_id=abc#x")
+
+with app.app_context():
+    _paid_intake = (_CI.query.filter_by(coach="ayesha")
+                    .order_by(_CI.id.desc()).first())
+    _paid_id = _paid_intake.id
+    _buyer = db.session.get(User, _paid_intake.user_id)
+    _buyer_email, _buyer_id = _buyer.email, _buyer.id
+    _rooms_before = SupportGroupMeeting.query.filter_by(kind="one_on_one").count()
+
+_sent_mail.clear()
+with app.app_context():
+    pay.handle_payment_event("payment.succeeded", {
+        "payment_id": "pi_ayesha_1to1",
+        "total_amount": 15000,
+        "currency": "USD",
+        "customer": {"email": _buyer_email},
+        "customer_email": _buyer_email,
+        "product_cart": [{"product_id": "price_ayesha_1to1", "quantity": 1}],
+        "metadata": {
+            "kind": "addon", "addon": "ayesha", "slug": "addon-ayesha",
+            "product_name": "1:1 with Ayesha",
+            "coaching_intake_id": str(_paid_id), "coach": "ayesha",
+        },
+    })
+    db.session.commit()
+    _paid = db.session.get(_CI, _paid_id)
+    _ooo_mid = _paid.meeting_id
+    ok("Paying for a 1:1 books the session",
+       _paid.status == "scheduled" and _ooo_mid is not None,
+       f"status {_paid.status}, meeting {_ooo_mid}")
+    _note = (Notification.query
+             .filter_by(user_id=_buyer_id, kind="support_group")
+             .order_by(Notification.id.desc()).first())
+    ok("And says so in Bloom Anyway",
+       _note is not None and "1:1 with Ayesha is booked" in (_note.body or ""),
+       _note.body if _note else "no notification")
+ok("And by email, naming the founder she booked",
+   any(m["to"] == _buyer_email and "Ayesha" in m["text"] for m in _sent_mail),
+   [m["to"] for m in _sent_mail])
+
+with app.app_context():
+    _err = intake_svc.fulfill_intake(_paid_id)
+    _rooms_after = SupportGroupMeeting.query.filter_by(kind="one_on_one").count()
+    ok("A second go at the same payment doesn't book a second session",
+       _rooms_after == _rooms_before + 1, f"{_rooms_before} → {_rooms_after}")
+
+# --- money in, nothing set up: finish it rather than leave her waiting --------
+with app.app_context():
+    _stuck = _CI(user_id=_buyer_id, coach="saman", answers_json="{}",
+                 scheduled_at=utcnow() + timedelta(days=4), status="paid")
+    db.session.add(_stuck)
+    db.session.commit()
+    _stuck_id = _stuck.id
+    _me = db.session.get(User, _buyer_id)
+    ok("A 1:1 paid for but never set up is still counted as owed",
+       _stuck_id in [i.id for i in intake_svc.unfinished_for_user(_me)])
+    ok("Coming back finishes it",
+       intake_svc.finish_unscheduled(_me) == 1
+       and db.session.get(_CI, _stuck_id).status == "scheduled")
+
+with app.app_context():
+    # One that can't be finished — the slot it was booked for has gone by.
+    _late = _CI(user_id=_buyer_id, coach="saman", answers_json="{}",
+                scheduled_at=utcnow() - timedelta(hours=2), status="paid")
+    db.session.add(_late)
+    db.session.commit()
+    _late_id = _late.id
+r = wrap_client.get("/support-groups?purchased=1", follow_redirects=True)
+_back = r.get_data(as_text=True)
+ok("Coming back from checkout won't claim a booking that was never made",
+   "still being set up" in _back and "You\u2019re booked" not in _back,
+   flashes(r))
+with app.app_context():
+    db.session.get(_CI, _late_id).status = "cancelled"
+    db.session.commit()
+r = wrap_client.get("/support-groups?purchased=1", follow_redirects=True)
+ok("And does say it plainly once there's nothing left waiting",
 _sgbody = admin.get("/admin/support-groups").get_data(as_text=True)
 ok("Studio manages both founders' availability, and says whose is whose",
    "1:1 availability" in _sgbody and "Ayesha" in _sgbody and "Saman" in _sgbody)

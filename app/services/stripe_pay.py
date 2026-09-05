@@ -54,6 +54,24 @@ def _cancel_url_from_success(success_url: str) -> str:
         return success_url
 
 
+def _with_session_id(return_url: str) -> str:
+    """The success URL, carrying the session id where the server can read it.
+
+    A fragment is the browser's own business and is never sent on, so pinning
+    the placeholder to the end of a link like ``/support-groups?purchased=1
+    #coaching`` buried it in ``#coaching&session_id=…``. The page then loaded
+    with nothing to fulfil, told the member they were booked, and left the
+    booking sitting there unless the webhook happened to arrive.
+    """
+    raw = (return_url or "").strip()
+    query, hash_mark, fragment = raw.partition("#")
+    if "session_id=" in query:
+        return raw
+    joiner = "&" if "?" in query else "?"
+    return (f"{query}{joiner}session_id={{CHECKOUT_SESSION_ID}}"
+            f"{hash_mark}{fragment}")
+
+
 def create_checkout_session(
     *,
     product_id: str,
@@ -83,15 +101,10 @@ def create_checkout_session(
     kind = (meta.get("kind") or "").strip().lower()
     mode = "subscription" if kind == "membership" else "payment"
 
-    success = (return_url or "").strip()
-    if "session_id=" not in success:
-        joiner = "&" if "?" in success else "?"
-        success = f"{success}{joiner}session_id={{CHECKOUT_SESSION_ID}}"
-
     params: dict[str, Any] = {
         "mode": mode,
         "line_items": [{"price": price_id, "quantity": max(1, int(quantity or 1))}],
-        "success_url": success,
+        "success_url": _with_session_id(return_url),
         "cancel_url": _cancel_url_from_success(return_url),
         "metadata": meta,
         "allow_promotion_codes": True,
@@ -100,6 +113,10 @@ def create_checkout_session(
         params["customer_email"] = customer_email.strip().lower()
     if customer_name:
         params["metadata"]["customer_name"] = customer_name.strip()[:120]
+    if mode == "payment":
+        # The charge carries the same note as the session, so a payment found
+        # any other way — a sync, a charge event — still says what it was for.
+        params["payment_intent_data"] = {"metadata": meta}
     if mode == "subscription":
         params["subscription_data"] = {"metadata": meta}
         try:

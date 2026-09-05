@@ -2255,8 +2255,22 @@ def support_groups_page():
         try:
             if session_id:
                 pay.fulfill_checkout_session_id(session_id)
-            db.session.commit()
+            waiting = []
             if current_user.is_authenticated:
+                from ..services import coaching_intake as intake_svc
+                intake_svc.finish_unscheduled(current_user)
+                waiting = intake_svc.unfinished_for_user(current_user)
+            db.session.commit()
+            if current_user.is_authenticated and waiting:
+                # Paid for, but the session itself isn't made yet. Saying
+                # "you're booked" here is how somebody ends up waiting on a
+                # confirmation that was never coming.
+                flash(
+                    "Payment received. Your session is still being set up — "
+                    "you'll get an email as soon as it's booked.",
+                    "info",
+                )
+            elif current_user.is_authenticated:
                 flash("You’re booked — check My space → Activity for the confirmation.", "success")
         except Exception:
             log.exception("support groups: purchase sync after checkout failed")
