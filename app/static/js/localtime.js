@@ -20,9 +20,12 @@
   } catch (e) { zone = ""; }
   if (!zone) return;
 
-  /* ---- remember it, so the server renders the next page in it ---- */
+  /* ---- remember it, so the server renders the next page in it ----
+   * Written plain: a zone name is only letters, digits and separators, and
+   * escaping it left the server holding "America%2FDenver", which is not a
+   * place. */
   var secure = window.location.protocol === "https:" ? ";Secure" : "";
-  document.cookie = "tz=" + encodeURIComponent(zone) +
+  document.cookie = "tz=" + zone.replace(/[^A-Za-z0-9_+\/-]/g, "") +
     ";path=/;max-age=31536000;SameSite=Lax" + secure;
 
   var body = document.body;
@@ -42,17 +45,24 @@
     }).catch(function () {});
   }
 
+  var root = document.documentElement;
+  var served = root.getAttribute("data-tz") || "";
+
   /* ---- tell the settings page which zone this device keeps ---- */
   document.querySelectorAll("[data-tz-detected]").forEach(function (el) {
     if (el.tagName === "INPUT") el.value = zone;
     else el.textContent = zone;
   });
-  document.querySelectorAll("[data-tz-device-only]").forEach(function (el) {
-    el.hidden = false;
-  });
+  if (served && served !== zone) {
+    // Only worth mentioning when it isn't the zone they're already reading in.
+    document.querySelectorAll("[data-tz-device-only]").forEach(function (el) {
+      el.hidden = false;
+    });
+  }
 
   /* ---- redraw anything the server wrote on a different clock ---- */
-  var served = document.documentElement.getAttribute("data-tz") || "";
+  // Somebody who picked a zone in settings meant it, even sitting somewhere else.
+  if (root.hasAttribute("data-tz-pinned")) return;
   if (!served || served === zone) return;
 
   var cache = {};

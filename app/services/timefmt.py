@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
+from urllib.parse import unquote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
 from flask import request
@@ -69,6 +70,10 @@ def normalize_timezone(name: str | None) -> str | None:
     raw = (name or "").strip()
     if not raw or len(raw) > 64:
         return None
+    if "%" in raw:
+        # Werkzeug 3 hands cookie values back exactly as they were written, so
+        # an escaped "America%2FDenver" has to be read back into a zone name.
+        raw = unquote(raw)
     try:
         ZoneInfo(raw)
     except (ZoneInfoNotFoundError, ValueError, KeyError):

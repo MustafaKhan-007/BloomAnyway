@@ -269,6 +269,8 @@ def create_app(config_class=None):
         return {"site": all_settings(),
                 "announcements": anns,
                 "viewer_tz": viewer_tz,
+                "viewer_tz_pinned": bool(
+                    getattr(current_user, "timezone_pinned", False)),
                 "current_year": date.today().year,
                 "unread_notes": unread,
                 "nav_notifications": nav_notes,

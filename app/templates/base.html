@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-tz="{{ viewer_tz }}">
+<html lang="en" data-tz="{{ viewer_tz }}"{% if viewer_tz_pinned %} data-tz-pinned="1"{% endif %}>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">

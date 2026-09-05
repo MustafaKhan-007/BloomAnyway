@@ -7790,6 +7790,12 @@ _tzc.set_cookie("tz", "Asia/Karachi", domain="localhost")
 _second = _tzc.get("/forums/").get_data(as_text=True)
 ok("Once the browser has said, the server writes the next page in that zone",
    'data-tz="Asia/Karachi"' in _second)
+# Cookies used to be written escaped, and nothing unescaped them, so every
+# signed-out reader quietly got the server's UTC.
+_esc = app.test_client()
+_esc.set_cookie("tz", "America%2FDenver", domain="localhost")
+ok("A zone escaped into an older cookie is still read as a place",
+   'data-tz="America/Denver"' in _esc.get("/forums/").get_data(as_text=True))
 
 # a zone chosen by hand stays chosen, and the quiet browser report leaves it be
 r = _tzc.post("/account/timezone",
@@ -7804,8 +7810,11 @@ with app.app_context():
     _tzuser = User.query.filter_by(email="buyer@example.com").first()
     ok("The browser doesn't overwrite a zone somebody chose",
        _tzuser.timezone == "Europe/Berlin" and _tzuser.timezone_pinned)
+_pinned_page = _tzc.get("/forums/").get_data(as_text=True)
 ok("Pages are written on the chosen clock, not the browser's",
-   'data-tz="Europe/Berlin"' in _tzc.get("/forums/").get_data(as_text=True))
+   'data-tz="Europe/Berlin"' in _pinned_page)
+ok("And the browser is told to leave those times alone",
+   'data-tz-pinned="1"' in _pinned_page)
 
 r = _tzc.post("/account/timezone",
               data={"follow_browser": "yes", "timezone": "Asia/Karachi",
