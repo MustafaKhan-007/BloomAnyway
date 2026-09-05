@@ -7840,6 +7840,21 @@ ok("Studio's inbox stamps its rows on the owner's clock, not the server's",
 _sbody = admin.get("/admin/members").get_data(as_text=True)
 ok("So does the member list", 'data-when="%b %d, %Y"' in _sbody)
 
+# --- the stylesheet is still readable text ---------------------------------
+# Twice now an edit has been saved with UTF-8 read back as Latin-1, which turns
+# a "–" in a `content:` rule into "â" and two boxes on the page. It is invisible
+# in a diff and nobody notices until it is live, so the file is checked here.
+_css = (Path(__file__).resolve().parents[1]
+        / "app" / "static" / "css" / "main.css").read_text(encoding="utf-8")
+_mangled = [n for n, line in enumerate(_css.split("\n"), 1)
+            if "\ufffd" in line or any(0x80 <= ord(c) <= 0x9f for c in line)]
+ok("No mangled characters left in the stylesheet", not _mangled,
+   f"lines {_mangled}")
+_glyphs = [n for n, line in enumerate(_css.split("\n"), 1)
+           if "content:" in line and any(ord(c) > 127 for c in line)]
+ok("Every drawn marker is written as an escape, so it cannot mangle again",
+   not _glyphs, f"lines {_glyphs}")
+
 r = client.get("/this-page-does-not-exist-xyz")
 ok("404 offers problem report", r.status_code == 404 and b"Report this problem" in r.data)
 

@@ -1,5 +1,5 @@
 /* ==========================================================================
-   BLOOM ANYWAY Ã¢ÂÂ design system
+   BLOOM ANYWAY — design system
    The moment just before sunrise: dark plum night, blush horizon, first gold.
    ========================================================================== */
 
@@ -214,7 +214,7 @@ label { display: block; font-weight: 600; margin-bottom: 6px; }
 .field-error { color: var(--error); font-size: 14px; margin: 6px 0 0; }
 .honeypot { position: absolute; left: -9999px; opacity: 0; height: 0; overflow: hidden; }
 
-/* File inputs Ã¢ÂÂ branded control (native fallback + enhanced .file-pick) */
+/* File inputs — branded control (native fallback + enhanced .file-pick) */
 input[type="file"]:not(.sr-only):not(.file-pick__input) {
   display: block;
   width: 100%;
@@ -756,7 +756,7 @@ details.faq-item .answer { padding: 0 22px 20px; }
 
 /* ------------------------------- utilities -------------------------------- */
 .text-center { text-align: center; }
-/* Center the block itself Ã¢ÂÂ `p` has max-width, so text-align alone leaves it left-biased. */
+/* Center the block itself — `p` has max-width, so text-align alone leaves it left-biased. */
 p.text-center { margin-left: auto; margin-right: auto; }
 .mt-0 { margin-top: 0; }
 .stack-sm > * + * { margin-top: 12px; }
@@ -770,7 +770,7 @@ p.text-center { margin-left: auto; margin-right: auto; }
 .cta-band { text-align: center; }
 
 /* ==========================================================================
-   ADMIN Ã¢ÂÂ same tokens, denser
+   ADMIN — same tokens, denser
    ========================================================================== */
 .admin-body { font-size: 15px; background: var(--dawn-ivory); }
 .studio-readonly-banner { margin-bottom: 14px; }
@@ -981,7 +981,7 @@ body.is-studio-readonly .admin-main input[type="submit"] {
   transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
 }
 .intent-option:hover { border-color: var(--plum); }
-/* checkbox is hidden Ã¢ÂÂ selection is shown purely by colour */
+/* checkbox is hidden — selection is shown purely by colour */
 .intent-option input {
   position: absolute; width: 1px; height: 1px; opacity: 0;
   margin: 0; pointer-events: none;
@@ -1084,7 +1084,7 @@ img.avatar.avatar--photo {
 .note-bell__item time { font-size: 12px; color: var(--ink-soft); }
 .note-bell__item.is-unread a { color: var(--plum); }
 
-/* Soft spinning sunflower Ã¢ÂÂ petals sway on hinges while it turns */
+/* Soft spinning sunflower — petals sway on hinges while it turns */
 .page-loader {
   position: fixed; inset: 0; z-index: 4000;
   display: flex; align-items: center; justify-content: center;
@@ -1955,7 +1955,7 @@ html.is-page-loading { cursor: progress; }
   flex: 0 0 auto;
   border-radius: 8px;
   background: #fff;
-  /* Never let CSS stretch the bitmap Ã¢ÂÂ JS sets both axes. */
+  /* Never let CSS stretch the bitmap — JS sets both axes. */
   object-fit: contain;
   max-width: none;
   max-height: none;
@@ -2786,7 +2786,7 @@ a.studio-member-filter.is-active span { color: #fff; }
 .announce-strip .hero-announcement,
 .announce-strip .hero-newvideo { margin: 0; }
 
-/* Home hero notices Ã¢ÂÂ rounded cards above the strap (readable on cream). */
+/* Home hero notices — rounded cards above the strap (readable on cream). */
 .home-hero__notices {
   background: linear-gradient(180deg, #fff8ec 0%, #fef9f3 100%);
   border-bottom: 1px solid rgba(194, 152, 69, 0.28);
@@ -3331,7 +3331,7 @@ a.studio-member-filter.is-active span { color: #fff; }
   color: var(--plum);
   margin-right: 4px;
 }
-.sg-intake[open] > .sg-intake__summary::before { content: "â"; }
+.sg-intake[open] > .sg-intake__summary::before { content: "\2013"; }
 .sg-intake__body {
   padding: 0 14px 14px;
   border-top: 1px solid rgba(122, 46, 98, 0.08);
@@ -5066,7 +5066,7 @@ a.at-handle:hover { text-decoration: underline; }
 .sg-page__section-head { margin: 0 0 28px; max-width: 52ch; }
 .sg-page__section-head h2 { margin: 0 0 8px; color: var(--rm-plum); }
 .sg-page__section-head p { margin: 0; color: var(--rm-ink); }
-/* Five equal tiles (4 topics + Custom) â one clean row on desktop */
+/* Five equal tiles (4 topics + Custom) — one clean row on desktop */
 .sg-page__band > .container {
   max-width: min(1280px, 100%);
 }
@@ -5921,7 +5921,7 @@ a.at-handle:hover { text-decoration: underline; }
   transition: background 0.15s ease;
 }
 .jn-prompt-list__btn::before {
-  content: "â¦";
+  content: "\2726";
   position: absolute;
   left: 0;
   top: 8px;
@@ -7549,7 +7549,7 @@ a.at-handle:hover { text-decoration: underline; }
 .admin-main .page-head h1 { color: #3d1431; }
 .admin-body { background: #f6efe6 !important; }
 
-/* Studio inbox â readable report cards (avoid cramped table wrap) */
+/* Studio inbox — readable report cards (avoid cramped table wrap) */
 .inbox-feedback-table .inbox-cell--note {
   max-width: 36ch;
   white-space: normal;
@@ -8999,7 +8999,7 @@ a.at-handle:hover { text-decoration: underline; }
 .cg-bundle__btn.is-disabled { opacity: 0.55; pointer-events: none; }
 
 /* ==========================================================================
-   HANDHELD / TABLET ONLY (phones, iPads, tablets) Ã¢ÂÂ max-width: 899px
+   HANDHELD / TABLET ONLY (phones, iPads, tablets) — max-width: 899px
    Desktop layout above 900px stays unchanged.
    ========================================================================== */
 
@@ -9801,7 +9801,7 @@ a.at-handle:hover { text-decoration: underline; }
 }
 .studio-features__summary::-webkit-details-marker { display: none; }
 .studio-features__summary::before {
-  content: "â¸"; display: inline-block; margin-right: 8px;
+  content: "\25b8"; display: inline-block; margin-right: 8px;
   transition: transform 0.15s ease;
 }
 .studio-features[open] > .studio-features__summary::before { transform: rotate(90deg); }
@@ -10167,7 +10167,7 @@ a.at-handle:hover { text-decoration: underline; }
   color: #E8B86D;
   font-weight: 800;
 }
-.ch2-faq details[open] summary::after { content: "ï¿½"; }
+.ch2-faq details[open] summary::after { content: "\2013"; }
 .ch2-faq p {
   margin: 10px 0 0;
   color: #5a4a56;
