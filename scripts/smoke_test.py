@@ -6355,6 +6355,19 @@ ok("So do bullet points and links",
 ok("Where lines used to be kept, they still are",
    "<br>" in _md("one\ntwo", breaks=True)
    and "<br>" not in _md("one\ntwo"))
+# Nobody leaves a blank line before their bullets, and Markdown wants one:
+# "Key takeaways:" followed by dashes came out as one run-on paragraph with
+# the dashes still in it.
+_run_on = _md("Key takeaways:\n- one\n- two\n\nAnd a close.")
+ok("A list written straight under a line of writing is still a list",
+   "<ul>" in _run_on and "<li>one</li>" in _run_on
+   and "<p>Key takeaways:</p>" in _run_on and "<p>And a close.</p>" in _run_on,
+   f"got {_run_on}")
+ok("Numbered the same way, and with the lines kept where they are kept",
+   "<ol>" in _md("Do this:\n1. one\n2. two")
+   and "<ul>" in _md("Takeaways:\n- one", breaks=True))
+ok("But a rule is still a rule and a lone dash is still a dash",
+   "<hr>" in _md("above\n\n---\n\nbelow") and "<ul>" not in _md("a - b - c"))
 
 _fmt_pages = {
     "the product editor": f"/admin/products/{drip_prod_id}/edit",
@@ -7132,14 +7145,22 @@ ok("The player is sized to fit, with what was written in a card below it",
    "reader__stage--media" in _rbody and "reader__viewer--fill" not in _rbody
    and 'id="reader-extracts"' in _rbody
    and _rbody.index('id="reader-stage"') < _rbody.index('id="reader-extracts"'))
-ok("Which says what it is rather than trailing off the bottom of the pane",
-   "Written with this video" in _rbody)
+with app.app_context():
+    _video_name = db.session.get(ProductAsset, video_item_id).display_title()
+_tie = re.search(r'class="reader-extracts__tie"[\s\S]{0,400}?</p>', _rbody)
+ok("Which names the file it was written with, not just that there is one",
+   _tie is not None and "Written with" in _tie.group()
+   and _video_name in _tie.group(),
+   f"got {_tie and ' '.join(_tie.group().split())[:120]}")
 # Writing attached to a file used to be findable only by scrolling past the
 # file itself, and one left below a full-height page was never seen at all.
 ok("The piece it belongs to says how much there is and jumps to it",
    "reader-pieces__notes" in _rbody
    and f"item={video_item_id}#reader-extracts" in _rbody
    and "2 extracts" in _rbody)
+ok("And is joined onto that piece rather than sat beside it",
+   'class="reader-pieces__item is-active has-notes"' in _rbody,
+   "the extract count isn't tied to its file")
 # A module with lessons in it used to print every file in every lesson at
 # once. Each lesson folds now, and the one being read is the one left open.
 r = admin.post("/admin/products/new", data=_MultiDict([
@@ -7147,7 +7168,8 @@ r = admin.post("/admin/products/new", data=_MultiDict([
     ("promise", "Lessons that fold."), ("price", "10.00"),
     ("stripe", "price_lesson_fold"), ("live", "1"),
     ("mod1_title", "Week one"),
-    ("mod1_lesson_title", "Niche Selection"), ("mod1_lesson_desc", "Pick one."),
+    ("mod1_lesson_title", "Niche Selection"),
+    ("mod1_lesson_desc", "Key takeaways:\n- Pick one.\n- Stay with it."),
     ("mod1_lesson_title", "Content Basics"), ("mod1_lesson_desc", ""),
     ("mod1_lesson1_file", (BytesIO(_pdf), "niche.pdf")),
     ("mod1_lesson2_file", (BytesIO(_pdf), "basics.pdf")),
@@ -7178,6 +7200,13 @@ ok("Only the lesson holding what is open starts open",
    f"{_folds_open} of 2 folds open")
 ok("And the file being read says so, rather than being a shade darker",
    'class="reader-pieces__open">Open<' in _les and 'aria-current="true"' in _les)
+ok("What was written for a lesson keeps its bullets as bullets",
+   "<li>Pick one.</li>" in _les and "<li>Stay with it.</li>" in _les,
+   "the dashes came through as writing")
+_reader_js = client.get("/static/js/course-reader.js").get_data(as_text=True)
+ok("And choosing a file takes the page down to the pane it opens in",
+   "goToChosenFile" in _reader_js and "scrollIntoView" in _reader_js
+   and 'has("item")' in _reader_js)
 ok("But an extract is never a chip of its own",
    f"item={_note_ids[0]}" not in _rbody)
 
