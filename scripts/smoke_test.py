@@ -2644,8 +2644,10 @@ for _path, _where in (("/", "home page footer"),
        f"mailto:{SUPPORT_EMAIL}" in _html and SUPPORT_EMAIL in _html)
 
 _html = client.get("/contact").get_data(as_text=True)
-ok("Contact page offers the address as an alternative to the form",
-   "Prefer your own inbox?" in _html)
+ok("The contact page is the form and the footer, with no second card "
+   "repeating the address",
+   "Prefer your own inbox?" not in _html and "contact-direct" not in _html
+   and f"mailto:{SUPPORT_EMAIL}" in _html)
 
 with app.app_context():
     _settings.set_setting("contact_email", "")
