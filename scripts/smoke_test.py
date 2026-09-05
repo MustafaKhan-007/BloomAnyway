@@ -5928,7 +5928,7 @@ with app.app_context():
     _now = db.session.get(ProductAsset, _stale2_id)
     ok("Studio draws the ones already uploaded, and says it has",
        _now.kind == "pdf" and _now.filename == "studio-deck.pdf"
-       and "slide deck" in _ebody, f"got {(_now.kind, _now.filename)}")
+       and "into pages" in _ebody, f"got {(_now.kind, _now.filename)}")
     _assets_svc.delete_file(_now)
     db.session.delete(_now)
     db.session.commit()
@@ -5941,9 +5941,86 @@ with app.app_context():
     db.session.add(_junk)
     db.session.commit()
     ok("One that won't draw keeps its file and stays a download",
-       not _assets_svc.redraw_deck(_junk) and _junk.kind == "other"
+       not _assets_svc.redraw(_junk) and _junk.kind == "other"
        and _junk.filename == "not-really.pptx")
     db.session.delete(_junk)
+    db.session.commit()
+
+# A Word document takes the same road: drawn into pages on the way in, read
+# on the site like any other document rather than handed over as a download.
+from docx import Document as _Docx  # noqa: E402
+
+_doc = _Docx()
+_doc.add_heading("Daily tasks", 1)
+_doc.add_paragraph("Three small wins before you open any app.")
+for _line in ("Post one story", "Reply to five comments"):
+    _doc.add_paragraph(_line, style="List Bullet")
+_table = _doc.add_table(rows=1, cols=2)
+_table.rows[0].cells[0].text = "Time"
+_table.rows[0].cells[1].text = "Task"
+_doc_bytes = BytesIO()
+_doc.save(_doc_bytes)
+_doc_bytes = _doc_bytes.getvalue()
+
+r = admin.post(
+    f"/admin/products/{drip_prod_id}/assets",
+    data={"asset": (BytesIO(_doc_bytes), "Daily_Tasks.docx"), "asset_title": ""},
+    content_type="multipart/form-data", follow_redirects=True)
+with app.app_context():
+    _worksheet = next((a for a in db.session.get(Product, drip_prod_id).assets
+                       if (a.filename or "").startswith("Daily_Tasks")), None)
+    ok("A Word document uploads and comes back as pages",
+       _worksheet is not None and _worksheet.kind == "pdf"
+       and _worksheet.filename == "Daily_Tasks.pdf"
+       and _worksheet.mime == "application/pdf",
+       f"got {_worksheet and (_worksheet.kind, _worksheet.filename)}")
+    ok("With its own name on it, not the file type",
+       _worksheet is not None and _worksheet.display_title() == "Daily Tasks"
+       and _worksheet.kind_label() == "PDF",
+       f"got {_worksheet and (_worksheet.title, _worksheet.kind_label())}")
+    _worksheet_bytes = _assets_svc.read_bytes(_worksheet) if _worksheet else b""
+    ok("And what is stored is a real PDF",
+       _worksheet_bytes.startswith(b"%PDF-")
+       and b"%%EOF" in _worksheet_bytes[-4096:], f"{len(_worksheet_bytes)} bytes")
+    _worksheet_id = _worksheet.id if _worksheet else 0
+r = drip_client.get(f"/account/courses/{drip_purchase_id}/file/{_worksheet_id}")
+ok("And it streams to a buyer as a PDF",
+   r.status_code == 200 and r.data.startswith(b"%PDF-")
+   and "pdf" in (r.headers.get("Content-Type") or ""))
+r = admin.post(
+    f"/admin/products/{drip_prod_id}/assets",
+    data={"asset": (BytesIO(b"PK\x03\x04 not really a document"), "broken.docx")},
+    content_type="multipart/form-data", follow_redirects=True)
+with app.app_context():
+    ok("A document that won't open is refused, with what to do about it",
+       not any((a.filename or "").startswith("broken")
+               for a in db.session.get(Product, drip_prod_id).assets)
+       and "save it as a pdf" in r.get_data(as_text=True).lower())
+# One uploaded before any of this is drawn the first time it is opened.
+with app.app_context():
+    _old_doc = ProductAsset(
+        product_id=drip_prod_id, filename="old-worksheet.docx", kind="docx",
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml"
+             ".document",
+        size=len(_doc_bytes), data=_doc_bytes, module_index=1, sort_order=96)
+    db.session.add(_old_doc)
+    db.session.commit()
+    _old_doc_id = _old_doc.id
+r = drip_client.get(f"/account/courses/{drip_purchase_id}?module=1&item={_old_doc_id}")
+_obody = r.get_data(as_text=True)
+ok("A document uploaded before all this is drawn when it is opened",
+   r.status_code == 200 and "reader-pdf-canvas" in _obody
+   and "This file type opens best as a download" not in _obody)
+with app.app_context():
+    _redrawn = db.session.get(ProductAsset, _old_doc_id)
+    ok("And the drawing is kept, so it is only ever done once",
+       _redrawn.kind == "pdf" and _redrawn.filename == "old-worksheet.pdf"
+       and _assets_svc.read_bytes(_redrawn).startswith(b"%PDF-"),
+       f"got {(_redrawn.kind, _redrawn.filename)}")
+    for _a in list(db.session.get(Product, drip_prod_id).assets):
+        if (_a.filename or "").startswith(("Daily_Tasks", "old-worksheet")):
+            _assets_svc.delete_file(_a)
+            db.session.delete(_a)
     db.session.commit()
 with app.app_context():
     for _a in list(db.session.get(Product, drip_prod_id).assets):
@@ -6664,12 +6741,12 @@ with app.app_context():
     # simply have, whatever kind of reading file it is.
     _rc.set_types(["template"])
     _ast.add_asset(_rc, _FileStorage(BytesIO(b"PK\x03\x04 a template"),
-                                     filename="worksheet.docx",
-                                     content_type="application/vnd.openxml"))
+                                     filename="worksheet.epub",
+                                     content_type="application/epub+zip"))
     db.session.commit()
     ok("A template goes out, and not only if it is a PDF",
        sorted(f["name"] for f in _ast.receipt_files(_rc))
-       == ["guide.pdf", "worksheet.docx"],
+       == ["guide.pdf", "worksheet.epub"],
        f"got {[f['name'] for f in _ast.receipt_files(_rc)]}")
     _rc.set_types(["course"])
     db.session.commit()

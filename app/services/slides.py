@@ -48,6 +48,11 @@ class SlideError(ValueError):
     pass
 
 
+#: Both office drawers answer to the same few names, so the upload path can
+#: hand a file to whichever one knows how to read it.
+Error = SlideError
+
+
 def is_deck(filename: str) -> bool:
     return os.path.splitext(filename or "")[1].lower() == ".pptx"
 
@@ -58,7 +63,7 @@ def pdf_name(filename: str) -> str:
     return f"{base}.pdf"
 
 
-def deck_title(filename: str) -> str:
+def title_from(filename: str) -> str:
     """The deck's own name, for the piece list, without the extension on it."""
     return (os.path.splitext(os.path.basename(filename or ""))[0]
             .replace("_", " ").strip()[:160] or "Slides")

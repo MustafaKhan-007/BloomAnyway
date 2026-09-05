@@ -934,18 +934,19 @@ def product_edit(product_id):
         db.session.commit()
         return redirect(url_for("admin.product_edit", product_id=product.id))
 
-    # Anything uploaded before decks were drawn into pages is still a .pptx no
-    # buyer can read here. Opening the product is as good a moment as any.
+    # Anything uploaded before office files were drawn into pages is still a
+    # .pptx or .docx no buyer can read here. Opening the product is as good a
+    # moment as any.
     from ..services import assets as asset_svc
     try:
-        drawn = asset_svc.redraw_decks(product)
+        drawn = asset_svc.redraw_all(product)
         if drawn:
             db.session.commit()
-            flash(f"Turned {drawn} slide deck{'' if drawn == 1 else 's'} into "
-                  "pages — buyers read those on the site now.", "success")
+            flash(f"Turned {drawn} file{'' if drawn == 1 else 's'} into pages — "
+                  "buyers read those on the site now.", "success")
     except Exception:
         db.session.rollback()
-        log.exception("studio: could not draw this product's decks")
+        log.exception("studio: could not draw this product's office files")
 
     modules = product.modules()
     while len(modules) < 2:

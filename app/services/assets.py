@@ -134,8 +134,9 @@ _KIND_BY_EXT = {
     ".html": "html",
     ".htm": "html",
     ".doc": "doc",
+    # Both are drawn into a PDF the moment they land, so neither kind reaches
+    # a row — see ``_DRAWN_KINDS``.
     ".docx": "docx",
-    # Drawn into a PDF the moment it lands, so this kind never reaches a row.
     ".pptx": "slides",
     ".epub": "other",
     ".zip": "other",
@@ -353,63 +354,89 @@ def _store_stream(stream, first: bytes, limit: int, ext: str) -> tuple[str, int]
     return disk_name, size
 
 
-def _drawn_deck(raw: bytes, filename: str,
-                title: str | None) -> tuple[bytes, str, str, str, str]:
-    """A slide deck as the PDF of it: (data, filename, mime, kind, title).
+#: The office files that are drawn into pages instead of being handed over as
+#: a download, and what to say when one of them won't draw.
+_DRAWN_KINDS = {
+    "slides": ("deck", "Export it as a PDF from PowerPoint and upload that "
+                       "instead."),
+    "docx": ("document", "Save it as a PDF from Word and upload that instead."),
+}
 
-    Decks are drawn once, here, rather than every time somebody opens one, so
-    everything downstream — the reader, the page counter, the download — is
-    handling an ordinary document.
+
+def _drawer(kind: str | None):
+    """The service that turns this kind of office file into pages, if any."""
+    if kind == "slides":
+        from . import slides
+        return slides
+    if kind == "docx":
+        from . import docs
+        return docs
+    return None
+
+
+def _drawn_office(raw: bytes, filename: str, title: str | None,
+                  kind: str) -> tuple[bytes, str, str, str, str]:
+    """An office file as the PDF of it: (data, filename, mime, kind, title).
+
+    Decks and documents are drawn once, here, rather than every time somebody
+    opens one, so everything downstream — the reader, the page counter, the
+    download — is handling an ordinary document.
     """
-    from . import slides as slides_svc
+    drawer = _drawer(kind)
+    noun, advice = _DRAWN_KINDS[kind]
     try:
-        drawn = slides_svc.to_pdf(raw)
-    except slides_svc.SlideError as err:
+        drawn = drawer.to_pdf(raw)
+    except drawer.Error as err:
         raise AssetError(str(err)) from err
     except Exception as err:
-        log.exception("slides: %s wouldn't draw", filename)
+        log.exception("%s: %s wouldn't draw", kind, filename)
         raise AssetError(
-            "We couldn't turn that deck into pages. Export it as a PDF from "
-            "PowerPoint and upload that instead.") from err
-    return (drawn, slides_svc.pdf_name(filename), "application/pdf", "pdf",
-            (title or "").strip() or slides_svc.deck_title(filename))
+            f"We couldn't turn that {noun} into pages. {advice}") from err
+    return (drawn, drawer.pdf_name(filename), "application/pdf", "pdf",
+            (title or "").strip() or drawer.title_from(filename))
 
 
-def is_undrawn_deck(asset) -> bool:
-    """A slide deck sitting here as a file, from before decks became pages."""
+def _undrawn_kind(asset) -> str | None:
+    """The kind of drawing an already-stored file is still waiting for."""
     if asset is None or (asset.kind or "") == "pdf":
-        return False
-    from . import slides as slides_svc
-    return slides_svc.is_deck(asset.filename or "")
+        return None
+    kind = detect_kind(asset.filename or "", asset.mime)
+    return kind if kind in _DRAWN_KINDS else None
 
 
-def redraw_deck(asset) -> bool:
-    """Draw a deck that is already stored into pages, in place.
+def is_undrawn(asset) -> bool:
+    """An office file sitting here as a file, from before those became pages."""
+    return _undrawn_kind(asset) is not None
 
-    Uploads have been drawn since decks were first supported, but everything
-    uploaded before that is still a .pptx nobody can read on the site: the
-    reader offers a download and gives up. Rather than ask the owner to find
-    and re-upload them, the first person to open one converts it, once.
 
-    Never raises. A deck too big, too broken or too odd to draw is left
+def redraw(asset) -> bool:
+    """Draw a stored deck or document into pages, in place.
+
+    Uploads have been drawn since each kind was first supported, but everything
+    uploaded before that is still an office file nobody can read on the site:
+    the reader offers a download and gives up. Rather than ask the owner to
+    find and re-upload them, the first person to open one converts it, once.
+
+    Never raises. A file too big, too broken or too odd to draw is left
     exactly as it was, still downloadable.
     """
-    if not is_undrawn_deck(asset):
+    kind = _undrawn_kind(asset)
+    if kind is None:
         return False
-    from . import slides as slides_svc
-    if (asset.size or 0) > slides_svc.MAX_BYTES:
+    drawer = _drawer(kind)
+    if (asset.size or 0) > drawer.MAX_BYTES:
         return False
     try:
         raw = read_bytes(asset)
     except Exception:
-        log.exception("slides: could not read %s to draw it", asset.filename)
+        log.exception("%s: could not read %s to draw it", kind, asset.filename)
         return False
     if not raw:
         return False
     try:
-        drawn = slides_svc.to_pdf(raw)
+        drawn = drawer.to_pdf(raw)
     except Exception as err:
-        log.warning("slides: leaving %s as a download — %s", asset.filename, err)
+        log.warning("%s: leaving %s as a download — %s", kind, asset.filename, err)
         return False
 
     was_on_disk = asset.disk_name
@@ -421,27 +448,27 @@ def redraw_deck(asset) -> bool:
         try:
             disk_name, _ = _store_stream(BytesIO(drawn), b"", MAX_BYTES, ".pdf")
         except AssetError:
-            log.exception("slides: could not save the drawn %s", asset.filename)
+            log.exception("%s: could not save the drawn %s", kind, asset.filename)
             return False
         asset.disk_name, asset.data = disk_name, None
-    asset.title = asset.title or slides_svc.deck_title(asset.filename)
-    asset.filename = slides_svc.pdf_name(asset.filename)
+    asset.title = asset.title or drawer.title_from(asset.filename)
+    asset.filename = drawer.pdf_name(asset.filename)
     asset.mime, asset.kind, asset.size = "application/pdf", "pdf", len(drawn)
     if was_on_disk and was_on_disk != asset.disk_name:
         try:
             _safe_remove(disk_path(was_on_disk))
         except AssetError:
             pass
-    log.info("slides: drew %s into %s pages worth of PDF", asset.filename,
+    log.info("%s: drew %s into %s pages worth of PDF", kind, asset.filename,
              len(drawn))
     return True
 
 
-def redraw_decks(product) -> int:
-    """Draw every deck this product is still holding as a file. Returns how many."""
+def redraw_all(product) -> int:
+    """Draw every office file this product still holds. Returns how many."""
     if product is None:
         return 0
-    return sum(1 for asset in product.top_level_assets() if redraw_deck(asset))
+    return sum(1 for asset in product.top_level_assets() if redraw(asset))
 
 
 def _attach_bytes(product: Product, raw: bytes, *, title, filename, mime, kind,
@@ -505,10 +532,10 @@ def add_asset(
     if not head:
         raise AssetError("That file was empty.")
 
-    if kind == "slides":
-        from . import slides as slides_svc
-        raw = head + stream.read(slides_svc.MAX_BYTES + 1 - len(head))
-        raw, filename, mime, kind, title = _drawn_deck(raw, filename, title)
+    if kind in _DRAWN_KINDS:
+        drawer = _drawer(kind)
+        raw = head + stream.read(drawer.MAX_BYTES + 1 - len(head))
+        raw, filename, mime, kind, title = _drawn_office(raw, filename, title, kind)
         return _attach_bytes(product, raw, title=title, filename=filename,
                              mime=mime, kind=kind, module_index=module_index,
                              lesson_index=lesson_index)
@@ -728,17 +755,18 @@ def finish_upload(product: Product, upload_id: str, filename: str, *,
 
     name, mime, kind = describe(filename, None)
     ext = os.path.splitext(name)[1].lower()
-    if kind == "slides":
-        from . import slides as slides_svc
-        if size > slides_svc.MAX_BYTES:
+    if kind in _DRAWN_KINDS:
+        drawer = _drawer(kind)
+        noun, advice = _DRAWN_KINDS[kind]
+        if size > drawer.MAX_BYTES:
             _safe_remove(path)
             raise AssetError(
-                f"That deck is over {slides_svc.MAX_BYTES // (1024 * 1024)} MB. "
-                "Export it as a PDF from PowerPoint and upload that instead.")
+                f"That {noun} is over {drawer.MAX_BYTES // (1024 * 1024)} MB. "
+                f"{advice}")
         with open(path, "rb") as fh:
             raw = fh.read()
         _safe_remove(path)
-        raw, name, mime, kind, title = _drawn_deck(raw, name, title)
+        raw, name, mime, kind, title = _drawn_office(raw, name, title, kind)
         return _attach_bytes(product, raw, title=title, filename=name,
                              mime=mime, kind=kind, module_index=module_index,
                              lesson_index=lesson_index)
