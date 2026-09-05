@@ -231,10 +231,14 @@ def create_app(config_class=None):
     app.jinja_env.filters["when"] = local_tag
 
     from .services import badges as badges_service
+    from .services.support_groups import meeting_display_title
 
     app.jinja_env.globals.update(
         primary_badge=badges_service.primary_badge,
         profile_badges=badges_service.profile_badges,
+        # What a session is called wherever it's listed: the circle, the topic,
+        # or the founder a 1:1 was booked with.
+        session_title=meeting_display_title,
     )
 
     @app.context_processor

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Waiting room — {{ meeting.circle.title if meeting.circle else 'Support session' }}{% endblock %}
+{% block title %}Waiting room — {{ title }}{% endblock %}
 
 {% block content %}
 <div class="sg-wait" data-sg-wait
@@ -12,11 +12,12 @@
      data-capacity="{{ capacity }}">
   <div class="sg-wait__inner">
     <p class="sg-wait__eyebrow">Waiting room</p>
-    <h1>{{ meeting.circle.title if meeting.circle else 'Peer circle' }}</h1>
+    <h1>{{ title }}</h1>
     {% if meeting.scheduled_at %}
     <p class="sg-wait__when" data-sg-when>
       Starts {{ meeting.scheduled_at|when('%A, %b %d · %I:%M %p') }}
       · {{ duration_min }} minutes
+      {% if one_on_one %}· with {{ host_name }}{% endif %}
     </p>
     {% endif %}
 
@@ -32,7 +33,7 @@
 
     <div class="sg-wait__roster" aria-live="polite">
       <div class="sg-wait__roster-head">
-        <p class="sg-wait__roster-title">In this circle</p>
+        <p class="sg-wait__roster-title">{{ 'In this session' if one_on_one else 'In this circle' }}</p>
         <p class="sg-wait__roster-count" data-sg-seat-count>{{ initial_seats }} / {{ capacity }} seats</p>
       </div>
       <ul class="sg-wait__members" data-sg-members>

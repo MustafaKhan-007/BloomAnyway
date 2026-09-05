@@ -2255,8 +2255,22 @@ def support_groups_page():
         try:
             if session_id:
                 pay.fulfill_checkout_session_id(session_id)
-            db.session.commit()
+            waiting = []
             if current_user.is_authenticated:
+                from ..services import coaching_intake as intake_svc
+                intake_svc.finish_unscheduled(current_user)
+                waiting = intake_svc.unfinished_for_user(current_user)
+            db.session.commit()
+            if current_user.is_authenticated and waiting:
+                # Paid for, but the session itself isn't made yet. Saying
+                # "you're booked" here is how somebody ends up waiting on a
+                # confirmation that was never coming.
+                flash(
+                    "Payment received. Your session is still being set up — "
+                    "you'll get an email as soon as it's booked.",
+                    "info",
+                )
+            elif current_user.is_authenticated:
                 flash("You’re booked — check My space → Activity for the confirmation.", "success")
         except Exception:
             log.exception("support groups: purchase sync after checkout failed")
@@ -2613,7 +2627,9 @@ def support_session_room(meeting_id):
     try:
         token = daily_svc.create_meeting_token(
             room_name=meeting.room_name,
-            user_name=current_user.public_name() or current_user.email,
+            # Whoever is hosting a 1:1 arrives as the coach who was booked.
+            user_name=(sg_svc.seat_display_name(meeting, current_user)
+                       or current_user.email),
             is_owner=is_host or current_user.is_admin,
             scheduled_at=meeting.scheduled_at,
             duration_minutes=sg_svc.meeting_duration_minutes(meeting),
@@ -2634,6 +2650,8 @@ def support_session_room(meeting_id):
     return render_template(
         "main/support_session_room.html",
         meeting=meeting,
+        title=sg_svc.meeting_display_title(meeting),
+        host_name=sg_svc.host_display_name(meeting),
         daily_room_url=meeting.room_url,
         daily_token=token,
         is_host=is_host,
@@ -2672,7 +2690,7 @@ def support_session_status(meeting_id):
             continue
         members.append({
             "id": user.id,
-            "name": user.public_name() or "Member",
+            "name": sg_svc.seat_display_name(meeting, user),
             "is_you": user.id == current_user.id,
             "is_host": meeting.scheduled_by_user_id == user.id,
         })
@@ -2735,7 +2753,10 @@ def support_session_waiting(meeting_id):
     return render_template(
         "main/support_session_waiting.html",
         meeting=meeting,
-        duration_min=sg_svc.peer_meeting_minutes(),
+        title=sg_svc.meeting_display_title(meeting),
+        host_name=sg_svc.host_display_name(meeting),
+        one_on_one=(meeting.kind or "") == "one_on_one",
+        duration_min=sg_svc.meeting_duration_minutes(meeting),
         starts_at_iso=start.isoformat().replace("+00:00", "Z"),
         starts_at_ms=int(start.timestamp() * 1000),
         server_now_iso=now.isoformat().replace("+00:00", "Z"),
@@ -2748,7 +2769,7 @@ def support_session_waiting(meeting_id):
         initial_members=[
             {
                 "id": row.author.id,
-                "name": row.author.public_name() or "Member",
+                "name": sg_svc.seat_display_name(meeting, row.author),
                 "is_you": row.author.id == current_user.id,
                 "is_host": meeting.scheduled_by_user_id == row.author.id,
             }
@@ -2782,6 +2803,9 @@ def support_session_wrap(meeting_id):
     return render_template(
         "main/support_session_wrap.html",
         meeting=meeting,
+        title=sg_svc.meeting_display_title(meeting),
+        host_name=sg_svc.host_display_name(meeting),
+        one_on_one=(meeting.kind or "") == "one_on_one",
         peers=peers,
         report_reasons=SUPPORT_REPORT_REASONS,
     )
@@ -2801,7 +2825,7 @@ def support_session_report(meeting_id, user_id):
         flash("You can only report someone from this session.", "error")
         return redirect(url_for("main.support_session_wrap", meeting_id=meeting_id))
 
-    label = meeting.circle.title if meeting.circle else "Support session"
+    label = sg_svc.meeting_display_title(meeting)
     _, msg = submit_member_report(
         reporter=current_user,
         user_id=user_id,

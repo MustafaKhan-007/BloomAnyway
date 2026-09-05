@@ -303,7 +303,7 @@
           <ul class="ms-exact__benefits">
             {% for row in support_upcoming[:4] %}
             <li>
-              {{ row.circle.title if row.circle else 'Support group' }}
+              {{ session_title(row.meeting) if row.meeting else (row.circle.title if row.circle else 'Support group') }}
               {% if row.meeting and row.meeting.scheduled_at %}
               — {{ row.meeting.scheduled_at|when('%b %d · %I:%M %p') }}
               {% endif %}
