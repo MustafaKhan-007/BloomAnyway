@@ -1233,11 +1233,11 @@ def host_display_name(meeting: SupportGroupMeeting) -> str:
 
 def seat_display_name(meeting: SupportGroupMeeting, user: User) -> str:
     """A name for the roster and for the video tile, the coach included."""
-    if (meeting.kind or "").strip().lower() == "one_on_one" and (
-            meeting.scheduled_by_user_id
-            and getattr(user, "id", None) == meeting.scheduled_by_user_id):
+    if ((meeting.kind or "").strip().lower() == "one_on_one"
+            and meeting.scheduled_by_user_id
+            and user.id == meeting.scheduled_by_user_id):
         return host_display_name(meeting)
-    return (getattr(user, "public_name", lambda: "")() or "Member")
+    return user.public_name() or "Member"
 
 
 def _session_date_and_time(user: User, scheduled_at: datetime | None
