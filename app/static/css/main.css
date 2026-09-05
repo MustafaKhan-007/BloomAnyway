@@ -1433,6 +1433,9 @@ html.is-page-loading { cursor: progress; }
   box-shadow: var(--shadow-card); padding: 28px; margin: 16px 0 40px; }
 .forum-post h1 { margin-top: 0; }
 .forum-body { line-height: 1.6; margin: 16px 0; white-space: normal; }
+.forum-body ul, .forum-body ol { margin: 0 0 12px; padding-left: 1.3em; }
+.forum-body li { margin: 0 0 5px; }
+.forum-body li::marker { color: var(--plum); }
 .forum-actions {
   margin-top: 12px;
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
@@ -1673,11 +1676,14 @@ html.is-page-loading { cursor: progress; }
   list-style: none; margin: 0; padding: 0;
   display: flex; flex-wrap: wrap; gap: 8px;
 }
-.reader-pieces__item { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.reader-pieces__item {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  min-width: 0; max-width: 100%;
+}
 /* Big enough to read at a glance and to hit with a thumb: these are how a
    buyer moves between the video and the worksheet inside a lesson. */
 .reader-pieces__item > a:not(.reader-pieces__notes) {
-  display: flex; align-items: center; gap: 9px;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 2px 9px;
   padding: 11px 16px; border-radius: 14px; text-decoration: none;
   border: 1px solid rgba(61, 20, 49, 0.16); color: var(--ink);
   background: #fff;
@@ -1690,15 +1696,33 @@ html.is-page-loading { cursor: progress; }
 .reader-pieces__kind {
   font-size: 10.5px; font-weight: 800; letter-spacing: 0.06em;
   text-transform: uppercase; color: var(--ink-soft);
+  white-space: nowrap; flex: 0 0 auto;
 }
 .reader-pieces__item.is-active .reader-pieces__kind { color: rgba(255, 248, 243, 0.75); }
-.reader-pieces__name { font-weight: 700; font-size: 15px; }
+/* A filename is one long word to a browser, and a narrow chip used to chop it
+   up to fit. A name with nowhere left to go trails off instead — the kind
+   label beside it already says what the file is. */
+.reader-pieces__name {
+  font-weight: 700; font-size: 15px;
+  flex: 1 1 auto; min-width: 7em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 /* The one being read says so, rather than leaving it to the colour alone. */
 .reader-pieces__open {
   padding: 2px 8px; border-radius: 999px;
   background: rgba(255, 255, 255, 0.22);
   font-size: 10.5px; font-weight: 800; letter-spacing: 0.06em;
-  text-transform: uppercase;
+  text-transform: uppercase; white-space: nowrap; flex: 0 0 auto;
+}
+/* A phone has room for one piece per line and no more: side by side, the
+   name of a file has to be broken to fit, which is how VIDEO became VIDE / O. */
+@media (max-width: 640px) {
+  .reader-pieces__list { flex-direction: column; align-items: stretch; }
+  .reader-pieces__item { flex-wrap: nowrap; }
+  .reader-pieces__item > a:not(.reader-pieces__notes) { flex: 1 1 auto; min-width: 0; }
+  /* The two small labels share the top line and the name has the one under
+     it, whole, instead of the three of them fighting over one line. */
+  .reader-pieces__name { order: 3; flex: 1 1 100%; min-width: 0; }
 }
 /* One fold per lesson: the name and how much is in it stay on show. */
 .reader-lesson {
@@ -1836,6 +1860,9 @@ html.is-page-loading { cursor: progress; }
 .reader__main { min-width: 0; }
 .reader__stage {
   position: relative;
+  /* The page travels here when a file is chosen; a little air above it so it
+     doesn't arrive flush against the top of the screen. */
+  scroll-margin-top: 14px;
   background: #fff;
   border-radius: 18px;
   padding: clamp(16px, 2.4vw, 28px);
@@ -1859,9 +1886,26 @@ html.is-page-loading { cursor: progress; }
 /* Its own card under the reading pane: what somebody wrote for a file is
    worth as much as the file, and inside the pane it went unread. */
 .reader-extracts {
-  margin: 16px 0 0; padding: 14px 18px; scroll-margin-top: 24px;
+  position: relative;
+  margin: 26px 0 0; padding: 14px 18px; scroll-margin-top: 24px;
   border: 1px solid rgba(61, 20, 49, 0.12); border-radius: 14px;
   background: rgba(255, 255, 255, 0.6);
+}
+/* A short lead from the file above down into what was written for it. */
+.reader-extracts::before {
+  content: ""; position: absolute; left: 30px; top: -14px;
+  width: 2px; height: 14px; background: rgba(181, 138, 63, 0.55);
+}
+.reader-extracts__tie {
+  display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 7px;
+  margin: 0 0 12px; padding: 6px 13px; border-radius: 999px;
+  background: var(--gold-soft, rgba(240, 200, 120, 0.22));
+  border: 1px solid rgba(181, 138, 63, 0.4);
+  font-size: 12px; font-weight: 700; color: var(--plum-deep);
+}
+.reader-extracts__file {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-weight: 800; color: var(--ink);
 }
 .reader-doc--note { padding-top: 0; }
 .reader-doc--note h2 {
@@ -1873,12 +1917,22 @@ html.is-page-loading { cursor: progress; }
 }
 .reader-pieces__notes {
   display: inline-flex; align-items: center; gap: 5px;
-  padding: 6px 11px; border-radius: 999px;
+  padding: 6px 11px; border-radius: 999px; white-space: nowrap;
   font-size: 12px; font-weight: 700; text-decoration: none;
   color: var(--plum-deep); background: var(--gold-soft, rgba(240, 200, 120, 0.22));
   border: 1px solid rgba(181, 138, 63, 0.4);
 }
 .reader-pieces__notes:hover { border-color: var(--plum); }
+/* Written for one file, so it is joined onto that file's chip: one shape with
+   a seam down the middle, rather than two chips that happen to be neighbours. */
+.reader-pieces__item.has-notes { gap: 0; align-items: stretch; }
+.reader-pieces__item.has-notes > a:not(.reader-pieces__notes) {
+  border-top-right-radius: 3px; border-bottom-right-radius: 3px;
+}
+.reader-pieces__item.has-notes .reader-pieces__notes {
+  border-top-left-radius: 3px; border-bottom-left-radius: 3px;
+  border-left-color: rgba(61, 20, 49, 0.16);
+}
 .course-reader__pdf-wrap {
   display: flex;
   align-items: center;
@@ -2128,6 +2182,9 @@ html.is-page-loading { cursor: progress; }
   font-family: var(--font-display);
 }
 .reader-doc img { max-width: 100%; height: auto; }
+.reader-doc ul, .reader-doc ol { margin: 0 0 14px; padding-left: 1.3em; }
+.reader-doc li { margin: 0 0 6px; }
+.reader-doc li::marker { color: var(--plum); }
 .reader-doc table { border-collapse: collapse; width: 100%; }
 .reader-doc td, .reader-doc th { border: 1px solid rgba(43, 38, 34, 0.16); padding: 6px 10px; }
 .reader-doc--empty { color: var(--ink-soft); text-align: center; }
@@ -8957,7 +9014,12 @@ a.at-handle:hover { text-decoration: underline; }
     max-width: 100vw;
   }
   body {
-    overflow-wrap: anywhere;
+    /* A word breaks only when the line it is on genuinely cannot hold it.
+       `anywhere` also let every box shrink to a single letter, which is how a
+       row of chips on a phone came out reading VIDE / O. The few things that
+       really do carry unbreakable strings — addresses, links, filenames —
+       ask for `anywhere` themselves. */
+    overflow-wrap: break-word;
   }
   .container,
   .nav,
@@ -9417,6 +9479,9 @@ a.at-handle:hover { text-decoration: underline; }
 .pd-prose { font-size: 1.02rem; line-height: 1.65; color: var(--ink); }
 .pd-prose p { margin: 0 0 12px; }
 .pd-prose p:last-child { margin-bottom: 0; }
+.pd-prose ul, .pd-prose ol { margin: 0 0 12px; padding-left: 1.3em; }
+.pd-prose li { margin: 0 0 5px; }
+.pd-prose li::marker { color: var(--plum); }
 .pd-gallery {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px;
 }

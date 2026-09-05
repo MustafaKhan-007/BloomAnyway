@@ -663,6 +663,31 @@
   setPill();
   syncBookmarkBtn();
 
+  /* ---- Land on the file that was chosen ---- */
+  // Picking a file from a lesson opens it in the pane further down the page,
+  // and the page used to arrive back at the top with the lists again, leaving
+  // the thing that was asked for out of sight below the fold.
+  (function goToChosenFile() {
+    var stage = document.getElementById("reader-stage");
+    if (!stage || window.location.hash) return;
+    try {
+      if (!new URLSearchParams(window.location.search).has("item")) return;
+    } catch (err) {
+      if (window.location.search.indexOf("item=") === -1) return;
+    }
+    var travel = function () {
+      var top = stage.getBoundingClientRect().top;
+      // Already looking at it: an arrival that happens to be in view is left
+      // exactly where it is.
+      if (top > -40 && top < window.innerHeight * 0.4) return;
+      var still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      stage.scrollIntoView({ behavior: still ? "auto" : "smooth", block: "start" });
+    };
+    // After the lists have folded themselves open or shut, or the page moves
+    // out from under the scroll on the way down.
+    window.requestAnimationFrame(function () { window.setTimeout(travel, 60); });
+  })();
+
   if (kind === "pdf") {
     function waitPdf() {
       if (window.pdfjsLib) bootPdf();

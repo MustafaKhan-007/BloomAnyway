@@ -131,20 +131,22 @@
     <ol class="reader-pieces__list">
       {% for piece in list %}
       {% set open_now = asset and piece.id == asset.id %}
-      <li class="reader-pieces__item{{ ' is-active' if open_now }}">
+      <li class="reader-pieces__item{{ ' is-active' if open_now }}{{ ' has-notes' if piece.notes }}">
         <a href="{{ url_for('main.course_reader', purchase_id=purchase.id, module=module or None, item=piece.id) }}"
+           title="{{ piece.display_title() }}"
            {% if open_now %}aria-current="true"{% endif %}>
           <span class="reader-pieces__kind reader-pieces__kind--{{ piece.kind }}">{{ piece.kind_label() }}</span>
           <span class="reader-pieces__name">{{ piece.display_title() }}</span>
           {% if open_now %}<span class="reader-pieces__open">Open</span>{% endif %}
         </a>
-        {# Says how much is written for this file and goes straight to it,
-           rather than leaving it to be found below the file itself. #}
+        {# Joined onto the file rather than sat beside it, so what was written
+           reads as part of that file and not as a piece of its own. #}
         {% if piece.notes %}
         <a class="reader-pieces__notes"
            href="{{ url_for('main.course_reader', purchase_id=purchase.id, module=module or None, item=piece.id) }}#reader-extracts">
           <span aria-hidden="true">&#9998;</span>
           {{ piece.notes|length }} extract{{ '' if piece.notes|length == 1 else 's' }}
+          <span class="sr-only">with {{ piece.display_title() }}</span>
         </a>
         {% endif %}
       </li>
@@ -327,12 +329,19 @@
 
         {# Anything written for this file sits under it in the open, rather
            than folded into a corner of the pane the file is read in, where it
-           was easy to have and never find. #}
+           was easy to have and never find. The tag names the file it belongs
+           to, in the same gold as the one on its chip above, so it is plainly
+           part of that file rather than a piece of writing of its own. #}
         {% if asset.notes %}
         <section class="reader-extracts" id="reader-extracts"
                  aria-labelledby="reader-extracts-title">
-          <p class="reader-pieces__title" id="reader-extracts-title">
-            Written with this {{ asset.kind_label()|lower if asset.kind in ('video', 'audio', 'image') else 'file' }}
+          <p class="reader-extracts__tie" id="reader-extracts-title">
+            <span aria-hidden="true">&#9998;</span>
+            Written with
+            <span class="reader-extracts__file">
+              <span class="reader-pieces__kind">{{ asset.kind_label() }}</span>
+              {{ asset.display_title() }}
+            </span>
           </p>
           {% for note in asset.notes %}
           <article class="reader-doc reader-doc--written reader-doc--note"

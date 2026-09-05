@@ -1125,17 +1125,18 @@ def course_reader(purchase_id):
         if asset is None and not any(m["contents"] for m in modules):
             asset = reader_svc.primary_asset(product)
         active_module = 0
-    # A deck uploaded before decks were drawn into pages is still a .pptx the
-    # reader can only offer as a download. Draw it the first time somebody
-    # opens it, so it reads like every other document from then on.
+    # A deck or a document uploaded before office files were drawn into pages
+    # is still one the reader can only offer as a download. Draw it the first
+    # time somebody opens it, so it reads like every other document from then
+    # on.
     if asset is not None:
         from ..services import assets as asset_svc
         try:
-            if asset_svc.redraw_deck(asset):
+            if asset_svc.redraw(asset):
                 db.session.commit()
         except Exception:
             db.session.rollback()
-            log.exception("reader: could not draw the deck %s", asset.id)
+            log.exception("reader: could not draw the file %s", asset.id)
     progress = reader_svc.get_progress(current_user.id, purchase.id)
     bookmarks = progress.bookmarks() if progress else []
     resuming = progress is not None and (progress.module_index or 0) == active_module
