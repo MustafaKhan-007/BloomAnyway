@@ -4022,6 +4022,45 @@ r = wrap_client.get("/support-groups?purchased=1", follow_redirects=True)
 ok("And does say it plainly once there's nothing left waiting",
    "You\u2019re booked" in r.get_data(as_text=True), flashes(r))
 
+# Daily can refuse the room after the money has gone through. Both of them
+# need to hear about that: her, that the payment landed, and Studio, that
+# there's an hour sitting there unmade.
+with app.app_context():
+    from app.services import daily as _daily
+    _orig_create_room = _daily.create_room
+
+    def _daily_down(**_kw):
+        raise _daily.DailyError("Daily.co is having a moment")
+
+    _daily.create_room = _daily_down
+    _unmade = _CI(user_id=_buyer_id, coach="saman", answers_json="{}",
+                  scheduled_at=utcnow() + timedelta(days=6),
+                  status="pending_payment")
+    db.session.add(_unmade)
+    db.session.commit()
+    _unmade_id = _unmade.id
+    _owner_notes_before = Notification.query.filter_by(
+        kind="support_group_alert").count()
+    _err = intake_svc.fulfill_intake(_unmade_id)
+    _daily.create_room = _orig_create_room
+    ok("A room Daily won't make leaves the booking paid, not lost",
+       _err is not None and db.session.get(_CI, _unmade_id).status == "paid")
+    _hers = (Notification.query
+             .filter_by(user_id=_buyer_id, kind="support_group")
+             .order_by(Notification.id.desc()).first())
+    ok("She's told the payment landed rather than left guessing",
+       _hers is not None and "Payment received" in (_hers.body or ""),
+       _hers.body if _hers else "no notification")
+    _alert = (Notification.query.filter_by(kind="support_group_alert")
+              .order_by(Notification.id.desc()).first())
+    ok("And Studio is told there's an hour to finish",
+       Notification.query.filter_by(kind="support_group_alert").count()
+       > _owner_notes_before
+       and "room isn't made yet" in (_alert.body or ""),
+       _alert.body if _alert else "no alert")
+    db.session.get(_CI, _unmade_id).status = "cancelled"
+    db.session.commit()
+
 # --- the room is the coach's, not the Studio account's ------------------------
 with app.app_context():
     _ooo = db.session.get(SupportGroupMeeting, _ooo_mid)

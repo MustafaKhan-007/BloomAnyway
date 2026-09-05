@@ -573,6 +573,14 @@ def _meeting_room_url(meeting: SupportGroupMeeting) -> str:
         return f"/support-groups/meetings/{meeting.id}/room"
 
 
+def _studio_sessions_url() -> str:
+    """Where Studio finishes a session, reachable off a request too."""
+    try:
+        return url_for("admin.support_groups")
+    except RuntimeError:
+        return "/admin/support-groups"
+
+
 def _circle_browse_url(circle_id: int | None) -> str:
     try:
         base = url_for("main.support_groups_page")
@@ -1537,6 +1545,21 @@ def notify_paid_one_on_one_pending(
             url=browse,
         )
         _send_booked_email(meeting, user)
+    # Somebody has paid for an hour that doesn't exist yet, and only Studio can
+    # finish it. Waiting for the owner to happen to look is how that hour
+    # arrives with nothing behind it.
+    try:
+        from .social_graph import notify_owners
+
+        who = users[0].public_name() if users else "A member"
+        notify_owners(
+            kind="support_group_alert",
+            body=(f"{who} paid for {group}, but the room isn't made yet — "
+                  "confirm it from Support groups.")[:300],
+            url=_studio_sessions_url(),
+        )
+    except Exception:
+        log.exception("Could not alert owners about unmade 1:1 %s", meeting.id)
     if users:
         db.session.commit()
 
