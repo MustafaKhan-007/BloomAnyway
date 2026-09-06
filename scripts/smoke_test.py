@@ -7319,7 +7319,7 @@ try:
             perk="3 months of Creator membership")
     ok("A receipt says what membership came with the purchase",
        "3 months of Creator membership" in _carried["text"]
-       and "already on your account" in _carried["text"]
+       and "find it on your account" in _carried["text"]
        and _carried["params"].get("MEMBERSHIP_INCLUDED")
        == "3 months of Creator membership",
        f"got {_carried}")
@@ -7328,7 +7328,7 @@ try:
             "buyer@example.com", order_id="R-3", product_name="Plain Guide",
             amount="$20", order_date="Sep 02, 2026")
     ok("And says nothing about one when there isn't one",
-       "already on your account" not in _carried["text"]
+       "find it on your account" not in _carried["text"]
        and not _carried["params"].get("MEMBERSHIP_INCLUDED"))
     # A product's name is rarely enough to remind somebody in a month what
     # they bought, so the owner writes the line the receipt uses.
@@ -7395,7 +7395,7 @@ try:
        and "/account" in _hello["params"].get("LIBRARY_URL", "")
        and _hello["params"].get("MEMBERSHIP_INCLUDED")
        == "2 months of Creator membership"
-       and "already on your account" in _hello["text"],
+       and "find it on your account" in _hello["text"],
        f"got {_hello['params']}")
 
     with app.app_context():

@@ -542,9 +542,11 @@ def send_order_receipt(
         if attached else ""
     )
     included = (perk or "").strip()
+    # Written to hold for a perk that starts later as well as one that is on
+    # the account the moment they pay: the offer itself says which it is.
     membership = (
-        f"\n\nThis one comes with {included}, already on your account — "
-        "sign in with this address and it's there."
+        f"\n\nThis one comes with {included} — sign in with this address and "
+        "you'll find it on your account."
         if included else ""
     )
     blurb = " ".join((description or "").split())
@@ -610,8 +612,8 @@ def send_challenge_welcome(
         + (f"{blurb}\n\n" if blurb else "")
         + "Everything you've bought sits in your library, and it's the first "
         "place to go: " + library_url + "\n\n"
-        + (f"It comes with {included}, already on your account — sign in with "
-           "this address and it's there.\n\n" if included else "")
+        + (f"It comes with {included} — sign in with this address and you'll "
+           "find it on your account.\n\n" if included else "")
         + "What the two months look like: " + challenge_url + "\n\n"
         "Your receipt is on its way separately.\n\n"
         "— Bloom Anyway"
