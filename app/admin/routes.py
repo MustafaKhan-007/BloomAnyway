@@ -441,7 +441,11 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
     """
     from ..services.catalog import slugify_title, unique_product_slug
     # Dates on this form are typed on the owner's own calendar and stored UTC.
-    from ..services.timefmt import parse_owner_parts
+    # One calendar for the whole form: the clock her settings keep, which is
+    # also the one the dates were drawn in when the page rendered.
+    from ..services.timefmt import account_timezone, parse_owner_parts
+
+    owner_tz = account_timezone(current_user)
 
     title = (form.get("title") or "").strip()[:160]
     if title:
@@ -518,7 +522,7 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
         release = parse_owner_parts(
             (form.get(f"mod{i}_release_date") or "").strip(),
             (form.get(f"mod{i}_release_time") or "").strip() or "09:00",
-            getattr(current_user, "timezone", None),
+            owner_tz,
         ) if (form.get(f"mod{i}_release_date") or "").strip() else None
         curriculum_rows.append({
             "title": t[:160],
@@ -551,12 +555,11 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
         product.drip_interval_days = 7
     mode = (form.get("drip_mode") or "").strip().lower()
     product.drip_mode = mode if mode in DRIP_MODES else "interval"
-    tz_name = getattr(current_user, "timezone", None)
     starts_date = (form.get("drip_starts_date") or "").strip()
     if starts_date:
         product.drip_starts_at = parse_owner_parts(
             starts_date,
-            (form.get("drip_starts_time") or "").strip() or "09:00", tz_name)
+            (form.get("drip_starts_time") or "").strip() or "09:00", owner_tz)
         if product.drip_starts_at is None:
             flash("That release date didn't look right, so the modules will "
                   "open from each buyer's own start instead.", "info")
@@ -567,7 +570,7 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
     if shelf_date:
         product.off_shelf_at = parse_owner_parts(
             shelf_date,
-            (form.get("off_shelf_time") or "").strip() or "23:59", tz_name)
+            (form.get("off_shelf_time") or "").strip() or "23:59", owner_tz)
         if product.off_shelf_at is None:
             flash("That last-day-on-sale date didn't look right, so this is "
                   "still on sale.", "info")
@@ -581,9 +584,43 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
         perk_months = max(0, min(60, int((form.get("perk_months") or "0").strip() or 0)))
     except ValueError:
         perk_months = 0
-    if product.perk_membership_tier and perk_months < 1:
+
+    # A perk runs either for a length or to a day. The day is the one the owner
+    # picked deliberately, so it wins, and the months stay written down for
+    # whenever the date is taken off again.
+    perk_start = (form.get("perk_starts_date") or "").strip()
+    if form.get("perk_start_on_buy") or not perk_start:
+        product.perk_starts_at = None
+    else:
+        product.perk_starts_at = parse_owner_parts(
+            perk_start,
+            (form.get("perk_starts_time") or "").strip() or "09:00", owner_tz)
+        if product.perk_starts_at is None:
+            flash("That membership start date didn't look right, so it starts "
+                  "when they buy.", "info")
+
+    perk_end = (form.get("perk_ends_date") or "").strip()
+    if perk_end:
+        product.perk_ends_at = parse_owner_parts(
+            perk_end,
+            (form.get("perk_ends_time") or "").strip() or "23:59", owner_tz)
+        if product.perk_ends_at is None:
+            flash("That membership end date didn't look right, so the months "
+                  "above are what buyers get.", "info")
+    else:
+        product.perk_ends_at = None
+
+    if (product.perk_ends_at is not None and product.perk_starts_at is not None
+            and product.perk_ends_at <= product.perk_starts_at):
+        product.perk_ends_at = None
+        flash("The membership can't end before it starts, so that end date "
+              "was left off.", "info")
+    if product.perk_membership_tier and perk_months < 1 and product.perk_ends_at is None:
         perk_months = 1
     product.perk_membership_months = perk_months if product.perk_membership_tier else 0
+    if not product.perk_membership_tier:
+        product.perk_starts_at = None
+        product.perk_ends_at = None
 
     product.stripe_price_id = (form.get("stripe") or "").strip() or None
     price = _parse_price_cents(form.get("price"))
@@ -603,7 +640,7 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
     if reverts_date:
         product.price_reverts_at = parse_owner_parts(
             reverts_date,
-            (form.get("price_reverts_time") or "").strip() or "23:59", tz_name)
+            (form.get("price_reverts_time") or "").strip() or "23:59", owner_tz)
         if product.price_reverts_at is None:
             flash("That date for the price going back up didn't look right, so "
                   "the page won't mention one.", "info")
@@ -625,7 +662,7 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
         product.promo_ends_at = parse_owner_parts(
             ends_date,
             (form.get("promo_ends_time") or "").strip() or "23:59",
-            getattr(current_user, "timezone", None),
+            owner_tz,
         ) if ends_date else None
         if ends_date and product.promo_ends_at is None:
             flash("That promo end date didn't look right, so the sale was left "

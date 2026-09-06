@@ -6,7 +6,7 @@ time now, and sessions that ran before this stamp existed are left alone
 rather than guessed at.
 
 Revision ID: zg4n5o6p7q8
-Revises: ze2l3m4n5o6
+Revises: zf3m4n5o6p7
 Create Date: 2026-09-06
 
 """
@@ -14,7 +14,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "zg4n5o6p7q8"
-down_revision = "ze2l3m4n5o6"
+down_revision = "zf3m4n5o6p7"
 branch_labels = None
 depends_on = None
 

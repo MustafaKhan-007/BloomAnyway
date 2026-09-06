@@ -1254,6 +1254,13 @@ ok("The catalogue tile shows the sale price over the old one",
    "lib-card__price--promo" in _tile and "<s>$24</s>" in _tile)
 ok("With the saving and the code on the card",
    "lib-card__promo" in _tile and "SPRING25" in _tile and "$6 off" in _tile)
+# A sale price used to be the whole of the card's bottom row, leaving the one
+# product somebody is most likely to want with no way through to it.
+_sale_card = _tile.split("lib-card__price--promo", 1)[-1].split("</article>", 1)[0]
+ok("And a way in, same as every other card",
+   "/courses/rebuild-your-week" in _sale_card
+   and "lib-card__btn--primary" in _sale_card
+   and "View" in _sale_card, _sale_card[-400:])
 
 # Half a promo is no promo, and one that doesn't save anything isn't a sale.
 for _bad, _why in (({"promo_price": "18.00", "promo_code": ""}, "no code"),
@@ -5825,6 +5832,128 @@ with app.app_context():
     ok("Told once, not once per webhook",
        _Note.query.filter_by(user_id=dripper.id, kind="membership").count() == 1)
 
+# --- a perk that runs to a date, instead of for a number of months ------------
+# "Three months from when they buy" is one way to give membership away. "Until
+# the season closes" is the other, and now the owner picks which.
+_season_close = utcnow().replace(microsecond=0) + timedelta(days=45)
+r = admin.post("/admin/products/new", data={
+    "title": "Season Pass", "track": "building", "type": "course",
+    "price": "59.00", "promise": "One season, everything in it.",
+    "stripe": "price_season_pass", "live": "1",
+    "perk_tier": "creator", "perk_months": "3", "perk_start_on_buy": "1",
+    "perk_ends_date": _season_close.strftime("%Y-%m-%d"),
+    "perk_ends_time": "23:59",
+}, follow_redirects=True)
+with app.app_context():
+    from app.services.timefmt import format_local as _fmt_local
+    _season = Product.query.filter_by(slug="season-pass").first()
+    ok("Studio saves a perk that ends on a day of the owner's choosing",
+       r.status_code == 200 and _season is not None
+       and _season.perk_ends_at is not None and _season.perk_starts_at is None
+       and _season.has_perk())
+    _season_id, _closes_at = _season.id, _season.perk_ends_at
+    _closes = _fmt_local(_closes_at, "%b %d, %Y")
+    ok("And reads as a date where it used to read as a length",
+       _season.perk_summary() == f"Creator membership, free until {_closes}",
+       _season.perk_summary())
+    _early = _season.perk_window(utcnow() - timedelta(days=200))
+    _late = _season.perk_window(utcnow())
+    ok("Everybody's runs out together, however long ago they bought",
+       _early[1] == _late[1] == _closes_at
+       and _early[0] < _late[0], f"{_early} vs {_late}")
+ok("The product page says what they get and until when",
+   f"Creator membership, free until {_closes}"
+   in client.get("/courses/season-pass").get_data(as_text=True))
+
+with app.app_context():
+    _sb = User(email="seasonal@example.com", email_verified_at=utcnow())
+    _sb.set_password(USER_PW)
+    db.session.add(_sb)
+    db.session.commit()
+_season_pay = _payment_payload("9105", "seasonal@example.com",
+                               "price_season_pass", amount=5900,
+                               product_name="Season Pass")
+client.post("/webhooks/stripe", data=_season_pay,
+            headers=_stripe_headers(_season_pay))
+with app.app_context():
+    from app.services.perks import perk_state as _pstate
+    _sb = User.query.filter_by(email="seasonal@example.com").first()
+    ok("Buying it hands over the membership until that day, not for three months",
+       _sb.membership == "creator" and _pstate(_sb)["until"] == _closes_at,
+       f"{_sb.membership} until {_pstate(_sb)['until']}")
+
+# The other half of it: a perk bought now that doesn't open until later.
+_season_opens = utcnow().replace(microsecond=0) + timedelta(days=10)
+with app.app_context():
+    _sp = db.session.get(Product, _season_id)
+    _sp.perk_starts_at = _season_opens
+    db.session.commit()
+    _waiter = User(email="waiting@example.com", email_verified_at=utcnow())
+    _waiter.set_password(USER_PW)
+    db.session.add(_waiter)
+    db.session.commit()
+_wait_pay = _payment_payload("9106", "waiting@example.com", "price_season_pass",
+                             amount=5900, product_name="Season Pass")
+client.post("/webhooks/stripe", data=_wait_pay, headers=_stripe_headers(_wait_pay))
+with app.app_context():
+    _w = User.query.filter_by(email="waiting@example.com").first()
+    ok("A perk with a start date doesn't land until the day it opens",
+       _w.membership == "none" and _pstate(_w)["starts"] == _season_opens,
+       f"{_w.membership} starts {_pstate(_w)['starts']}")
+_wait_client = app.test_client()
+_wait_client.post("/login", data={"email": "waiting@example.com",
+                                  "password": USER_PW})
+ok("And My space says when it opens, rather than nothing at all",
+   f"it opens on {_fmt_local(_season_opens, '%b %d, %Y')}"
+   in _wait_client.get("/account").get_data(as_text=True))
+with app.app_context():
+    from app.services.memberships import reconcile_user as _reconcile
+    _sp = db.session.get(Product, _season_id)
+    _sp.perk_starts_at = utcnow() - timedelta(minutes=1)
+    db.session.commit()
+    _w = User.query.filter_by(email="waiting@example.com").first()
+    _reconcile(_w)
+    db.session.commit()
+    ok("Then lands on its own once the day comes, with nobody buying again",
+       _w.membership == "creator")
+    _sp.perk_ends_at = utcnow() - timedelta(minutes=1)
+    db.session.commit()
+    _reconcile(_w)
+    db.session.commit()
+    ok("And goes again on the day it ends",
+       _w.membership == "none" and db.session.get(Product, _season_id).perk_ended())
+
+_season_fields = {
+    "title": "Season Pass", "track": "building", "type": "course",
+    "slug": "season-pass", "price": "59.00",
+    "promise": "One season, everything in it.",
+    "stripe": "price_season_pass", "live": "1",
+    "perk_tier": "creator", "perk_months": "3",
+}
+r = admin.post(f"/admin/products/{_season_id}/edit", data=dict(
+    _season_fields,
+    perk_starts_date=(utcnow() + timedelta(days=30)).strftime("%Y-%m-%d"),
+    perk_ends_date=(utcnow() + timedelta(days=5)).strftime("%Y-%m-%d"),
+), follow_redirects=True)
+with app.app_context():
+    _sp = db.session.get(Product, _season_id)
+    ok("A membership that ends before it starts is turned down",
+       "end before it starts" in r.get_data(as_text=True)
+       and _sp.perk_ends_at is None and _sp.perk_starts_at is not None)
+    ok("And what's left is the months, from the day it opens",
+       _sp.perk_months() == 3
+       and _sp.perk_summary().startswith("3 months of Creator membership, free from"),
+       _sp.perk_summary())
+r = admin.post(f"/admin/products/{_season_id}/edit",
+               data=dict(_season_fields, perk_start_on_buy="1"),
+               follow_redirects=True)
+with app.app_context():
+    _sp = db.session.get(Product, _season_id)
+    ok("Handing the dates back leaves the months as they always were",
+       _sp.perk_starts_at is None and _sp.perk_ends_at is None
+       and _sp.perk_summary() == "3 months of Creator membership, free",
+       _sp.perk_summary())
+
 drip_client = app.test_client()
 drip_client.post("/login", data={"email": "dripper@example.com", "password": USER_PW})
 r = drip_client.get(f"/account/courses/{drip_purchase_id}")
@@ -7366,7 +7495,7 @@ try:
             perk="3 months of Creator membership")
     ok("A receipt says what membership came with the purchase",
        "3 months of Creator membership" in _carried["text"]
-       and "already on your account" in _carried["text"]
+       and "find it on your account" in _carried["text"]
        and _carried["params"].get("MEMBERSHIP_INCLUDED")
        == "3 months of Creator membership",
        f"got {_carried}")
@@ -7375,7 +7504,7 @@ try:
             "buyer@example.com", order_id="R-3", product_name="Plain Guide",
             amount="$20", order_date="Sep 02, 2026")
     ok("And says nothing about one when there isn't one",
-       "already on your account" not in _carried["text"]
+       "find it on your account" not in _carried["text"]
        and not _carried["params"].get("MEMBERSHIP_INCLUDED"))
     # A product's name is rarely enough to remind somebody in a month what
     # they bought, so the owner writes the line the receipt uses.
@@ -7442,7 +7571,7 @@ try:
        and "/account" in _hello["params"].get("LIBRARY_URL", "")
        and _hello["params"].get("MEMBERSHIP_INCLUDED")
        == "2 months of Creator membership"
-       and "already on your account" in _hello["text"],
+       and "find it on your account" in _hello["text"],
        f"got {_hello['params']}")
 
     with app.app_context():

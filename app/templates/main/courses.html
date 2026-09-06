@@ -51,19 +51,13 @@
         </ul>
       </div>
     </div>
+    {# What it costs changes with the card; the way in never does. A price on
+       its own is a dead end, and a sale price is the last one to leave there. #}
     <div class="lib-card__actions">
       {% if owned_purchase_id %}
       <span class="lib-card__price">Purchased</span>
-      <a class="btn lib-card__btn lib-card__btn--primary lib-card__btn--{{ lane }}"
-         href="{{ url_for('main.course_reader', purchase_id=owned_purchase_id) }}">
-        Open &amp; read
-      </a>
       {% elif product.is_off_shelf() %}
       <span class="lib-card__price lib-card__price--shelved">No longer sold</span>
-      <a class="btn lib-card__btn lib-card__btn--ghost"
-         href="{{ url_for('main.course_detail', slug=product.slug) }}">
-        Have a look
-      </a>
       {% elif product.has_promo() %}
       <span class="lib-card__price lib-card__price--promo">
         <strong>{{ product.promo_display() }}</strong>
@@ -71,6 +65,18 @@
       </span>
       {% else %}
       <span class="lib-card__price">{{ product.price_display() or '—' }}</span>
+      {% endif %}
+      {% if owned_purchase_id %}
+      <a class="btn lib-card__btn lib-card__btn--primary lib-card__btn--{{ lane }}"
+         href="{{ url_for('main.course_reader', purchase_id=owned_purchase_id) }}">
+        Open &amp; read
+      </a>
+      {% elif product.is_off_shelf() %}
+      <a class="btn lib-card__btn lib-card__btn--ghost"
+         href="{{ url_for('main.course_detail', slug=product.slug) }}">
+        Have a look
+      </a>
+      {% else %}
       <a class="btn lib-card__btn lib-card__btn--primary lib-card__btn--{{ lane }}"
          href="{{ url_for('main.course_detail', slug=product.slug) }}">
         View

@@ -1399,8 +1399,7 @@ def handle_payment_event(event_type: str, data: dict) -> Order | None:
                 amount=order.total_display(),
                 order_date=order_date,
                 attachments=came_with,
-                perk=(product.perk_summary().replace(", free", "")
-                      if product is not None and product.has_perk() else ""),
+                perk=(product.perk_offer() if product is not None else ""),
                 description=(product.receipt_blurb()
                              if product is not None else ""),
             )

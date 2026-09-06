@@ -937,6 +937,18 @@
     sync();
   })();
 
+  /* ---- when a product's free membership starts ----
+     A perk that begins at the counter has no date to pick, so the calendar
+     only appears once the owner says otherwise. */
+  (function () {
+    var buy = document.querySelector("[data-perk-buy]");
+    var when = document.querySelector("[data-perk-start]");
+    if (!buy || !when) return;
+    function sync() { when.hidden = buy.checked; }
+    buy.addEventListener("change", sync);
+    sync();
+  })();
+
   /* ---- extracts written for one particular file ----
      These hang off a saved file rather than a module, so they also appear
      among the loose files outside the module list. Wired from the document
