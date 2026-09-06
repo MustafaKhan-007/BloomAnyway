@@ -81,8 +81,8 @@
         {% if next_locked %}
         <p class="reader-modules__note">
           Module {{ next_locked.number }} unlocks
-          {{ next_locked.unlock_at|when('%b %d, %Y at %I:%M %p') }} your time
-          ({{ next_locked.days_away }} day{{ '' if next_locked.days_away == 1 else 's' }} away).
+          {{ next_locked.unlock_at|when('%b %d, %Y at %I:%M %p') }} your time.
+          {{ countdown(next_locked.unlock_at, zero='Open now — refresh to read it') }}
         </p>
         {% elif reads_whole %}
         <p class="reader-modules__note">
@@ -221,6 +221,7 @@
         This course is released a piece at a time. Module {{ next_locked.number }} opens
         {{ next_locked.unlock_at|when('%b %d, %Y at %I:%M %p') }} your time
         — it will be waiting here for you.
+        {{ countdown(next_locked.unlock_at, zero='It is open now', refresh=true) }}
       </p>
       {% else %}
       <h2>Content coming soon</h2>

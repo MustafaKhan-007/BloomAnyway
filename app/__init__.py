@@ -1,6 +1,6 @@
 """Bloom Anyway — app factory."""
 import logging
-from datetime import date
+from datetime import date, datetime, timezone
 
 from dotenv import load_dotenv
 
@@ -224,12 +224,15 @@ def create_app(config_class=None):
     )
     app.jinja_env.filters["mentions"] = linkify_mentions
 
-    from .services.timefmt import (format_local, has_account_timezone,
-                                   local_tag, viewer_timezone)
+    from .services.timefmt import (countdown_tag, format_local,
+                                   has_account_timezone, local_tag,
+                                   viewer_timezone)
     app.jinja_env.filters["localtime"] = format_local
     # Same wording as ``localtime``, wrapped so a browser on another clock can
     # put it right in place. Not for use inside an attribute.
     app.jinja_env.filters["when"] = local_tag
+    # A date says when; this says how long there is, and keeps saying it.
+    app.jinja_env.globals["countdown"] = countdown_tag
 
     from .services import badges as badges_service
     from .services.support_groups import meeting_display_title
@@ -280,6 +283,9 @@ def create_app(config_class=None):
                 # the page should be redrawn against the device they opened
                 # it on. Only a visitor we know nothing about is guessed at.
                 "viewer_tz_settled": tz_settled,
+                # The hour this page was built, so a countdown on it runs off
+                # our clock rather than a device that is set wrong.
+                "server_now_ms": int(datetime.now(timezone.utc).timestamp() * 1000),
                 "current_year": date.today().year,
                 "unread_notes": unread,
                 "nav_notifications": nav_notes,

@@ -154,6 +154,69 @@ def local_tag(dt, fmt: str = DEFAULT_FMT, tz_name: str | None = None) -> Markup:
         f'{escape(format_local(dt, fmt, tz_name))}</time>')
 
 
+# --- counting down to a moment that is still ahead ------------------------
+
+def time_left_words(dt: datetime | None, now: datetime | None = None) -> str:
+    """How long is left before a moment, said the way a person would say it.
+
+    A fortnight off, the minutes are noise, so it reads in days. Inside a day
+    it turns into a clock, because that is when somebody weighing up a sale
+    wants the seconds. Once the moment has passed there is nothing left to
+    count and this is empty — whoever asked says what happens instead.
+    """
+    if not isinstance(dt, datetime):
+        return ""
+    aware = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    at = now or datetime.now(timezone.utc)
+    if at.tzinfo is None:
+        at = at.replace(tzinfo=timezone.utc)
+    left = int((aware - at).total_seconds())
+    if left <= 0:
+        return ""
+    days, rest = divmod(left, 86400)
+    hours, rest = divmod(rest, 3600)
+    minutes, seconds = divmod(rest, 60)
+    if days >= 7:
+        return f"{days} days left"
+    if days >= 1:
+        day_word = "1 day" if days == 1 else f"{days} days"
+        if not hours:
+            return f"{day_word} left"
+        hour_word = "1 hour" if hours == 1 else f"{hours} hours"
+        return f"{day_word}, {hour_word} left"
+    if hours:
+        return f"{hours}:{minutes:02d}:{seconds:02d} left"
+    return f"{minutes}:{seconds:02d} left"
+
+
+def countdown_tag(dt, zero: str = "", refresh: bool = False) -> Markup:
+    """Time left that keeps going down for as long as the page is open.
+
+    The words are written here first, so the page reads right the instant it
+    arrives and stays readable with no JavaScript at all; the browser only
+    keeps them moving from there. ``zero`` is what it says when the moment
+    lands, and ``refresh`` asks for the page to be fetched again a moment
+    later — for the spots where that same moment changes the price beside it
+    or takes the buy button away.
+    """
+    if not isinstance(dt, datetime):
+        return Markup("")
+    aware = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    words = time_left_words(aware)
+    # A moment already behind us has no countdown to show: the page around it
+    # is drawn for after, and ``zero`` is only for the one that lands while
+    # somebody is looking at the page.
+    if not words:
+        return Markup("")
+    stamp = aware.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    bits = ['class="countdown"', f'data-countdown="{stamp}"']
+    if zero:
+        bits.append(f'data-countdown-zero="{escape(zero)}"')
+    if refresh:
+        bits.append('data-countdown-refresh="1"')
+    return Markup(f'<span {" ".join(bits)}>{escape(words)}</span>')
+
+
 def local_now(tz_name: str | None = None) -> datetime:
     """Right now, in the viewer's timezone."""
     tz = ZoneInfo(normalize_timezone(tz_name) or viewer_timezone())
