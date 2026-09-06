@@ -581,9 +581,43 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
         perk_months = max(0, min(60, int((form.get("perk_months") or "0").strip() or 0)))
     except ValueError:
         perk_months = 0
-    if product.perk_membership_tier and perk_months < 1:
+
+    # A perk runs either for a length or to a day. The day is the one the owner
+    # picked deliberately, so it wins, and the months stay written down for
+    # whenever the date is taken off again.
+    perk_start = (form.get("perk_starts_date") or "").strip()
+    if form.get("perk_start_on_buy") or not perk_start:
+        product.perk_starts_at = None
+    else:
+        product.perk_starts_at = parse_owner_parts(
+            perk_start,
+            (form.get("perk_starts_time") or "").strip() or "09:00", tz_name)
+        if product.perk_starts_at is None:
+            flash("That membership start date didn't look right, so it starts "
+                  "when they buy.", "info")
+
+    perk_end = (form.get("perk_ends_date") or "").strip()
+    if perk_end:
+        product.perk_ends_at = parse_owner_parts(
+            perk_end,
+            (form.get("perk_ends_time") or "").strip() or "23:59", tz_name)
+        if product.perk_ends_at is None:
+            flash("That membership end date didn't look right, so the months "
+                  "above are what buyers get.", "info")
+    else:
+        product.perk_ends_at = None
+
+    if (product.perk_ends_at is not None and product.perk_starts_at is not None
+            and product.perk_ends_at <= product.perk_starts_at):
+        product.perk_ends_at = None
+        flash("The membership can't end before it starts, so that end date "
+              "was left off.", "info")
+    if product.perk_membership_tier and perk_months < 1 and product.perk_ends_at is None:
         perk_months = 1
     product.perk_membership_months = perk_months if product.perk_membership_tier else 0
+    if not product.perk_membership_tier:
+        product.perk_starts_at = None
+        product.perk_ends_at = None
 
     product.stripe_price_id = (form.get("stripe") or "").strip() or None
     price = _parse_price_cents(form.get("price"))

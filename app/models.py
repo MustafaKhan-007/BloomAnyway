@@ -493,6 +493,12 @@ class Product(db.Model):
     # ``perk_membership_months`` months.
     perk_membership_tier = db.Column(db.String(20))
     perk_membership_months = db.Column(db.Integer, nullable=False, default=0)
+    #: A perk can run to a date instead of for a length. ``perk_ends_at`` stops
+    #: it for everybody at once, whenever they bought; ``perk_starts_at`` holds
+    #: it back until the day it opens. Empty start means it begins at the
+    #: counter, which is how every perk worked before there were dates.
+    perk_starts_at = db.Column(db.DateTime)
+    perk_ends_at = db.Column(db.DateTime)
 
     # hidden recommendation tags (never shown to customers)
     tags_json = db.Column(db.Text)
@@ -880,16 +886,60 @@ class Product(db.Model):
         return max(0, min(60, months))
 
     def has_perk(self) -> bool:
-        return bool(self.perk_tier()) and self.perk_months() > 0
+        """Whether buying this hands out free membership — for a length or to a day."""
+        return bool(self.perk_tier()) and (self.perk_months() > 0
+                                           or self.perk_ends_at is not None)
 
-    def perk_summary(self) -> str:
-        """e.g. "3 months of Creator membership, free" (empty when unset)."""
+    def perk_window(self, bought_at: datetime | None = None):
+        """When the free membership runs for somebody who bought at ``bought_at``.
+
+        Nothing set means it starts at the counter and lasts its months. A
+        start date holds it until the day it opens, and buying after that day
+        starts it there and then. An end date stops everybody together,
+        however long each of them has had it.
+        """
+        if not self.has_perk():
+            return (None, None)
+        from .services.perks import add_months
+
+        bought = bought_at or utcnow()
+        start = bought
+        if self.perk_starts_at is not None and self.perk_starts_at > bought:
+            start = self.perk_starts_at
+        if self.perk_ends_at is not None:
+            return (start, self.perk_ends_at)
+        return (start, add_months(start, self.perk_months()))
+
+    def perk_ended(self, now: datetime | None = None) -> bool:
+        """Whether a perk with an end date has already been and gone."""
+        return bool(self.perk_ends_at is not None
+                    and self.perk_ends_at <= (now or utcnow()))
+
+    def perk_offer(self) -> str:
+        """The free membership, as it reads on a page: "3 months of Creator"."""
         if not self.has_perk():
             return ""
-        months = self.perk_months()
+        from .services.timefmt import format_local
+
         label = MEMBERSHIP_LABELS.get(self.perk_tier(), self.perk_tier())
-        unit = "month" if months == 1 else "months"
-        return f"{months} {unit} of {label} membership, free"
+        opens = (format_local(self.perk_starts_at, "%b %d, %Y")
+                 if self.perk_starts_at is not None else "")
+        if self.perk_ends_at is None:
+            months = self.perk_months()
+            length = f"{months} month{'' if months == 1 else 's'} of {label} membership"
+            return f"{length} from {opens}" if opens else length
+        closes = format_local(self.perk_ends_at, "%b %d, %Y")
+        if opens:
+            return f"{label} membership from {opens} to {closes}"
+        return f"{label} membership until {closes}"
+
+    def perk_summary(self) -> str:
+        """The offer with the price on it: "3 months of Creator membership, free"."""
+        offer = self.perk_offer()
+        if not offer:
+            return ""
+        before, sep, after = offer.partition(" membership")
+        return f"{before}{sep}, free{after}"
 
     def receipt_blurb(self) -> str:
         """The line about this product for its receipt email.

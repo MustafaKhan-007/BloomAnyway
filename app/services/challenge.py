@@ -94,8 +94,7 @@ def send_welcome(email: str, *, product: Product | None = None,
             product_name=title,
             order_id=getattr(order, "ls_order_id", "") or "",
             order_date=when.strftime("%b %d, %Y") if when else "",
-            perk=(product.perk_summary().replace(", free", "")
-                  if product is not None and product.has_perk() else ""),
+            perk=(product.perk_offer() if product is not None else ""),
             description=(product.receipt_blurb() if product is not None else ""),
         )
     except Exception:
