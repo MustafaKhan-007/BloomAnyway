@@ -41,7 +41,6 @@
           <form method="post" action="{{ url_for('admin.support_groups_schedule', meeting_id=meeting.id) }}"
                 class="stack-form sg-schedule" style="margin-bottom: 16px;">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="timezone" value="{{ owner_tz }}">
             <p class="sg-intake__section" style="margin-top:0;">Session time ({{ owner_tz }})</p>
             <div class="sg-schedule__when-row">
               <div class="sg-schedule__part">
@@ -119,7 +118,6 @@
     <form method="post" action="{{ url_for('admin.support_groups_form') }}" class="stack-form sg-schedule"
           style="margin-top: 12px; max-width: 520px;">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="timezone" value="{{ owner_tz }}">
       <div class="field">
         <label for="sg-kind">Session type</label>
         <select id="sg-kind" name="kind" required>
@@ -168,8 +166,10 @@
     <p class="field-help" style="margin-top: 6px;">
       Set a whole week at once: pick whose it is, then tick every hour they're
       free across all seven days and save. Ticking is adding and unticking is
-      removing — what you see here is what members can book. Times are in the
-      coach's own timezone and convert to each member's automatically.
+      removing — what you see here is what members can book. Hours are on your
+      own clock (<strong>{{ owner_tz }}</strong>, from
+      <a href="{{ url_for('main.settings') }}">your settings</a>) and convert
+      to each member's automatically.
     </p>
 
     {# Plain links rather than a dropdown that needs scripting to act on: the
@@ -245,38 +245,6 @@
         </table>
       </div>
 
-      <div class="field" style="margin-top: 16px;">
-        <label for="sg-avail-tz-search">Timezone</label>
-        <div class="tz-picker" data-tz-picker>
-          <input type="hidden" name="timezone" id="sg-avail-tz" value="{{ week_tz }}" required>
-          <input type="search" id="sg-avail-tz-search" class="tz-picker__search"
-                 placeholder="Search city or region…" autocomplete="off"
-                 aria-controls="sg-avail-tz-list" aria-expanded="false"
-                 aria-autocomplete="list" role="combobox">
-          <div id="sg-avail-tz-list" class="tz-picker__list" role="listbox" hidden>
-            {% for group in tz_groups %}
-            <div class="tz-picker__group" data-tz-group>
-              <div class="tz-picker__group-label">{{ group.label }}</div>
-              {% for opt in group.options %}
-              <button type="button" class="tz-picker__opt{% if opt.value == week_tz %} is-selected{% endif %}"
-                      role="option"
-                      data-value="{{ opt.value }}"
-                      data-label="{{ opt.label }}"
-                      data-search="{{ (opt.value ~ ' ' ~ opt.label)|lower }}"
-                      aria-selected="{{ 'true' if opt.value == week_tz else 'false' }}">
-                {{ opt.label }}
-              </button>
-              {% endfor %}
-            </div>
-            {% endfor %}
-            <p class="tz-picker__empty" data-tz-empty hidden>No matching timezones</p>
-          </div>
-          <p class="tz-picker__chosen" data-tz-chosen>
-            Selected: <strong>{{ week_tz }}</strong>
-          </p>
-        </div>
-      </div>
-
       <button class="btn btn--primary" type="submit">Save {{ coaches|selectattr('0', 'equalto', picked_coach)|map(attribute=1)|first }}&rsquo;s week</button>
       <p class="field-help" style="margin-top: 8px;">
         Saving replaces this coach&rsquo;s whole week. Clearing every day marks them
@@ -341,7 +309,8 @@
       </div>
       <p class="field-help" style="margin-top: 6px;">
         Facilitator and peer sessions. Booked 1:1s are managed under Intakes above.
-        Times use your timezone (<strong>{{ owner_tz }}</strong>).
+        Times are on your own clock (<strong>{{ owner_tz }}</strong>, from
+        <a href="{{ url_for('main.settings') }}">your settings</a>).
       </p>
 
       {% if open_meetings %}
@@ -404,7 +373,6 @@
           <form method="post" action="{{ url_for('admin.support_groups_schedule', meeting_id=m.id) }}"
                 class="stack-form sg-schedule" style="margin-top: 14px;">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="timezone" value="{{ owner_tz }}">
             <div class="sg-schedule__when-row">
               <div class="sg-schedule__part">
                 <span class="sg-schedule__part-label">Date</span>
@@ -436,7 +404,7 @@
     <h2 style="margin-top:0;">Recent</h2>
     <table class="admin-table">
       <thead>
-        <tr><th>Session</th><th>Kind</th><th>When</th><th>Seats</th><th>Status</th></tr>
+        <tr><th>Session</th><th>Kind</th><th>When</th><th>Seats</th><th>Came</th><th>Status</th></tr>
       </thead>
       <tbody>
         {% for m in past_meetings %}
@@ -455,6 +423,18 @@
             {% endif %}
           </td>
           <td>{{ seat_map.get(m.id, [])|length }} / {{ m.capacity }}</td>
+          {% set came = turnout.get(m.id) %}
+          <td>
+            {% if m.status == 'cancelled' %}
+            <span class="field-help">—</span>
+            {% elif not came or not came.tracked %}
+            <span class="field-help">not recorded</span>
+            {% elif came.booked %}
+            {{ came.joined }} of {{ came.booked }}
+            {% else %}
+            <span class="field-help">nobody booked</span>
+            {% endif %}
+          </td>
           <td>{{ m.status }}</td>
         </tr>
         {% endfor %}

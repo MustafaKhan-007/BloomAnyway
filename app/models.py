@@ -152,6 +152,10 @@ class User(UserMixin, db.Model):
     # When their reel was first put on the home page. Entries are cleared out
     # every Monday, so being featured is only remembered if it's kept here.
     reel_featured_at = db.Column(db.DateTime)
+    # The last time they were Creator of the Month. The card itself is only
+    # a name and a photo in the settings table, so without this there is no
+    # way to know the same person had it last month.
+    creator_month_at = db.Column(db.DateTime)
 
     # showing-up streak ("I showed up today")
     last_checkin_date = db.Column(db.Date)
@@ -2308,7 +2312,10 @@ class ContentReport(db.Model):
 
 # --- support / coaching groups (Daily.co peer rooms) -------------------------
 
-SUPPORT_APP_STATUSES = ("pending", "selected", "cancelled", "attended")
+#: ``attended`` and ``no_show`` are settled when a session finishes, from
+#: whether that seat ever opened the room.
+SUPPORT_APP_STATUSES = ("pending", "selected", "cancelled", "attended",
+                        "no_show")
 SUPPORT_MEETING_STATUSES = ("draft", "scheduled", "completed", "cancelled")
 SUPPORT_MEETING_KINDS = ("peer", "facilitator", "one_on_one")
 SUPPORT_CIRCLE_TRACKS = ("healing", "building")
@@ -2434,6 +2441,10 @@ class SupportGroupApplication(db.Model):
     message = db.Column(db.Text, nullable=False, default="")
     status = db.Column(db.String(20), nullable=False, default="pending", index=True)
     created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+    #: The first time this seat actually opened the room. Turning up is turning
+    #: up: a minute counts the same as the whole hour, and an empty column
+    #: means they booked and never came.
+    joined_at = db.Column(db.DateTime)
 
     author = db.relationship("User")
     circle = db.relationship("SupportGroupCircle", back_populates="applications")

@@ -17,7 +17,7 @@ from sqlalchemy import func
 
 from ..extensions import db
 from ..models import (CheckIn, ForumComment, ForumPost, SupportGroupApplication,
-                      SupportGroupMeeting, User)
+                      SupportGroupMeeting, User, utcnow)
 from .settings import get_setting, set_setting
 from .social import instagram_from_links, instagram_profile_url
 from .timefmt import normalize_timezone, viewer_timezone
@@ -189,9 +189,10 @@ def session_tally(user_ids, tz_name: str | None = None,
                   now: datetime | None = None) -> dict[int, dict]:
     """Support sessions each of these members actually sat in this month.
 
-    A seat only becomes ``attended`` once the session has run, so booking one
-    and not turning up counts for nothing. Peer circles, facilitator-led
-    sessions and 1:1s all count — an hour given is an hour given.
+    A seat only becomes ``attended`` once the session has run and that person
+    was in the room, so booking one and not turning up counts for nothing.
+    Peer circles, facilitator-led sessions and 1:1s all count — an hour given
+    is an hour given.
     """
     ids = {int(i) for i in user_ids}
     if not ids:
@@ -297,7 +298,11 @@ def eligible_creators(tz_name: str | None = None,
     what makes someone pickable, so the list comes back ranked and
     :func:`eligible_split` cuts it into the ones who can be featured today and
     the ones who need that link.
+
+    Each row also carries whether they have just had the card, which is what
+    keeps the same face from being picked two months running.
     """
+    since = _stand_down_from(tz_name, now)
     rows = (User.query
             .filter(User.deleted_at.is_(None),
                     User.is_admin.is_(False),
@@ -332,6 +337,9 @@ def eligible_creators(tz_name: str | None = None,
             "days": int(here.get("days") or 0),
             "run": int(here.get("run") or 0),
             "reel": u.reel_featured_at is not None,
+            "creator_at": u.creator_month_at,
+            "stood_down": bool(u.creator_month_at is not None
+                               and u.creator_month_at >= since),
             "last_at": max(
                 (when for when in (talk.get("last_at"), posts.get("last_at"),
                                    sessions.get("last_at")) if when),
@@ -354,18 +362,78 @@ def eligible_split(tz_name: str | None = None,
     return ready, missing
 
 
+def _stand_down_from(tz_name: str | None = None,
+                     now: datetime | None = None) -> datetime:
+    """The moment from which having had the card rules somebody out.
+
+    The first of last month, on the owner's calendar: whoever was up there in
+    August steps aside for September, and so does whoever is up there now.
+    """
+    start, _end, first = month_window(tz_name, now)
+    days_in_last = (first - timedelta(days=1)).day
+    return start - timedelta(days=days_in_last)
+
+
 def pick_standout(tz_name: str | None = None,
-                  now: datetime | None = None) -> dict | None:
+                  now: datetime | None = None,
+                  ready: list[dict] | None = None) -> dict | None:
     """Whoever put the most into the month, or ``None``.
 
+    Not a draw: the fullest month wins, and a tie goes to whoever got there
+    first. Anybody who has had the card since the start of last month is
+    passed over, so it moves around rather than settling on one person — the
+    owner can still put them back by hand.
+
     Nobody is returned when everything the month holds came from people who
-    can't be featured yet — a quiet month has no one to hand the card to.
+    can't be featured yet, or from people who have just had it. A quiet month
+    has no one to hand the card to.
     """
-    ready, _missing = eligible_split(tz_name, now)
-    leader = ready[0] if ready else None
-    if not leader or not leader["score"]:
+    if ready is None:
+        ready, _missing = eligible_split(tz_name, now)
+    for row in ready:
+        if not row["score"]:
+            break  # the list is ranked, so nothing below this has a month
+        if not row["stood_down"]:
+            return row
+    return None
+
+
+def stood_down_leaders(tz_name: str | None = None,
+                       now: datetime | None = None,
+                       ready: list[dict] | None = None) -> list[dict]:
+    """Members with a month behind them who are sitting this one out."""
+    if ready is None:
+        ready, _missing = eligible_split(tz_name, now)
+    return [row for row in ready if row["score"] and row["stood_down"]]
+
+
+def remember_creator(user_id=None, handle: str = "") -> User | None:
+    """Note that this member is the one on the card now.
+
+    Saved by hand, so what lands here is whatever the owner typed: an id from
+    the pick, or a handle she filled in herself. Either identifies a member or
+    it doesn't — a card made for somebody who isn't one is nobody to remember.
+    """
+    who = None
+    try:
+        if user_id:
+            who = db.session.get(User, int(user_id))
+    except (TypeError, ValueError):
+        who = None
+    wanted = (handle or "").strip().lstrip("@").lower()
+    if who is None and wanted:
+        for row in (User.query
+                    .filter(User.deleted_at.is_(None))
+                    .filter(User.membership.in_(("creator", "full_bloom")))
+                    .all()):
+            if (instagram_from_links(row.links()) or "").lower() == wanted:
+                who = row
+                break
+    if who is None:
         return None
-    return leader
+    who.creator_month_at = utcnow()
+    db.session.commit()
+    return who
 
 
 def candidate(user_id: int) -> dict | None:

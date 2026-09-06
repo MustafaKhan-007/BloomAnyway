@@ -3350,6 +3350,15 @@ ok("Free members cannot schedule peer sessions",
    and _booked_by_free == 0,
    f"{flashes(r)} | meetings={_booked_by_free}")
 
+# The hour they type is the hour on their own clock — the one in their
+# settings. The form has no timezone on it, and one sent anyway is ignored.
+with app.app_context():
+    _sched_user = User.query.filter_by(email="stranger@example.com").first()
+    _sched_user.timezone = "Asia/Karachi"
+    db.session.commit()
+ok("Nothing on the scheduling form asks a member which zone they mean",
+   'name="timezone"' not in
+   stranger_client.get("/support-groups").get_data(as_text=True))
 r = stranger_client.post("/support-groups/schedule",
                          data={"circle_id": heal_cid, "meeting_date": _sg_date,
                                "meeting_time": _sg_time, "timezone": "UTC"},
@@ -3362,6 +3371,14 @@ with app.app_context():
             .order_by(SupportGroupMeeting.id.desc()).first())
     ok("Peer meeting exists after member schedule", peer is not None)
     mid = peer.id
+    from app.services.timefmt import parse_owner_parts as _parse_when
+    _karachi = _parse_when(_sg_date, _sg_time, "Asia/Karachi")
+    ok("Booked on the clock in their settings, not the one the form posted",
+       peer.scheduled_at.replace(second=0, microsecond=0) == _karachi,
+       f"{peer.scheduled_at} wanted {_karachi}")
+    _sched_user = User.query.filter_by(email="stranger@example.com").first()
+    _sched_user.timezone = None
+    db.session.commit()
     ok("Scheduler is seated as host",
        SupportGroupApplication.query.filter_by(
            meeting_id=mid, status="selected").count() == 1)
@@ -3490,14 +3507,29 @@ ok("After 30 minutes the room redirects to wrap",
    r.status_code in (301, 302)
    and f"/support-groups/meetings/{mid}/wrap" in (r.headers.get("Location") or ""))
 with app.app_context():
+    # Finishing settles each seat against the room: the member who opened it
+    # was there, the host who never did was not. Length of stay doesn't come
+    # into it — the one who joined only had it open for a moment.
+    _settled = {a.id: (a.status, a.joined_at is not None) for a
+                in SupportGroupApplication.query.filter_by(meeting_id=mid).all()}
+    ok("Whoever opened the room is marked as having come",
+       any(st == "attended" and came for st, came in _settled.values()),
+       str(_settled))
+    ok("And a seat that never opened it is a no-show, not an attendance",
+       any(st == "no_show" and not came for st, came in _settled.values()),
+       str(_settled))
+    _past = db.session.get(SupportGroupMeeting, mid)
+    ok("Turnout counts the ones who came, out of the ones who booked",
+       sg_svc.turnout(_past) == {"joined": 1, "booked": 2, "tracked": True},
+       str(sg_svc.turnout(_past)))
     restore = db.session.get(SupportGroupMeeting, mid)
     restore.status = "scheduled"
     restore.scheduled_at = utcnow() + timedelta(hours=20)
     restore.reminded_at = None
-    # opening the live room marked everyone "attended" — put the seats back
-    # too, or the later reminder and cancel tests have nobody to talk to
+    # the session has been settled — put the seats back where they were, or
+    # the later reminder and cancel tests have nobody to talk to
     for _seat in SupportGroupApplication.query.filter_by(meeting_id=mid).all():
-        if _seat.status == "attended":
+        if _seat.status in ("attended", "no_show"):
             _seat.status = "selected"
     db.session.commit()
 
@@ -3836,9 +3868,12 @@ with app.app_context():
 with app.app_context():
     _done = db.session.get(SupportGroupMeeting, wrap_mid)
     sg_svc.complete_meeting(_done)
-    ok("Completing a session moves the seats to attended",
-       all(s.status == "attended"
-           for s in sg_svc.meeting_seats(_done, include_attended=True)))
+    ok("Completing a session settles every seat off 'selected'",
+       sg_svc.meeting_seats(_done) == []
+       and len(sg_svc.meeting_seats(_done, include_attended=True)) == 2)
+    ok("Nobody opened this room, so Studio says so rather than inventing a full house",
+       sg_svc.turnout(_done) == {"joined": 0, "booked": 2, "tracked": True},
+       str(sg_svc.turnout(_done)))
 _wbody = wrap_client.get(f"/support-groups/meetings/{wrap_mid}/wrap").get_data(as_text=True)
 ok("The wrap page still names who was in the room after it completes",
    "sgwraphost" in _wbody, "peers list came back empty")
@@ -4134,7 +4169,7 @@ ok("And what is already saved comes back ticked",
    and 'checked' in _wbody)
 
 r = admin.post("/admin/support-groups/availability", data={
-    "coach": "ayesha", "timezone": "UTC",
+    "coach": "ayesha",
     # Monday morning in one run, plus a lone Wednesday hour.
     "slot": ["0:9", "0:10", "0:11", "2:14"],
 }, follow_redirects=True)
@@ -4145,17 +4180,43 @@ with app.app_context():
     _shape = sorted((w.weekday, w.start_minute, w.end_minute) for w in _wins)
     ok("Hours next to each other become one window, not four",
        _shape == [(0, 540, 720), (2, 840, 900)], f"got {_shape}")
-    ok("All of it saved in the timezone chosen for the week",
+    ok("All of it saved on the owner's own clock, with nothing to pick",
        {w.timezone for w in _wins} == {"UTC"})
     ok("The editor can read its own week back",
        intake_svc.week_grid("ayesha")[0] == {9, 10, 11}
        and intake_svc.week_grid("ayesha")[2] == {14})
     ok("And members get bookable slots from it",
        len(intake_svc.open_slots("ayesha", viewer_tz="UTC")) > 0)
+# Studio stopped asking which zone a week is in — it is the zone in the
+# owner's settings, and a week saved in another one is read back in hers.
+ok("The week editor has no timezone to pick any more",
+   'name="timezone"' not in admin.get("/admin/support-groups").get_data(as_text=True))
+with app.app_context():
+    _owner_row = User.query.filter_by(email="owner@example.com").first()
+    _owner_row.timezone = "America/New_York"
+    db.session.commit()
+r = admin.post("/admin/support-groups/availability", data={
+    "coach": "ayesha", "slot": ["0:9"]}, follow_redirects=True)
+with app.app_context():
+    ok("A week saved now is written on whatever her settings say",
+       {w.timezone for w in intake_svc.list_availability("ayesha")}
+       == {"America/New_York"})
+    # 9am New York is 2pm or 1pm in London, depending on the month.
+    _london = intake_svc.week_grid("ayesha", "Europe/London")
+    _hour = intake_svc.shift_hour(0, 9, "America/New_York", "Europe/London")
+    ok("And an old week written elsewhere is read back on the clock in hand",
+       _london[_hour[0]] == {_hour[1]} and _hour[1] in (13, 14),
+       f"{_london} vs {_hour}")
+    _owner_row = User.query.filter_by(email="owner@example.com").first()
+    _owner_row.timezone = None
+    db.session.commit()
+admin.post("/admin/support-groups/availability", data={
+    "coach": "ayesha", "slot": ["0:9", "0:10", "0:11", "2:14"]},
+    follow_redirects=True)
 
 # Saving again is editing: the week is replaced, not added to.
 admin.post("/admin/support-groups/availability", data={
-    "coach": "ayesha", "timezone": "UTC", "slot": ["0:9"],
+    "coach": "ayesha", "slot": ["0:9"],
 }, follow_redirects=True)
 with app.app_context():
     _shape = sorted((w.weekday, w.start_minute, w.end_minute)
@@ -4166,7 +4227,7 @@ with app.app_context():
        len(intake_svc.list_availability("saman")) > 0)
 
 r = admin.post("/admin/support-groups/availability", data={
-    "coach": "ayesha", "timezone": "UTC",
+    "coach": "ayesha",
 }, follow_redirects=True)
 ok("Clearing every day says so plainly, rather than looking like a no-op",
    "unavailable all week" in r.get_data(as_text=True), flashes(r))
@@ -4179,6 +4240,49 @@ with app.app_context():
         "ayesha", {(utcnow() + timedelta(days=2)).weekday(): [9, 10, 11, 12, 13, 14]},
         tz_name="UTC")
     ok("Setup restored", len(intake_svc.open_slots("ayesha", viewer_tz="UTC")) > 0)
+
+# --- Studio's Recent table: seats that were taken, and who actually came -----
+# It read finished sessions for live seats, so every one of them showed 0 / 8
+# however full it had been, and there was nothing to say who turned up.
+with app.app_context():
+    _turn_host = User(email="sg-turnout-host@example.com", username="sgturnhost",
+                      membership="healing", email_verified_at=utcnow())
+    _turn_host.set_password(USER_PW)
+    _turn_guest = User(email="sg-turnout-guest@example.com", username="sgturnguest",
+                       membership="healing", email_verified_at=utcnow())
+    _turn_guest.set_password(USER_PW)
+    db.session.add_all([_turn_host, _turn_guest])
+    db.session.commit()
+    _turn_when = utcnow() + timedelta(days=3, hours=2)
+    _turn_meet, _turn_err = sg_svc.schedule_peer_session(
+        _turn_host, circle_id=heal_cid,
+        date_s=_turn_when.strftime("%Y-%m-%d"),
+        time_s=_turn_when.strftime("%H:%M"), tz_name="UTC")
+    ok("A session to look back on", _turn_meet is not None and not _turn_err,
+       _turn_err)
+    sg_svc.join_peer_session(_turn_guest, _turn_meet.id)
+    ok("Opening the room is what counts as coming",
+       sg_svc.mark_joined(_turn_meet, _turn_guest) is True
+       and sg_svc.mark_joined(_turn_meet, _turn_guest) is False)
+    sg_svc.complete_meeting(_turn_meet)
+    _turn_id = _turn_meet.id
+_rbody = admin.get("/admin/support-groups").get_data(as_text=True)
+_recent = _rbody.split("<h2 style=\"margin-top:0;\">Recent</h2>", 1)[-1]
+ok("A finished session shows the seats it had, not an empty room",
+   "2 / 8" in _recent, "Recent still counts live seats only")
+ok("And says how many of them came", "1 of 2" in _recent)
+with app.app_context():
+    _older = db.session.get(SupportGroupMeeting, wrap_mid)
+    # A session from before arrivals were noted: every seat was marked
+    # attended on the way out, so there is nothing honest to count.
+    for _seat in SupportGroupApplication.query.filter_by(meeting_id=_older.id).all():
+        _seat.status = "attended"
+        _seat.joined_at = None
+    db.session.commit()
+    ok("A session from before this was recorded says so rather than claiming nobody came",
+       sg_svc.turnout(_older)["tracked"] is False)
+ok("Which Studio prints as such",
+   "not recorded" in admin.get("/admin/support-groups").get_data(as_text=True))
 
 
 # site image uploads (hero / story teaser)
@@ -4518,9 +4622,81 @@ r = admin.post("/admin/spotlight", data={"pick_creator": "1"},
 dbody = r.get_data(as_text=True)
 ok("The month's standout pre-fills the Creator of the month form",
    'value="Draw Me"' in dbody and "had the fullest month" in dbody)
+ok("Picking twice lands on the same person — it isn't a draw",
+   'value="Draw Me"' in admin.post("/admin/spotlight", data={"pick_creator": "1"},
+                                   follow_redirects=True).get_data(as_text=True))
 with app.app_context():
     ok("Picking the standout doesn't publish anything by itself",
        get_setting("creator_name") != "Draw Me")
+
+# --- the card moves on: last month's creator sits the next one out ----------
+with app.app_context():
+    _drawme = User.query.filter_by(email="drawme@example.com").first()
+    _chatty = User.query.filter_by(email="chatty@example.com").first()
+    ok("Nobody has had the card yet, so the fullest month takes it",
+       (_spot.pick_standout() or {}).get("user_id") == _drawme.id)
+r = admin.post("/admin/spotlight", data={
+    "creator_user_id": str(_drawme.id), "creator_name": "Draw Me",
+    "creator_instagram": "@drawmeplease", "creator_blurb": "Turned up daily.",
+    "creator_image_url": "", "creator_expires": "",
+    "reel_url": "", "reel_description": "", "reel_expires": "",
+    "csrf_token": "x"}, follow_redirects=True)
+with app.app_context():
+    _drawme = User.query.filter_by(email="drawme@example.com").first()
+    ok("Saving the card remembers whose it is",
+       _drawme.creator_month_at is not None, flashes(r))
+    ok("So next month's pick passes over them for whoever is next",
+       (_spot.pick_standout() or {}).get("user_id") == _chatty.id)
+    _rows = {row["user_id"]: row for row in _spot.eligible_creators()}
+    ok("Even though they still lead on points",
+       _rows[_drawme.id]["score"] > _rows[_chatty.id]["score"]
+       and _rows[_drawme.id]["stood_down"]
+       and not _rows[_chatty.id]["stood_down"])
+_sbody = admin.get("/admin/spotlight").get_data(as_text=True)
+ok("Studio marks the one sitting this month out", "just had it" in _sbody)
+ok("And the button offers the one it would actually pick",
+   "Chatty One leads" in _sbody)
+
+with app.app_context():
+    # Two months on, their turn comes round again.
+    _drawme = User.query.filter_by(email="drawme@example.com").first()
+    _later = datetime.utcnow() + timedelta(days=70)
+    ok("A card from two months ago is no bar at all",
+       (_spot.pick_standout("UTC", now=_later) or {}).get("user_id") == _drawme.id,
+       str(_spot.pick_standout("UTC", now=_later)))
+
+    # Everybody with a month behind them has just had it: say so plainly
+    # rather than handing over a name the owner has only just taken down.
+    _rested = [row["user_id"] for row in _spot.eligible_split()[0] if row["score"]]
+    for _uid in _rested:
+        db.session.get(User, _uid).creator_month_at = utcnow()
+    db.session.commit()
+    ok("With everybody rested, there is nobody left to pick",
+       _spot.pick_standout() is None
+       and {row["user_id"] for row in _spot.stood_down_leaders()} == set(_rested),
+       str(_rested))
+r = admin.post("/admin/spotlight", data={"pick_creator": "1"},
+               follow_redirects=True)
+ok("And the button explains itself instead of going quiet",
+   "had the card" in r.get_data(as_text=True).lower(), flashes(r))
+with app.app_context():
+    # A card filled in by hand still counts: the handle is who it is.
+    for _uid in _rested:
+        db.session.get(User, _uid).creator_month_at = None
+    db.session.commit()
+r = admin.post("/admin/spotlight", data={
+    "creator_name": "Chatty One", "creator_instagram": "chattyone",
+    "creator_blurb": "Said plenty.", "creator_image_url": "",
+    "creator_expires": "", "reel_url": "", "reel_description": "",
+    "reel_expires": "", "csrf_token": "x"}, follow_redirects=True)
+with app.app_context():
+    _chatty = User.query.filter_by(email="chatty@example.com").first()
+    ok("A card typed in by hand is matched to the member by their handle",
+       _chatty.creator_month_at is not None, flashes(r))
+    _chatty.creator_month_at = None
+    _drawme = User.query.filter_by(email="drawme@example.com").first()
+    _drawme.creator_month_at = None
+    db.session.commit()
 
 with app.app_context():
     from datetime import date as _date
@@ -8497,18 +8673,41 @@ _pinned_page = _tzc.get("/forums/").get_data(as_text=True)
 ok("Pages are written on the chosen clock, not the browser's",
    'data-tz="Europe/Berlin"' in _pinned_page)
 ok("And the browser is told to leave those times alone",
-   'data-tz-pinned="1"' in _pinned_page)
+   'data-tz-settled="1"' in _pinned_page)
 
+# Taking this device's zone is a one-off copy into settings, not a standing
+# arrangement: the site reads the same afterwards wherever they open it.
 r = _tzc.post("/account/timezone",
               data={"follow_browser": "yes", "timezone": "Asia/Karachi",
                     "csrf_token": "x"}, follow_redirects=True)
-ok("Handing it back lets the device lead again",
-   "Times will follow whatever clock your device keeps" in r.get_data(as_text=True))
+ok("A device's own zone can be taken in one click",
+   "Times are now shown in Asia/Karachi" in r.get_data(as_text=True))
 _tzc.post("/account/timezone", json={"timezone": "Pacific/Auckland"})
 with app.app_context():
     _tzuser = User.query.filter_by(email="buyer@example.com").first()
-    ok("And the next page the browser loads moves the clock again",
-       _tzuser.timezone == "Pacific/Auckland" and not _tzuser.timezone_pinned)
+    ok("And the next device to report in doesn't move it",
+       _tzuser.timezone == "Asia/Karachi", _tzuser.timezone)
+ok("So every page they open is on the one clock, whatever they open it on",
+   'data-tz="Asia/Karachi"' in _tzc.get("/forums/").get_data(as_text=True)
+   and 'data-tz-settled="1"' in _tzc.get("/forums/").get_data(as_text=True))
+
+# The one thing the browser still does: fill in a blank on a first visit.
+with app.app_context():
+    _blank = User(email="noclock@example.com", email_verified_at=utcnow())
+    _blank.set_password(USER_PW)
+    db.session.add(_blank)
+    db.session.commit()
+_blankc = app.test_client()
+_blankc.post("/login", data={"email": "noclock@example.com", "password": USER_PW})
+ok("Somebody we know nothing about yet is written in the house clock",
+   'data-tz-settled' not in _blankc.get("/forums/").get_data(as_text=True))
+_blankc.post("/account/timezone", json={"timezone": "America/Denver"})
+with app.app_context():
+    _blank = User.query.filter_by(email="noclock@example.com").first()
+    ok("Their browser says once, and that becomes their settings",
+       _blank.timezone == "America/Denver")
+ok("From then on the page is settled and nothing redraws it",
+   'data-tz-settled="1"' in _blankc.get("/forums/").get_data(as_text=True))
 r = _tzc.post("/account/timezone", data={"timezone": "Mars/Olympus",
                                          "csrf_token": "x"},
               follow_redirects=True)

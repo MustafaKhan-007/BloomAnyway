@@ -224,7 +224,8 @@ def create_app(config_class=None):
     )
     app.jinja_env.filters["mentions"] = linkify_mentions
 
-    from .services.timefmt import format_local, local_tag, viewer_timezone
+    from .services.timefmt import (format_local, has_account_timezone,
+                                   local_tag, viewer_timezone)
     app.jinja_env.filters["localtime"] = format_local
     # Same wording as ``localtime``, wrapped so a browser on another clock can
     # put it right in place. Not for use inside an attribute.
@@ -268,13 +269,17 @@ def create_app(config_class=None):
                 preview = {"on": False}
         try:
             viewer_tz = viewer_timezone()
+            tz_settled = has_account_timezone()
         except Exception:
             viewer_tz = "UTC"
+            tz_settled = False
         return {"site": all_settings(),
                 "announcements": anns,
                 "viewer_tz": viewer_tz,
-                "viewer_tz_pinned": bool(
-                    getattr(current_user, "timezone_pinned", False)),
+                # Settled: their settings say which clock, so nothing on
+                # the page should be redrawn against the device they opened
+                # it on. Only a visitor we know nothing about is guessed at.
+                "viewer_tz_settled": tz_settled,
                 "current_year": date.today().year,
                 "unread_notes": unread,
                 "nav_notifications": nav_notes,

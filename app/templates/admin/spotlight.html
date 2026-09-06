@@ -57,7 +57,9 @@
           days shown up, posts started, comments left, support sessions sat in,
           and whether their reel has been on the home page. Anything taken down
           or hidden doesn't count, and a session booked but missed doesn't
-          either.
+          either. Whoever has had the card since the start of last month sits
+          this one out, so it moves around &mdash; you can still put them back
+          by filling the card in yourself.
         </p>
         <div class="spotlight-draw">
           <button class="btn btn--primary btn--sm" type="submit" name="pick_creator" value="1"
@@ -67,10 +69,12 @@
           <span class="field-help">
             {{ eligible|length }} pickable right now.
             {% if top %}
-            {{ top.name }} leads on {{ top.why|join(', ') }}{%
-              if eligible|length > 1 and eligible[1].score == top.score %},
-            level with {{ eligible[1].name }} but there first{% endif %}
+            {{ top.name }} leads on {{ top.why|join(', ') }}
             &mdash; we'll fill in their details below, edit anything, then save.
+            {% elif sitting_out %}
+            The only month behind us belongs to
+            {{ sitting_out|map(attribute='name')|join(', ') }}, who had the
+            card last month.
             {% elif eligible %}
             Nobody's turned up this month yet.
             {% endif %}
@@ -85,6 +89,7 @@
             &mdash; <a href="{{ c.profile_url }}" target="_blank" rel="noopener">&#64;{{ c.handle }}</a>
             <span class="spotlight-tally{% if not c.score %} is-quiet{% endif %}">{{ c.score }}</span>
             {% if draft and draft.user_id == c.user_id %}<span class="spotlight-drawn-tag">picked</span>{% endif %}
+            {% if c.stood_down %}<span class="spotlight-satout-tag">just had it</span>{% endif %}
             <p class="spotlight-why">{{ c.why|join(' · ') if c.why else 'Nothing this month yet' }}</p>
           </li>
           {% endfor %}
@@ -118,6 +123,7 @@
       <fieldset class="spotlight-fieldset">
         <legend>Creator of the month</legend>
         {% if draft %}
+        <input type="hidden" name="creator_user_id" value="{{ draft.user_id }}">
         <p class="spotlight-draft-note">
           Picked: <strong>{{ draft.name }}</strong>, on
           {{ draft.why|join(', ') if draft.why else 'a quiet month' }} in

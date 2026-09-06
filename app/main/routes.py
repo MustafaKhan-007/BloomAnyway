@@ -33,6 +33,7 @@ from ..services import stripe_pay as pay
 from ..services.journey import build_journey_pdf
 from ..services.mailer import send_contact_notification
 from ..services.perks import perk_display
+from ..services.timefmt import account_timezone
 from ..services.recommend import INTENTS, valid_intent_keys
 from ..services.listings import (ListingError, can_add_listing, listing_limit,
                                  process_listing_image)
@@ -2094,12 +2095,13 @@ def reel_review_stream(review_id):
 @bp.route("/account/timezone", methods=["POST"])
 @login_required
 def save_timezone():
-    """Remember which clock to write times on.
+    """Remember which clock to write times on. Settings, and nothing else.
 
-    Every page quietly reports the browser's own zone, which is right for
-    almost everybody and follows them when they move. Anyone who picks a zone
-    in settings has said otherwise, so that choice is pinned and the quiet
-    report stops overwriting it until they hand it back.
+    The account's timezone is the one clock the whole site uses for somebody,
+    so once there is one, only they can change it — here, or by taking this
+    device's zone. The browser's quiet report fills in a blank account on a
+    first visit and is ignored ever after, which is what stops the site
+    reading differently on a phone than on a laptop.
     """
     from ..services.timefmt import normalize_timezone
     from_browser = request.is_json or request.form.get("from") == "browser"
@@ -2107,16 +2109,20 @@ def save_timezone():
     if raw is None and request.is_json:
         raw = (request.get_json(silent=True) or {}).get("timezone")
     tz = normalize_timezone(raw)
-    follow = (request.form.get("follow_browser") or "").strip() == "yes"
+    from_device = (request.form.get("follow_browser") or "").strip() == "yes"
 
-    if follow:
-        current_user.timezone_pinned = False
+    if from_device:
         if tz:
             current_user.timezone = tz
-        db.session.commit()
-        flash("Times will follow whatever clock your device keeps.", "success")
+            current_user.timezone_pinned = False
+            db.session.commit()
+            flash(f"Times are now shown in {tz}, the clock this device keeps.",
+                  "success")
+        else:
+            flash("Your browser didn't say which timezone it keeps.", "error")
     elif from_browser:
-        if tz and not current_user.timezone_pinned and current_user.timezone != tz:
+        # A first visit, before they have ever said. After that it is theirs.
+        if tz and not (current_user.timezone or "").strip():
             current_user.timezone = tz
             db.session.commit()
     elif tz:
@@ -2299,7 +2305,7 @@ def support_groups_page():
     }
     my_one_on_ones = []
     if current_user.is_authenticated:
-        member_tz = (current_user.timezone or "UTC").strip() or "UTC"
+        member_tz = account_timezone(current_user)
         if current_user.is_member():
             can_schedule, schedule_err = sg_svc.can_schedule_peer(current_user)
             alert_circle_ids = sg_svc.user_topic_alert_ids(current_user.id)
@@ -2489,7 +2495,8 @@ def schedule_support_session():
         flash("Support groups are for Healing, Creator, and Full Bloom members.", "error")
         return redirect(url_for("main.membership", next=url_for("main.support_groups_page")))
     circle_id = request.form.get("circle_id", type=int)
-    tz = (request.form.get("timezone") or current_user.timezone or "UTC").strip()
+    # Whatever clock they read the site on is the clock they typed this on.
+    tz = account_timezone(current_user)
     meeting, err = sg_svc.schedule_peer_session(
         current_user,
         circle_id=circle_id,
@@ -2642,6 +2649,10 @@ def support_session_room(meeting_id):
     except daily_svc.DailyError as exc:
         flash(str(exc), "error")
         return redirect(url_for("main.support_groups_page"))
+
+    # They are through the door: the room opened for them and a token is in
+    # hand. Noted once, so Studio can say who came rather than who booked.
+    sg_svc.mark_joined(meeting, current_user)
 
     # The room counts down to its own end, so the client needs when that is and
     # what the server thinks the time is — a wrong clock shouldn't move it.
