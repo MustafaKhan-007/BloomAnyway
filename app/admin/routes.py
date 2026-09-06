@@ -3680,7 +3680,6 @@ def support_groups():
         intake_rows=intake_rows,
         weekday_labels=intake_svc.WEEKDAY_LABELS,
         minutes_to_hhmm=intake_svc.minutes_to_hhmm,
-        selected_tz_label=selected_tz_label,
     )
 
 
