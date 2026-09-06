@@ -101,6 +101,28 @@ def is_challenge(product: Product | None) -> bool:
                 and product.id == challenge_product_id())
 
 
+def named_for_challenge(text: str | None) -> bool:
+    """Whether something is called the challenge, whatever else it says."""
+    return "challenge" in (text or "").lower()
+
+
+def counts_as_challenge(product: Product | None, name: str = "") -> bool:
+    """Whether buying this is somebody joining the challenge.
+
+    The tick in Studio settles it when it has been made. Without one, a course
+    named for the challenge is the challenge, and a payment that can't be
+    matched to a course at all goes on the name it was bought under. Somebody
+    who has paid to join shouldn't miss their welcome over a box nobody found.
+    """
+    marked = challenge_product_id()
+    if marked:
+        return bool(product is not None and product.id == marked)
+    if product is not None:
+        return (named_for_challenge(product.title)
+                or named_for_challenge(product.slug))
+    return named_for_challenge(name)
+
+
 def challenge_product() -> Product | None:
     """The course the challenge is sold as, if it's sold here at all.
 

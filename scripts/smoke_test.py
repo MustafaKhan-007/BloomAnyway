@@ -7283,7 +7283,8 @@ try:
         _chal_id = _chal.id
         _cat_mark.set_challenge_product(_chal, True)
 
-    def _bought(payment_id, email):
+    def _bought(payment_id, email, price="price_challenge_r3",
+                slug="two-month-creator-challenge"):
         _letters.clear()
         with app.app_context():
             pay.handle_payment_event("payment.succeeded", {
@@ -7292,9 +7293,8 @@ try:
                 "currency": "USD",
                 "customer": {"email": email},
                 "customer_email": email,
-                "product_cart": [{"product_id": "price_challenge_r3",
-                                  "quantity": 1}],
-                "metadata": {"slug": "two-month-creator-challenge"},
+                "product_cart": [{"product_id": price, "quantity": 1}],
+                "metadata": {"slug": slug},
             })
             db.session.commit()
         return [m["subject"] for m in _letters
@@ -7312,11 +7312,57 @@ try:
            for m in _letters if m["template_id"] == 30),
        [m["params"] for m in _letters])
 
+    # Nobody found the tick box, and somebody joined anyway. The course is
+    # called the challenge; that is enough to be welcomed to it.
     with app.app_context():
         _cat_mark.set_challenge_product(db.session.get(Product, _chal_id), False)
-    _one = _bought("pi_challenge_r3_2", "shopper@example.com")
+    _untkd = _bought("pi_challenge_r3_2", "unticked@example.com")
+    ok("A course named for the challenge welcomes its buyers with no tick at all",
+       "Your Bloom Anyway receipt" in _untkd
+       and "Welcome to the challenge" in _untkd, f"sent {_untkd}")
+
+    with app.app_context():
+        _plain = Product(title="A Steadier Week", slug="a-steadier-week",
+                         type="guide", status="published", currency="USD",
+                         price_cents=1900, stripe_price_id="price_plain_week",
+                         promise="One week at a time.")
+        db.session.add(_plain)
+        db.session.commit()
+        _plain_id = _plain.id
+    _one = _bought("pi_plain_week_1", "shopper@example.com",
+                   price="price_plain_week", slug="a-steadier-week")
     ok("Anything else still gets the receipt on its own",
        _one == ["Your Bloom Anyway receipt"], f"sent {_one}")
+
+    # And when the welcome missed somebody anyway, Studio can make it good.
+    _letters.clear()
+    _again = admin.post("/admin/send-challenge-welcome",
+                        data={"email": "challenger@example.com"},
+                        follow_redirects=True).get_data(as_text=True)
+    ok("A welcome that has already gone out isn't sent twice",
+       "already had the challenge welcome" in _again and not _letters,
+       f"sent {[m['subject'] for m in _letters]}")
+    _letters.clear()
+    _byhand = admin.post("/admin/send-challenge-welcome",
+                         data={"email": "missed@example.com"},
+                         follow_redirects=True).get_data(as_text=True)
+    ok("Somebody the purchase never reached can be sent it by hand",
+       any(m["template_id"] == 30 and m["to"] == "missed@example.com"
+           for m in _letters),
+       f"sent {[(m['to'], m['template_id']) for m in _letters]}")
+    ok("And the owner is told there's no purchase here under that address",
+       "No purchase on record" in _byhand)
+    _letters.clear()
+    ok("A typo where the address should be sends nothing",
+       "Type the address they bought with"
+       in admin.post("/admin/send-challenge-welcome", data={"email": "nope"},
+                     follow_redirects=True).get_data(as_text=True)
+       and not _letters)
+    ok("The send sits with the other missed-purchase tools in Studio",
+       "Challenge welcome missing?" in admin.get("/admin/").get_data(as_text=True))
+    with app.app_context():
+        _cat_svc._purge_product(db.session.get(Product, _plain_id))
+        db.session.commit()
 finally:
     _mailer.send_email = _real_send_email
 

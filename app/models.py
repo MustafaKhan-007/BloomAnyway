@@ -1672,8 +1672,10 @@ class Order(db.Model):
     total_cents = db.Column(db.Integer, nullable=False, default=0)
     currency = db.Column(db.String(3), nullable=False, default="USD")
     status = db.Column(db.String(20), nullable=False, default="paid")
-    # Set when a membership welcome email is claimed/sent for this order.
-    # Used to stop duplicate welcomes across checkout + invoice events.
+    # Set when this order's welcome email is claimed/sent — the membership one,
+    # or the challenge one for an order that joined it. Used to stop duplicate
+    # welcomes across checkout + invoice events, and to tell the owner when a
+    # welcome has already gone out. An order is one or the other, never both.
     welcome_sent_at = db.Column(db.DateTime)
     # Stripe subscription this payment belongs to; renewals share it. Survives
     # account deletion (which scrubs buyer_email), so it is the only way to tell

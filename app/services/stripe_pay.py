@@ -257,14 +257,18 @@ def _resolve_product(data: dict, price_id: str | None) -> Product | None:
     return _product_for_price_id(price_id) or _product_from_metadata(data)
 
 
-def _is_challenge(product: Product | None) -> bool:
-    """Whether buying this is joining the challenge, as Studio has it marked."""
+def _is_challenge(product: Product | None, name: str = "") -> bool:
+    """Whether buying this is somebody joining the challenge.
+
+    Goes on the name of what was bought when Studio has nothing ticked, so the
+    welcome doesn't wait on a setting the owner was never told to make.
+    """
     try:
-        from .catalog import is_challenge
-        return is_challenge(product)
+        from .catalog import counts_as_challenge
+        return counts_as_challenge(product, name)
     except Exception:
         log.exception("challenge: could not tell what %s is",
-                      getattr(product, "slug", None))
+                      getattr(product, "slug", None) or name)
         return False
 
 
@@ -1408,19 +1412,16 @@ def handle_payment_event(event_type: str, data: dict) -> Order | None:
     # doesn't take the other with it.
     if (send_receipt and order.buyer_email and "@" in order.buyer_email
             and not addon_checkout and plan is None
-            and _is_challenge(product)):
+            and _is_challenge(product, name)):
         try:
-            from .mailer import send_challenge_welcome
-            when = order.created_at
-            send_challenge_welcome(
-                order.buyer_email,
-                product_name=name,
-                order_id=order.ls_order_id,
-                order_date=when.strftime("%b %d, %Y") if when else "",
-                perk=(product.perk_summary().replace(", free", "")
-                      if product.has_perk() else ""),
-                description=product.receipt_blurb(),
-            )
+            from .challenge import send_welcome
+            sent = send_welcome(order.buyer_email, product=product,
+                                order=order, name=name)
+            # Said out loud either way: when one of these goes missing the
+            # first question is whether the purchase was ever read as joining.
+            log.info("challenge: %s joined by buying %s — welcome %s",
+                     order.buyer_email, name or "(unnamed)",
+                     "sent" if sent else "not sent")
         except Exception:
             log.exception("Challenge welcome email failed for %s",
                           order.ls_order_id)
