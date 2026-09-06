@@ -32,7 +32,7 @@ from ..services.catalog import remove_demo_catalog
 from ..services import stripe_pay as pay
 from ..services.journey import build_journey_pdf
 from ..services.mailer import send_contact_notification
-from ..services.perks import perk_end_display
+from ..services.perks import perk_display
 from ..services.recommend import INTENTS, valid_intent_keys
 from ..services.listings import (ListingError, can_add_listing, listing_limit,
                                  process_listing_image)
@@ -996,6 +996,7 @@ def account():
         prod = reader_svc.catalog_product_for_purchase(p)
         purchase_catalog[p.id] = prod
         readable[p.id] = bool(prod and prod.has_assets())
+    _perk_now = perk_display(current_user)
     return render_template(
         "main/account.html", greeting=greeting, orders=orders,
         favorites=favorites,
@@ -1008,7 +1009,8 @@ def account():
             MembershipPlan.query.filter_by(
                 tier=current_user.effective_membership()).first()
         ),
-        perk_until=perk_end_display(current_user),
+        perk_until=_perk_now["until"],
+        perk_from=_perk_now["from"],
         active_tab=tab,
         journal_entries=journal,
         today_entry=today_entry,
