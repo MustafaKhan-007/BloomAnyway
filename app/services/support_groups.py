@@ -114,8 +114,7 @@ def expire_past_meetings(now: datetime | None = None) -> int:
             continue
         room_name = (meeting.zoom_meeting_id or "").strip()
         meeting.status = "completed"
-        for seat in meeting_seats(meeting):
-            seat.status = "attended"
+        settle_seats(meeting)
         closed += 1
         if room_name:
             try:
@@ -475,17 +474,18 @@ def recent_meetings(limit: int = 20):
             .all())
 
 
-#: A seat that was in the room. ``selected`` while the session is still to come
-#: or running; ``attended`` once it has been completed.
-SEATED_STATUSES = ("selected", "attended")
+#: Every seat somebody took, whatever became of it. ``selected`` while the
+#: session is still to come or running, then ``attended`` or ``no_show`` once
+#: it has finished and each seat has been settled against the room.
+SEATED_STATUSES = ("selected", "attended", "no_show")
 
 
 def meeting_seats(meeting: SupportGroupMeeting, *, include_attended: bool = False):
-    """Seats on a meeting. Live seats by default; completing flips them.
+    """Seats on a meeting. Live seats by default; finishing settles them.
 
     ``include_attended`` is for anything looking back at a session that has
-    already finished — completing a meeting turns every seat into ``attended``,
-    so a caller after the fact that only asks for ``selected`` finds nobody.
+    already run — a finished meeting has no ``selected`` seats left, so a
+    caller after the fact that only asks for those finds nobody.
     """
     statuses = SEATED_STATUSES if include_attended else ("selected",)
     return (SupportGroupApplication.query
@@ -496,15 +496,16 @@ def meeting_seats(meeting: SupportGroupMeeting, *, include_attended: bool = Fals
             .all())
 
 
-def seats_for_meetings(meetings) -> dict[int, list]:
+def seats_for_meetings(meetings, *, include_past: bool = False) -> dict[int, list]:
     """Seat rows for several meetings in one query, keyed by meeting id."""
     ids = [m.id for m in meetings if m is not None]
     if not ids:
         return {}
+    statuses = SEATED_STATUSES if include_past else ("selected",)
     rows = (SupportGroupApplication.query
             .options(joinedload(SupportGroupApplication.author))
             .filter(SupportGroupApplication.meeting_id.in_(ids),
-                    SupportGroupApplication.status == "selected")
+                    SupportGroupApplication.status.in_(statuses))
             .order_by(SupportGroupApplication.created_at.asc())
             .all())
     out: dict[int, list] = {mid: [] for mid in ids}
@@ -513,11 +514,57 @@ def seats_for_meetings(meetings) -> dict[int, list]:
     return out
 
 
+def mark_joined(meeting: SupportGroupMeeting, user: User) -> bool:
+    """Remember that somebody was in the room. True the first time.
+
+    Stamped as the room is handed over, which is the only moment the site can
+    honestly say anybody turned up. How long they stayed is their business:
+    ducking in for five minutes of a session you booked is still showing up,
+    and the alternative is a stopwatch nobody asked for.
+    """
+    seat = user_selected_on_meeting(getattr(user, "id", 0), meeting.id)
+    if seat is None or seat.joined_at is not None:
+        return False
+    seat.joined_at = utcnow()
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        log.exception("Could not record %s joining meeting %s",
+                      getattr(user, "id", None), meeting.id)
+        return False
+    return True
+
+
+def settle_seats(meeting: SupportGroupMeeting) -> None:
+    """Close every live seat on a finished session against who was in the room.
+
+    Caller commits.
+    """
+    for seat in meeting_seats(meeting):
+        seat.status = "attended" if seat.joined_at is not None else "no_show"
+
+
+def turnout(meeting: SupportGroupMeeting, seats=None) -> dict:
+    """Who came, out of who booked, for a session that has already run.
+
+    ``tracked`` is false for sessions that finished before the site started
+    noting arrivals: every seat on those was marked attended on the way out,
+    and there is no honest way to say now who was really there.
+    """
+    rows = seats if seats is not None else meeting_seats(meeting,
+                                                         include_attended=True)
+    joined = sum(1 for seat in rows if seat.joined_at is not None)
+    missed = sum(1 for seat in rows if seat.status == "no_show")
+    return {"joined": joined, "booked": len(rows),
+            "tracked": bool(joined or missed or not rows)}
+
+
 def wrap_peers(meeting: SupportGroupMeeting, viewer: User) -> list[User]:
     """Other seated members shown on the post-session wrap page.
 
-    Attended seats count: the wrap page is only ever reached after the session
-    is over, and by then completing it has moved every seat off ``selected``.
+    Seats from the whole session, not only live ones: the wrap page is reached
+    after the session is over, and by then every seat has been settled.
 
     The Studio account that hosts a 1:1 is left off. It is seated to make the
     room, and putting it here would hand the member a profile card and a
@@ -1121,8 +1168,7 @@ def cancel_meeting(meeting: SupportGroupMeeting, *,
 
 def complete_meeting(meeting: SupportGroupMeeting) -> None:
     meeting.status = "completed"
-    for row in meeting_seats(meeting):
-        row.status = "attended"
+    settle_seats(meeting)
     db.session.commit()
 
 

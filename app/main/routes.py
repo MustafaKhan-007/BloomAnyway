@@ -2648,6 +2648,10 @@ def support_session_room(meeting_id):
         flash(str(exc), "error")
         return redirect(url_for("main.support_groups_page"))
 
+    # They are through the door: the room opened for them and a token is in
+    # hand. Noted once, so Studio can say who came rather than who booked.
+    sg_svc.mark_joined(meeting, current_user)
+
     # The room counts down to its own end, so the client needs when that is and
     # what the server thinks the time is — a wrong clock shouldn't move it.
     from datetime import timedelta as _td

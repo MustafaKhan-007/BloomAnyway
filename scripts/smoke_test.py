@@ -3500,14 +3500,29 @@ ok("After 30 minutes the room redirects to wrap",
    r.status_code in (301, 302)
    and f"/support-groups/meetings/{mid}/wrap" in (r.headers.get("Location") or ""))
 with app.app_context():
+    # Finishing settles each seat against the room: the member who opened it
+    # was there, the host who never did was not. Length of stay doesn't come
+    # into it — the one who joined only had it open for a moment.
+    _settled = {a.id: (a.status, a.joined_at is not None) for a
+                in SupportGroupApplication.query.filter_by(meeting_id=mid).all()}
+    ok("Whoever opened the room is marked as having come",
+       any(st == "attended" and came for st, came in _settled.values()),
+       str(_settled))
+    ok("And a seat that never opened it is a no-show, not an attendance",
+       any(st == "no_show" and not came for st, came in _settled.values()),
+       str(_settled))
+    _past = db.session.get(SupportGroupMeeting, mid)
+    ok("Turnout counts the ones who came, out of the ones who booked",
+       sg_svc.turnout(_past) == {"joined": 1, "booked": 2, "tracked": True},
+       str(sg_svc.turnout(_past)))
     restore = db.session.get(SupportGroupMeeting, mid)
     restore.status = "scheduled"
     restore.scheduled_at = utcnow() + timedelta(hours=20)
     restore.reminded_at = None
-    # opening the live room marked everyone "attended" — put the seats back
-    # too, or the later reminder and cancel tests have nobody to talk to
+    # the session has been settled — put the seats back where they were, or
+    # the later reminder and cancel tests have nobody to talk to
     for _seat in SupportGroupApplication.query.filter_by(meeting_id=mid).all():
-        if _seat.status == "attended":
+        if _seat.status in ("attended", "no_show"):
             _seat.status = "selected"
     db.session.commit()
 
@@ -3846,9 +3861,12 @@ with app.app_context():
 with app.app_context():
     _done = db.session.get(SupportGroupMeeting, wrap_mid)
     sg_svc.complete_meeting(_done)
-    ok("Completing a session moves the seats to attended",
-       all(s.status == "attended"
-           for s in sg_svc.meeting_seats(_done, include_attended=True)))
+    ok("Completing a session settles every seat off 'selected'",
+       sg_svc.meeting_seats(_done) == []
+       and len(sg_svc.meeting_seats(_done, include_attended=True)) == 2)
+    ok("Nobody opened this room, so Studio says so rather than inventing a full house",
+       sg_svc.turnout(_done) == {"joined": 0, "booked": 2, "tracked": True},
+       str(sg_svc.turnout(_done)))
 _wbody = wrap_client.get(f"/support-groups/meetings/{wrap_mid}/wrap").get_data(as_text=True)
 ok("The wrap page still names who was in the room after it completes",
    "sgwraphost" in _wbody, "peers list came back empty")
@@ -4215,6 +4233,49 @@ with app.app_context():
         "ayesha", {(utcnow() + timedelta(days=2)).weekday(): [9, 10, 11, 12, 13, 14]},
         tz_name="UTC")
     ok("Setup restored", len(intake_svc.open_slots("ayesha", viewer_tz="UTC")) > 0)
+
+# --- Studio's Recent table: seats that were taken, and who actually came -----
+# It read finished sessions for live seats, so every one of them showed 0 / 8
+# however full it had been, and there was nothing to say who turned up.
+with app.app_context():
+    _turn_host = User(email="sg-turnout-host@example.com", username="sgturnhost",
+                      membership="healing", email_verified_at=utcnow())
+    _turn_host.set_password(USER_PW)
+    _turn_guest = User(email="sg-turnout-guest@example.com", username="sgturnguest",
+                       membership="healing", email_verified_at=utcnow())
+    _turn_guest.set_password(USER_PW)
+    db.session.add_all([_turn_host, _turn_guest])
+    db.session.commit()
+    _turn_when = utcnow() + timedelta(days=3, hours=2)
+    _turn_meet, _turn_err = sg_svc.schedule_peer_session(
+        _turn_host, circle_id=heal_cid,
+        date_s=_turn_when.strftime("%Y-%m-%d"),
+        time_s=_turn_when.strftime("%H:%M"), tz_name="UTC")
+    ok("A session to look back on", _turn_meet is not None and not _turn_err,
+       _turn_err)
+    sg_svc.join_peer_session(_turn_guest, _turn_meet.id)
+    ok("Opening the room is what counts as coming",
+       sg_svc.mark_joined(_turn_meet, _turn_guest) is True
+       and sg_svc.mark_joined(_turn_meet, _turn_guest) is False)
+    sg_svc.complete_meeting(_turn_meet)
+    _turn_id = _turn_meet.id
+_rbody = admin.get("/admin/support-groups").get_data(as_text=True)
+_recent = _rbody.split("<h2 style=\"margin-top:0;\">Recent</h2>", 1)[-1]
+ok("A finished session shows the seats it had, not an empty room",
+   "2 / 8" in _recent, "Recent still counts live seats only")
+ok("And says how many of them came", "1 of 2" in _recent)
+with app.app_context():
+    _older = db.session.get(SupportGroupMeeting, wrap_mid)
+    # A session from before arrivals were noted: every seat was marked
+    # attended on the way out, so there is nothing honest to count.
+    for _seat in SupportGroupApplication.query.filter_by(meeting_id=_older.id).all():
+        _seat.status = "attended"
+        _seat.joined_at = None
+    db.session.commit()
+    ok("A session from before this was recorded says so rather than claiming nobody came",
+       sg_svc.turnout(_older)["tracked"] is False)
+ok("Which Studio prints as such",
+   "not recorded" in admin.get("/admin/support-groups").get_data(as_text=True))
 
 
 # site image uploads (hero / story teaser)

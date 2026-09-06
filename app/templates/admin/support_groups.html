@@ -404,7 +404,7 @@
     <h2 style="margin-top:0;">Recent</h2>
     <table class="admin-table">
       <thead>
-        <tr><th>Session</th><th>Kind</th><th>When</th><th>Seats</th><th>Status</th></tr>
+        <tr><th>Session</th><th>Kind</th><th>When</th><th>Seats</th><th>Came</th><th>Status</th></tr>
       </thead>
       <tbody>
         {% for m in past_meetings %}
@@ -423,6 +423,19 @@
             {% endif %}
           </td>
           <td>{{ seat_map.get(m.id, [])|length }} / {{ m.capacity }}</td>
+          {% set came = turnout.get(m.id) %}
+          <td>
+            {% if m.status == 'cancelled' %}
+            <span class="field-help">—</span>
+            {% elif not came or not came.tracked %}
+            <span class="field-help">not recorded</span>
+            {% elif came.booked %}
+            {{ came.joined }} of {{ came.booked }}
+            {% if came.joined == 0 %}<span class="field-help">nobody came</span>{% endif %}
+            {% else %}
+            <span class="field-help">nobody booked</span>
+            {% endif %}
+          </td>
           <td>{{ m.status }}</td>
         </tr>
         {% endfor %}

@@ -3629,10 +3629,15 @@ def support_groups():
     intake_meeting_ids = {i.meeting_id for i in intakes if i.meeting_id}
     # Intake-linked 1:1s live only in the intakes panel (not duplicated below).
     open_rows = [m for m in open_rows if m.id not in intake_meeting_ids]
+    # Past seats have been settled off "selected" by then, so a lookback that
+    # only asked for live ones showed every finished session as empty.
     seat_map = sg_svc.seats_for_meetings(
         open_rows + past
-        + [i.meeting for i in intakes if i.meeting_id and i.meeting]
+        + [i.meeting for i in intakes if i.meeting_id and i.meeting],
+        include_past=True,
     )
+    turnout = {m.id: sg_svc.turnout(m, seats=seat_map.get(m.id, []))
+               for m in past}
     intake_rows = []
     for intake in intakes:
         answers = intake_svc.answer_rows(intake)
@@ -3670,6 +3675,7 @@ def support_groups():
         open_meetings=open_rows,
         past_meetings=past,
         seat_map=seat_map,
+        turnout=turnout,
         owner_tz=owner_tz,
         coaches=coaches,
         picked_coach=picked_coach,

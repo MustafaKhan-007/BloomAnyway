@@ -189,9 +189,10 @@ def session_tally(user_ids, tz_name: str | None = None,
                   now: datetime | None = None) -> dict[int, dict]:
     """Support sessions each of these members actually sat in this month.
 
-    A seat only becomes ``attended`` once the session has run, so booking one
-    and not turning up counts for nothing. Peer circles, facilitator-led
-    sessions and 1:1s all count — an hour given is an hour given.
+    A seat only becomes ``attended`` once the session has run and that person
+    was in the room, so booking one and not turning up counts for nothing.
+    Peer circles, facilitator-led sessions and 1:1s all count — an hour given
+    is an hour given.
     """
     ids = {int(i) for i in user_ids}
     if not ids:
