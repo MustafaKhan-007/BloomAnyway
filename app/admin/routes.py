@@ -1689,7 +1689,7 @@ def spotlight():
 
     if request.method == "POST":
         if request.form.get("pick_creator"):
-            pick = spot.pick_top_commenter()
+            pick = spot.pick_standout()
             if pick is None:
                 ready, missing = spot.eligible_split()
                 if not ready and missing:
@@ -1698,15 +1698,14 @@ def spotlight():
                 elif not ready:
                     note = "No Creator members to pick from yet."
                 else:
-                    note = ("Nobody eligible has commented this month yet, so "
+                    note = ("Nobody eligible has turned up this month yet, so "
                             "there's no one to hand the card to.")
                 flash(note, "info")
                 return redirect(url_for("admin.spotlight"))
-            count = pick["comments"]
             flash(
-                f"{pick['name']} led the comments this month with {count} "
-                f"{'comment' if count == 1 else 'comments'}. Check the details "
-                "below and hit Save spotlight to put them on the home page.",
+                f"{pick['name']} had the fullest month — {', '.join(pick['why'])}. "
+                "Check the details below and hit Save spotlight to put them on "
+                "the home page.",
                 "success",
             )
             return redirect(url_for("admin.spotlight", draft=pick["user_id"]))
@@ -1811,7 +1810,7 @@ def spotlight():
         no_instagram=missing,
         # The list is ranked, so the leader is the front of it — when there is
         # anything to lead with.
-        top=(ready[0] if ready and ready[0]["comments"] else None),
+        top=(ready[0] if ready and ready[0]["score"] else None),
         month_start=spot.month_of_record(),
         draft=draft,
         slots=spot.spotlight_slots(),

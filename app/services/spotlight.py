@@ -1,10 +1,9 @@
 """Home-page spotlight: Creator of the Month and Reel of the Week.
 
-Both slots are the owner's own pick — Creator of the Month goes to the Creator
-member who turned up most in the comments this month, out of those who put an
-Instagram link on their Bloom Anyway profile, and Reel of the Week is whatever
-reel she found that week. Neither is an application queue; that's Reel reviews,
-which is a separate feature.
+Both slots are the owner's own pick — Creator of the Month goes to whoever put
+the most into the month, out of the members who put an Instagram link on their
+Bloom Anyway profile, and Reel of the Week is whatever reel she found that
+week. Neither is an application queue; that's Reel reviews, a separate feature.
 
 Each slot carries a run-until date so a stale card doesn't sit on the home page
 forever, and owners get a Bloom Anyway notification a day before one runs out.
@@ -17,7 +16,8 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func
 
 from ..extensions import db
-from ..models import ForumComment, ForumPost, User
+from ..models import (CheckIn, ForumComment, ForumPost, SupportGroupApplication,
+                      SupportGroupMeeting, User)
 from .settings import get_setting, set_setting
 from .social import instagram_from_links, instagram_profile_url
 from .timefmt import normalize_timezone, viewer_timezone
@@ -29,6 +29,20 @@ CREATOR_RUN_DAYS = 30
 REEL_RUN_DAYS = 7
 #: how long before the end date owners get the heads-up
 NOTICE_DAYS = 1
+
+#: What each thing is worth towards Creator of the Month.
+#:
+#: They're set so that a full month of any one of them lands in roughly the
+#: same place — turning up every day, a few comments a week, a post most weeks,
+#: a session or two. Nothing here can carry somebody on its own, which is the
+#: point: the card goes to whoever was around, not to whoever typed the most.
+#: Being featured on the home page is a one-off, so it pays once however many
+#: times it happened.
+POINTS_PER_DAY = 1
+POINTS_PER_COMMENT = 3
+POINTS_PER_POST = 8
+POINTS_PER_SESSION = 15
+POINTS_FOR_REEL = 20
 
 _SWEEP_GAP_SEC = 3600
 _last_sweep_mono = 0.0
@@ -79,7 +93,7 @@ def spotlight_slots(today: date | None = None) -> list[dict]:
     return [slot_state("creator", today), slot_state("reel", today)]
 
 
-# --- how much of the month somebody spent in the comments --------------------
+# --- what a member put into the month ----------------------------------------
 
 def _owner_tz() -> str:
     """The zone the person reading Studio keeps, or UTC off a request."""
@@ -147,15 +161,127 @@ def comment_tally(user_ids, tz_name: str | None = None,
             for uid, n, last in rows}
 
 
-def _standing(row: dict) -> tuple:
-    """Sort key: busiest first, and a tie goes to whoever got there first.
+def post_tally(user_ids, tz_name: str | None = None,
+               now: datetime | None = None) -> dict[int, dict]:
+    """How many posts each of these members started this month, and when last.
 
-    Two people who both left nine comments finished level, but one of them was
-    done sooner — that last comment is the moment they reached the number, so
-    the earlier one leads.
+    Same test as the comments: a post that was taken down, by its author or by
+    moderation, isn't something the month can be credited with.
     """
-    return (-row["comments"],
-            row["last_comment_at"] or datetime.max,
+    ids = {int(i) for i in user_ids}
+    if not ids:
+        return {}
+    start, end, _first = month_window(tz_name, now)
+    rows = (db.session.query(ForumPost.user_id,
+                             func.count(ForumPost.id),
+                             func.max(ForumPost.created_at))
+            .filter(ForumPost.user_id.in_(ids),
+                    ForumPost.hidden.is_(False),
+                    ForumPost.created_at >= start,
+                    ForumPost.created_at < end)
+            .group_by(ForumPost.user_id)
+            .all())
+    return {int(uid): {"posts": int(n or 0), "last_at": last}
+            for uid, n, last in rows}
+
+
+def session_tally(user_ids, tz_name: str | None = None,
+                  now: datetime | None = None) -> dict[int, dict]:
+    """Support sessions each of these members actually sat in this month.
+
+    A seat only becomes ``attended`` once the session has run, so booking one
+    and not turning up counts for nothing. Peer circles, facilitator-led
+    sessions and 1:1s all count — an hour given is an hour given.
+    """
+    ids = {int(i) for i in user_ids}
+    if not ids:
+        return {}
+    start, end, _first = month_window(tz_name, now)
+    rows = (db.session.query(SupportGroupApplication.user_id,
+                             func.count(SupportGroupApplication.id),
+                             func.max(SupportGroupMeeting.scheduled_at))
+            .join(SupportGroupMeeting,
+                  SupportGroupMeeting.id == SupportGroupApplication.meeting_id)
+            .filter(SupportGroupApplication.user_id.in_(ids),
+                    SupportGroupApplication.status == "attended",
+                    SupportGroupMeeting.scheduled_at >= start,
+                    SupportGroupMeeting.scheduled_at < end)
+            .group_by(SupportGroupApplication.user_id)
+            .all())
+    return {int(uid): {"sessions": int(n or 0), "last_at": last}
+            for uid, n, last in rows}
+
+
+def checkin_tally(user_ids, tz_name: str | None = None,
+                  now: datetime | None = None) -> dict[int, dict]:
+    """Days each of these members showed up this month, and their best run.
+
+    ``days`` is what the score uses; ``run`` is the longest unbroken stretch
+    inside the month, which is the streak worth saying out loud. A day is a
+    date rather than a moment, so check-ins never decide a tie.
+    """
+    ids = {int(i) for i in user_ids}
+    if not ids:
+        return {}
+    start, end, _first = month_window(tz_name, now)
+    rows = (db.session.query(CheckIn.user_id, CheckIn.day)
+            .filter(CheckIn.user_id.in_(ids),
+                    CheckIn.day >= start.date(),
+                    CheckIn.day < end.date())
+            .all())
+    seen: dict[int, set] = {}
+    for uid, day in rows:
+        seen.setdefault(int(uid), set()).add(day)
+    out = {}
+    for uid, days in seen.items():
+        ordered = sorted(days)
+        best = run = 1
+        for before, day in zip(ordered, ordered[1:]):
+            run = run + 1 if (day - before).days == 1 else 1
+            best = max(best, run)
+        out[uid] = {"days": len(ordered), "run": best}
+    return out
+
+
+def _score(row: dict) -> int:
+    return (row["days"] * POINTS_PER_DAY
+            + row["comments"] * POINTS_PER_COMMENT
+            + row["posts"] * POINTS_PER_POST
+            + row["sessions"] * POINTS_PER_SESSION
+            + (POINTS_FOR_REEL if row["reel"] else 0))
+
+
+def _why(row: dict) -> list[str]:
+    """The month in a few words, in the order the score weighs them."""
+    def plural(n, word):
+        return f"{n} {word}{'' if n == 1 else 's'}"
+
+    bits = []
+    if row["sessions"]:
+        bits.append(plural(row["sessions"], "session"))
+    if row["posts"]:
+        bits.append(plural(row["posts"], "post"))
+    if row["comments"]:
+        bits.append(plural(row["comments"], "comment"))
+    if row["days"]:
+        here = plural(row["days"], "day") + " here"
+        if row["run"] > 1:
+            here += f" (best run {row['run']})"
+        bits.append(here)
+    if row["reel"]:
+        bits.append("reel of the week")
+    return bits
+
+
+def _standing(row: dict) -> tuple:
+    """Sort key: fullest month first, and a tie goes to whoever got there first.
+
+    Two people can finish level and one of them was done sooner — their last
+    post, comment or session is the moment they reached the number, so the
+    earlier one leads.
+    """
+    return (-row["score"],
+            row["last_at"] or datetime.max,
             (row["name"] or "").casefold())
 
 
@@ -163,11 +289,14 @@ def _standing(row: dict) -> tuple:
 
 def eligible_creators(tz_name: str | None = None,
                       now: datetime | None = None) -> list[dict]:
-    """Creator-tier members, in the order this month's comments put them.
+    """Creator-tier members, in the order their month puts them.
 
-    Linking Instagram on the Bloom Anyway profile is what makes someone
-    pickable, so the list comes back ranked and :func:`eligible_split` cuts it
-    into the ones who can be featured today and the ones who need that link.
+    A month is read five ways: the days they showed up, the posts they
+    started, the comments they left, the support sessions they sat in, and
+    whether their reel has ever been on the home page. Linking Instagram is
+    what makes someone pickable, so the list comes back ranked and
+    :func:`eligible_split` cuts it into the ones who can be featured today and
+    the ones who need that link.
     """
     rows = (User.query
             .filter(User.deleted_at.is_(None),
@@ -175,12 +304,19 @@ def eligible_creators(tz_name: str | None = None,
                     User.membership.in_(("creator", "full_bloom")))
             .order_by(User.display_name, User.username)
             .all())
-    tally = comment_tally([u.id for u in rows], tz_name, now)
+    ids = [u.id for u in rows]
+    said = comment_tally(ids, tz_name, now)
+    wrote = post_tally(ids, tz_name, now)
+    sat = session_tally(ids, tz_name, now)
+    showed = checkin_tally(ids, tz_name, now)
     out = []
     for u in rows:
         handle = instagram_from_links(u.links())
-        seen = tally.get(u.id) or {}
-        out.append({
+        talk = said.get(u.id) or {}
+        posts = wrote.get(u.id) or {}
+        sessions = sat.get(u.id) or {}
+        here = showed.get(u.id) or {}
+        row = {
             "user_id": u.id,
             "name": u.public_name(),
             "email": u.email,
@@ -190,9 +326,21 @@ def eligible_creators(tz_name: str | None = None,
             "profile_url": instagram_profile_url(handle) if handle else "",
             "bio": (u.bio or "").strip(),
             "has_photo": bool(u.avatar_mime or (u.avatar_url or "").strip()),
-            "comments": int(seen.get("comments") or 0),
-            "last_comment_at": seen.get("last_at"),
-        })
+            "comments": int(talk.get("comments") or 0),
+            "posts": int(posts.get("posts") or 0),
+            "sessions": int(sessions.get("sessions") or 0),
+            "days": int(here.get("days") or 0),
+            "run": int(here.get("run") or 0),
+            "reel": u.reel_featured_at is not None,
+            "last_at": max(
+                (when for when in (talk.get("last_at"), posts.get("last_at"),
+                                   sessions.get("last_at")) if when),
+                default=None,
+            ),
+        }
+        row["score"] = _score(row)
+        row["why"] = _why(row)
+        out.append(row)
     out.sort(key=_standing)
     return out
 
@@ -206,16 +354,16 @@ def eligible_split(tz_name: str | None = None,
     return ready, missing
 
 
-def pick_top_commenter(tz_name: str | None = None,
-                       now: datetime | None = None) -> dict | None:
-    """Whoever showed up most in the comments this month, or ``None``.
+def pick_standout(tz_name: str | None = None,
+                  now: datetime | None = None) -> dict | None:
+    """Whoever put the most into the month, or ``None``.
 
-    Nobody is returned when the month's comments are all from people who can't
-    be featured yet — an empty month has no winner to hand the card to.
+    Nobody is returned when everything the month holds came from people who
+    can't be featured yet — a quiet month has no one to hand the card to.
     """
     ready, _missing = eligible_split(tz_name, now)
     leader = ready[0] if ready else None
-    if not leader or not leader["comments"]:
+    if not leader or not leader["score"]:
         return None
     return leader
 

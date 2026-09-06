@@ -3152,6 +3152,7 @@ ok("Second Reel of the Week entry in the same week is blocked",
 with app.app_context():
     sub = ReelSubmission.query.first()
     sub_id = sub.id
+    sub_author_id = sub.user_id
     ok("The entry keeps the share count and the raw video",
        sub.share_count == 412 and sub.has_raw_video()
        and sub.week_key == rotw_svc.current_week_key())
@@ -3178,6 +3179,8 @@ ok("The home page credits whoever sent it in",
 with app.app_context():
     ok("Only one entry is flagged as featured",
        ReelSubmission.query.filter_by(featured=True).count() == 1)
+    ok("Being featured is written on the member, not just the entry",
+       db.session.get(User, sub_author_id).reel_featured_at is not None)
 hub = client.get("/watch").get_data(as_text=True)
 ok("The member sees their reel made the home page",
    "featured on the home page" in hub)
@@ -3211,6 +3214,8 @@ with app.app_context():
        db.session.get(ReelReviewApplication, reviewed_id).disk_name is None)
     ok("Monday clears last week's Reel of the Week entries",
        cleared["reel_of_week"] == 1 and ReelSubmission.query.count() == 0)
+    ok("Having been Reel of the Week outlives the entry it came from",
+       db.session.get(User, sub_author_id).reel_featured_at is not None)
 ok("The published review is still readable after the clear-out",
    client.get(f"/watch/reviews/{review_id}").status_code == 200)
 
@@ -4308,7 +4313,8 @@ with app.app_context():
     ok("Creator photo setting points at media route",
        get_setting("creator_image_url") == "/media/site/creator")
 
-# --- spotlight: eligible list, the month's top commenter, expiry notices ----
+# --- spotlight: eligible list, the month's standout, expiry notices ---------
+from app.models import CheckIn as _CheckIn   # noqa: E402
 from app.services import spotlight as _spot   # noqa: E402
 
 with app.app_context():
@@ -4385,15 +4391,15 @@ with app.app_context():
        and _tally[_drawme_id]["comments"] == 1)
 
     _ready, _missing = _spot.eligible_split()
-    ok("The eligible list is ordered by who commented most",
+    ok("The eligible list is ordered by whose month adds up to most",
        _ready[0]["name"] == "Chatty One" and _ready[0]["comments"] == 6)
     ok("Members with no Instagram link are still counted, just not pickable",
        any(c["email"] == "quiet@example.com" and c["comments"] == 2
            for c in _missing))
-    ok("The top commenter is who gets picked",
-       (_spot.pick_top_commenter() or {}).get("user_id") == _chatty_id)
-    ok("A month nobody commented in has nobody to hand the card to",
-       _spot.pick_top_commenter("UTC", now=_now + timedelta(days=400)) is None)
+    ok("The fullest month is who gets picked",
+       (_spot.pick_standout() or {}).get("user_id") == _chatty_id)
+    ok("A month nobody turned up in has nobody to hand the card to",
+       _spot.pick_standout("UTC", now=_now + timedelta(days=400)) is None)
 
     # Same total, finished sooner: the earlier of the two leads.
     _tied = User(email="tied@example.com", display_name="Tied Early",
@@ -4408,11 +4414,87 @@ with app.app_context():
         _said(_tied.id, f"Tied {_i}", 120 - _i)
     db.session.commit()
     ok("A tie goes to whoever got there first",
-       (_spot.pick_top_commenter() or {}).get("user_id") == _tied.id)
+       (_spot.pick_standout() or {}).get("user_id") == _tied.id)
     ForumComment.query.filter_by(user_id=_tied.id).delete(
         synchronize_session=False)
     db.session.delete(_tied)
     db.session.commit()
+
+# The other four things a month is read by: days here, posts, sessions sat in,
+# and a reel that made the home page.
+with app.app_context():
+    _drawme = User.query.filter_by(email="drawme@example.com").first()
+    _chatty_id = User.query.filter_by(email="chatty@example.com").first().id
+    _month_start, _month_end, _ = _spot.month_window("UTC")
+    _today = datetime.utcnow().date()
+    _first = max(_month_start.date(), _today - timedelta(days=4))
+    _days = [_first + timedelta(days=_i)
+             for _i in range((_today - _first).days + 1)]
+    for _day in _days:
+        db.session.add(_CheckIn(user_id=_drawme.id, day=_day))
+    # One from before the month opened, which this month can't claim.
+    db.session.add(_CheckIn(user_id=_drawme.id,
+                            day=_month_start.date() - timedelta(days=1)))
+    db.session.commit()
+
+    _here = _spot.checkin_tally([_drawme.id, _chatty_id], "UTC")
+    ok("Showing up is counted by the day, inside this month only",
+       _here[_drawme.id]["days"] == len(_days)
+       and _here[_drawme.id]["run"] == len(_days)
+       and _chatty_id not in _here,
+       f"tally={_here}")
+
+    _heal = ForumCategory.query.filter_by(slug="healing").first()
+    db.session.add(ForumPost(category_id=_heal.id, user_id=_drawme.id,
+                             title="A whole month of turning up",
+                             body="Here's what I made."))
+    db.session.add(ForumPost(category_id=_heal.id, user_id=_drawme.id,
+                             title="Taken down again", body="Gone.",
+                             hidden=True))
+    db.session.commit()
+    _wrote = _spot.post_tally([_drawme.id], "UTC")
+    _standing_posts = ForumPost.query.filter_by(user_id=_drawme.id,
+                                                hidden=False).count()
+    ok("Posts count towards the month, unless they were taken down",
+       _wrote[_drawme.id]["posts"] == _standing_posts
+       and ForumPost.query.filter_by(user_id=_drawme.id, hidden=True).count() == 2,
+       f"counted={_wrote[_drawme.id]['posts']} standing={_standing_posts}")
+
+    _sat = SupportGroupMeeting(circle_id=None, capacity=6, kind="peer",
+                               status="completed",
+                               scheduled_at=datetime.utcnow() - timedelta(hours=3))
+    _missed = SupportGroupMeeting(circle_id=None, capacity=6, kind="peer",
+                                  status="completed",
+                                  scheduled_at=datetime.utcnow() - timedelta(hours=2))
+    db.session.add_all([_sat, _missed])
+    db.session.flush()
+    db.session.add(SupportGroupApplication(user_id=_drawme.id, meeting_id=_sat.id,
+                                           message="", status="attended"))
+    db.session.add(SupportGroupApplication(user_id=_drawme.id, meeting_id=_missed.id,
+                                           message="", status="selected"))
+    db.session.commit()
+    _seats = _spot.session_tally([_drawme.id], "UTC")
+    ok("A session counts once you've actually sat in it, not once booked",
+       _seats[_drawme.id]["sessions"] == 1)
+
+    _drawme.reel_featured_at = utcnow()
+    db.session.commit()
+
+    _ready, _missing = _spot.eligible_split()
+    _lead = _ready[0]
+    _expected = (len(_days) * _spot.POINTS_PER_DAY
+                 + 1 * _spot.POINTS_PER_COMMENT
+                 + _standing_posts * _spot.POINTS_PER_POST
+                 + 1 * _spot.POINTS_PER_SESSION
+                 + _spot.POINTS_FOR_REEL)
+    ok("A quiet month of showing up outranks a loud month of comments alone",
+       _lead["user_id"] == _drawme.id and _lead["score"] == _expected,
+       f"lead={_lead['name']} score={_lead['score']} want={_expected}")
+    ok("The score says what it's made of",
+       "1 session" in _lead["why"] and f"{_standing_posts} posts" in _lead["why"]
+       and "1 comment" in _lead["why"] and "reel of the week" in _lead["why"]
+       and any(w.startswith(f"{len(_days)} day") for w in _lead["why"]),
+       f"why={_lead['why']}")
 
 r = admin.get("/admin/spotlight")
 sbody = r.get_data(as_text=True)
@@ -4420,17 +4502,18 @@ ok("Spotlight page lists who can be Creator of the month",
    r.status_code == 200 and "Draw Me" in sbody
    and 'name="pick_creator"' in sbody
    and "Reel reviews" in sbody)
-ok("Spotlight page shows the month's comment counts",
-   "6 comments" in sbody and sbody.index("Chatty One") < sbody.index("Draw Me"))
+ok("Spotlight page shows what each member's month added up to",
+   "reel of the week" in sbody and "1 session" in sbody
+   and sbody.index("Draw Me") < sbody.index("Chatty One"))
 
 r = admin.post("/admin/spotlight", data={"pick_creator": "1"},
                follow_redirects=True)
 dbody = r.get_data(as_text=True)
-ok("The month's top commenter pre-fills the Creator of the month form",
-   'value="Chatty One"' in dbody and "led the comments this month" in dbody)
+ok("The month's standout pre-fills the Creator of the month form",
+   'value="Draw Me"' in dbody and "had the fullest month" in dbody)
 with app.app_context():
-    ok("Picking the top commenter doesn't publish anything by itself",
-       get_setting("creator_name") != "Chatty One")
+    ok("Picking the standout doesn't publish anything by itself",
+       get_setting("creator_name") != "Draw Me")
 
 with app.app_context():
     from datetime import date as _date
