@@ -16,11 +16,31 @@ from ..models import Order, Product, utcnow
 log = logging.getLogger(__name__)
 
 
+# Where the challenge was sold before it was sold here.
+STORE_URL = ("https://stan.store/hustlinmommazbiz/p/"
+             "2-month-challenge-round-2-waitlist-closed")
+
+
 def course() -> Product | None:
     """The course the challenge is sold as here, if it is sold here."""
     from .catalog import challenge_product
 
     return challenge_product()
+
+
+def enroll_url(viewer=None) -> str:
+    """Where joining the challenge goes, for whoever is asking.
+
+    The course page once the challenge is a course here, and the store it
+    pointed at back when it wasn't. One answer, so the landing page and Studio
+    can't disagree about where somebody enrolling ends up.
+    """
+    from flask import url_for
+
+    sold_here = course()
+    if sold_here is not None and sold_here.visible_to(viewer):
+        return url_for("main.course_detail", slug=sold_here.slug)
+    return STORE_URL
 
 
 def _claim(order: Order | None) -> bool:

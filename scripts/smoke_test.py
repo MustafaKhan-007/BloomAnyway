@@ -7358,8 +7358,12 @@ try:
        in admin.post("/admin/send-challenge-welcome", data={"email": "nope"},
                      follow_redirects=True).get_data(as_text=True)
        and not _letters)
+    _studio_dash = admin.get("/admin/").get_data(as_text=True)
     ok("The send sits with the other missed-purchase tools in Studio",
-       "Challenge welcome missing?" in admin.get("/admin/").get_data(as_text=True))
+       "Challenge welcome missing?" in _studio_dash)
+    ok("And Studio's own enrol button goes where the landing page goes",
+       "/courses/two-month-creator-challenge" in _studio_dash
+       and "stan.store" not in _studio_dash, "still pointing at the store")
     with app.app_context():
         _cat_svc._purge_product(db.session.get(Product, _plain_id))
         db.session.commit()

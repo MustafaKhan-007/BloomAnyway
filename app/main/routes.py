@@ -580,12 +580,6 @@ def membership():
                            back_url=back_url, back_label=back_label)
 
 
-CHALLENGE_ENROLL_URL = (
-    "https://stan.store/hustlinmommazbiz/p/"
-    "2-month-challenge-round-2-waitlist-closed"
-)
-
-
 @bp.route("/challenge")
 def challenge():
     """2-month Creator Challenge landing.
@@ -594,15 +588,11 @@ def challenge():
     once the challenge is a course here, or the Stan store it pointed at back
     when it wasn't.
     """
-    from ..services.catalog import challenge_product
+    from ..services.challenge import enroll_url
 
-    enroll = CHALLENGE_ENROLL_URL
-    sold_here = challenge_product()
-    if sold_here is not None and sold_here.visible_to(current_user):
-        enroll = url_for("main.course_detail", slug=sold_here.slug)
     return render_template(
         "main/challenge.html",
-        challenge_enroll_url=enroll,
+        challenge_enroll_url=enroll_url(current_user),
     )
 
 
