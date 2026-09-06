@@ -431,7 +431,6 @@
             <span class="field-help">not recorded</span>
             {% elif came.booked %}
             {{ came.joined }} of {{ came.booked }}
-            {% if came.joined == 0 %}<span class="field-help">nobody came</span>{% endif %}
             {% else %}
             <span class="field-help">nobody booked</span>
             {% endif %}
