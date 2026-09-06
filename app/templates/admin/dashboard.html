@@ -148,6 +148,21 @@
         <button type="submit" class="btn btn--secondary btn--sm">Import session</button>
       </form>
       {% endif %}
+      {% if challenge_on_sale %}
+      <form method="post" action="{{ url_for('admin.send_challenge_welcome') }}"
+            style="margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label class="field-help" for="challenge-welcome-email" style="margin:0;">Challenge welcome missing?</label>
+        <input id="challenge-welcome-email" name="email" type="email"
+               placeholder="they bought with…" autocomplete="off"
+               style="flex: 1 1 220px; min-width: 180px; max-width: 420px;">
+        <button type="submit" class="btn btn--secondary btn--sm">Send it</button>
+      </form>
+      <p class="field-help" style="margin: 4px 0 0;">
+        Goes out with every challenge purchase. This is for anybody who bought
+        before it did &mdash; it won&rsquo;t send twice.
+      </p>
+      {% endif %}
     </div>
     <div class="admin-panel studio-card studio-dash-exact__founder">
       <h2>Founder pricing</h2>
@@ -164,7 +179,11 @@
     </div>
     <div class="admin-panel studio-card studio-dash-exact__challenge">
       <h2>2-Month Challenge</h2>
-      <p class="field-help" style="margin:0 0 12px;">Enrollment is on Stan Store — Round 2 of the Creator Challenge.</p>
+      <p class="field-help" style="margin:0 0 12px;">
+        {% if challenge_on_sale %}Sold here as a course — buyers get the
+        welcome with their receipt.{% else %}Enrollment is on Stan Store —
+        Round 2 of the Creator Challenge.{% endif %}
+      </p>
       <a class="btn btn--secondary btn--sm" href="{{ challenge_enroll_url }}" target="_blank" rel="noopener">Open enrollment</a>
       <a class="btn btn--quiet btn--sm" href="{{ url_for('main.challenge') }}" target="_blank" rel="noopener">Open landing</a>
     </div>

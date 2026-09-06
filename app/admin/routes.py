@@ -172,7 +172,7 @@ def dashboard():
             set_setting("stripe_last_sync_at",
                         datetime.utcnow().isoformat(timespec="seconds"))
         pay.maybe_sweep_cancel_flags()
-    from ..main.routes import CHALLENGE_ENROLL_URL
+    from ..services import challenge as challenge_service
     from ..services import storage_health
     try:
         storage = storage_health.check()
@@ -182,7 +182,7 @@ def dashboard():
         storage = {"wiped": False}
     return render_template(
         "admin/dashboard.html",
-        challenge_enroll_url=CHALLENGE_ENROLL_URL,
+        challenge_enroll_url=challenge_service.enroll_url(current_user),
         storage=storage,
         today_quote=quotes_service.quote_for(today),
         tomorrow_quote=quotes_service.quote_for(today + timedelta(days=1)),
@@ -200,6 +200,7 @@ def dashboard():
         support_occupancy=stats.support_occupancy(),
         founder_days=stats.founder_days_remaining(),
         stripe_configured=pay.configured(),
+        challenge_on_sale=challenge_service.course() is not None,
     )
 
 
@@ -268,6 +269,45 @@ def import_checkout_session():
         db.session.rollback()
         log.exception("import checkout session failed: %s", sid)
         flash(f"Import failed: {exc}", "error")
+    return redirect(url_for("admin.dashboard"))
+
+
+@bp.route("/send-challenge-welcome", methods=["POST"])
+@admin_required
+def send_challenge_welcome():
+    """Send the challenge welcome to somebody the purchase path missed."""
+    from ..services import challenge
+
+    email = (request.form.get("email") or "").strip()
+    if "@" not in email:
+        flash("Type the address they bought with.", "error")
+        return redirect(url_for("admin.dashboard"))
+
+    order = challenge.last_purchase(email)
+    course = challenge.course()
+    if order is None and course is None:
+        flash("No challenge course here to welcome anybody to — tick "
+              "\u201cBuying this joins the challenge\u201d on the course first.",
+              "error")
+        return redirect(url_for("admin.dashboard"))
+    if challenge.welcome_already_sent(order):
+        when = order.welcome_sent_at.strftime("%b %d, %Y")
+        flash(f"{email} already had the challenge welcome on {when}.", "info")
+        return redirect(url_for("admin.dashboard"))
+
+    product = (order.product if order is not None and order.product_id
+               else course)
+    sent = challenge.send_welcome(email, product=product, order=order,
+                                  name=product.title if product else "")
+    if not sent:
+        flash("Could not send it — check the Brevo key and template 30.",
+              "error")
+    elif order is None:
+        flash(f"Sent the challenge welcome to {email}. No purchase on record "
+              "for that address, so nothing was marked as sent \u2014 import "
+              "the checkout session if it should be here.", "success")
+    else:
+        flash(f"Sent the challenge welcome to {email}.", "success")
     return redirect(url_for("admin.dashboard"))
 
 
