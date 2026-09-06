@@ -1254,6 +1254,13 @@ ok("The catalogue tile shows the sale price over the old one",
    "lib-card__price--promo" in _tile and "<s>$24</s>" in _tile)
 ok("With the saving and the code on the card",
    "lib-card__promo" in _tile and "SPRING25" in _tile and "$6 off" in _tile)
+# A sale price used to be the whole of the card's bottom row, leaving the one
+# product somebody is most likely to want with no way through to it.
+_sale_card = _tile.split("lib-card__price--promo", 1)[-1].split("</article>", 1)[0]
+ok("And a way in, same as every other card",
+   "/courses/rebuild-your-week" in _sale_card
+   and "lib-card__btn--primary" in _sale_card
+   and "View" in _sale_card, _sale_card[-400:])
 
 # Half a promo is no promo, and one that doesn't save anything isn't a sale.
 for _bad, _why in (({"promo_price": "18.00", "promo_code": ""}, "no code"),
@@ -5648,6 +5655,7 @@ with app.app_context():
     dripper = User.query.filter_by(email="dripper@example.com").first()
     ok("Told once, not once per webhook",
        _Note.query.filter_by(user_id=dripper.id, kind="membership").count() == 1)
+
 
 drip_client = app.test_client()
 drip_client.post("/login", data={"email": "dripper@example.com", "password": USER_PW})
