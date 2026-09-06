@@ -108,7 +108,9 @@
           <p class="field-help">No open times right now.</p>
           {% endif %}
           <p class="field-help">
-            Highlighted days have open slots in your timezone ({{ viewer_tz }}).
+            Highlighted days have open slots on your own clock
+            (<strong>{{ viewer_tz }}</strong>, from
+            <a href="{{ url_for('main.settings') }}">your settings</a>).
             Coach availability converts automatically (including daylight saving).
             Session length: {{ duration_min }} min.
           </p>

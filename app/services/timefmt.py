@@ -81,15 +81,33 @@ def normalize_timezone(name: str | None) -> str | None:
     return raw
 
 
+def account_timezone(user=None) -> str:
+    """The clock one person keeps, as their settings have it.
+
+    Everything written for somebody who is signed in goes through here: the
+    times they read, and the times they type in. One answer for the whole
+    site, which is why nothing else has to ask them for it.
+    """
+    who = user if user is not None else current_user
+    return normalize_timezone(getattr(who, "timezone", None)) or DEFAULT_TZ
+
+
+def has_account_timezone(user=None) -> bool:
+    """Whether we already know this person's clock without having to guess."""
+    who = user if user is not None else current_user
+    return bool(getattr(who, "is_authenticated", False)
+                and normalize_timezone(getattr(who, "timezone", None)))
+
+
 def viewer_timezone() -> str:
     # Nobody is reading it off a request — a sweep, a CLI run, a summary built
     # for an email — so there is no clock to follow but the house one.
     if not has_request_context():
         return DEFAULT_TZ
-    if getattr(current_user, "is_authenticated", False):
-        saved = normalize_timezone(getattr(current_user, "timezone", None))
-        if saved:
-            return saved
+    # Settings win outright for anybody signed in. The device is only ever
+    # consulted for a visitor we have nothing saved for.
+    if has_account_timezone():
+        return account_timezone()
     cookie = normalize_timezone(request.cookies.get("tz"))
     return cookie or DEFAULT_TZ
 

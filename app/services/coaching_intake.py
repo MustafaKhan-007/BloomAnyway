@@ -311,27 +311,44 @@ def add_availability(
 DAY_HOURS = tuple(range(24))
 
 
-def week_grid(coach: str) -> dict[int, set[int]]:
+def shift_hour(weekday: int, hour: int, from_tz: str, to_tz: str) -> tuple[int, int]:
+    """One hour of a repeating week, read off another clock.
+
+    Nine on a Monday in Karachi is four on a Monday in London and eight on the
+    Sunday night in Denver, so the day travels with the hour. Read against the
+    week in hand, which is the week whoever is looking has in mind.
+    """
+    origin = normalize_timezone(from_tz) or "UTC"
+    target = normalize_timezone(to_tz) or "UTC"
+    if origin == target:
+        return weekday, hour
+    today = date.today()
+    that_day = today - timedelta(days=today.weekday()) + timedelta(days=weekday)
+    there = datetime(that_day.year, that_day.month, that_day.day, hour,
+                     tzinfo=ZoneInfo(origin))
+    here = there.astimezone(ZoneInfo(target))
+    return here.weekday(), here.hour
+
+
+def week_grid(coach: str, tz_name: str | None = None) -> dict[int, set[int]]:
     """Which hours are already marked free, weekday → set of start hours.
 
     Turns saved windows back into the ticks that made them, so the editor opens
-    on what is there rather than on nothing.
+    on what is there rather than on nothing. Hours saved on another clock — a
+    week set before the site kept one timezone per person — are moved onto
+    ``tz_name`` so the ticks mean what the editor says they mean.
     """
     grid: dict[int, set[int]] = {day: set() for day in range(7)}
+    want = normalize_timezone(tz_name)
     for win in list_availability(coach):
         start = max(0, win.start_minute // 60)
         end = min(24, -(-win.end_minute // 60))  # round up to the hour
         for hour in range(start, end):
-            grid[win.weekday].add(hour)
+            day, moved = win.weekday, hour
+            if want:
+                day, moved = shift_hour(win.weekday, hour, win.timezone, want)
+            grid[day].add(moved)
     return grid
-
-
-def week_timezone(coach: str, fallback: str | None = None) -> str:
-    """The timezone the saved week is written in, for the editor to open on."""
-    rows = list_availability(coach)
-    if rows:
-        return rows[0].timezone or normalize_timezone(fallback) or "UTC"
-    return normalize_timezone(fallback) or "UTC"
 
 
 def _merge_hours(hours) -> list[tuple[int, int]]:

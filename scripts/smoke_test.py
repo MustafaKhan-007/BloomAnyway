@@ -3343,6 +3343,15 @@ ok("Free members cannot schedule peer sessions",
    and _booked_by_free == 0,
    f"{flashes(r)} | meetings={_booked_by_free}")
 
+# The hour they type is the hour on their own clock — the one in their
+# settings. The form has no timezone on it, and one sent anyway is ignored.
+with app.app_context():
+    _sched_user = User.query.filter_by(email="stranger@example.com").first()
+    _sched_user.timezone = "Asia/Karachi"
+    db.session.commit()
+ok("Nothing on the scheduling form asks a member which zone they mean",
+   'name="timezone"' not in
+   stranger_client.get("/support-groups").get_data(as_text=True))
 r = stranger_client.post("/support-groups/schedule",
                          data={"circle_id": heal_cid, "meeting_date": _sg_date,
                                "meeting_time": _sg_time, "timezone": "UTC"},
@@ -3355,6 +3364,14 @@ with app.app_context():
             .order_by(SupportGroupMeeting.id.desc()).first())
     ok("Peer meeting exists after member schedule", peer is not None)
     mid = peer.id
+    from app.services.timefmt import parse_owner_parts as _parse_when
+    _karachi = _parse_when(_sg_date, _sg_time, "Asia/Karachi")
+    ok("Booked on the clock in their settings, not the one the form posted",
+       peer.scheduled_at.replace(second=0, microsecond=0) == _karachi,
+       f"{peer.scheduled_at} wanted {_karachi}")
+    _sched_user = User.query.filter_by(email="stranger@example.com").first()
+    _sched_user.timezone = None
+    db.session.commit()
     ok("Scheduler is seated as host",
        SupportGroupApplication.query.filter_by(
            meeting_id=mid, status="selected").count() == 1)
@@ -4127,7 +4144,7 @@ ok("And what is already saved comes back ticked",
    and 'checked' in _wbody)
 
 r = admin.post("/admin/support-groups/availability", data={
-    "coach": "ayesha", "timezone": "UTC",
+    "coach": "ayesha",
     # Monday morning in one run, plus a lone Wednesday hour.
     "slot": ["0:9", "0:10", "0:11", "2:14"],
 }, follow_redirects=True)
@@ -4138,17 +4155,43 @@ with app.app_context():
     _shape = sorted((w.weekday, w.start_minute, w.end_minute) for w in _wins)
     ok("Hours next to each other become one window, not four",
        _shape == [(0, 540, 720), (2, 840, 900)], f"got {_shape}")
-    ok("All of it saved in the timezone chosen for the week",
+    ok("All of it saved on the owner's own clock, with nothing to pick",
        {w.timezone for w in _wins} == {"UTC"})
     ok("The editor can read its own week back",
        intake_svc.week_grid("ayesha")[0] == {9, 10, 11}
        and intake_svc.week_grid("ayesha")[2] == {14})
     ok("And members get bookable slots from it",
        len(intake_svc.open_slots("ayesha", viewer_tz="UTC")) > 0)
+# Studio stopped asking which zone a week is in — it is the zone in the
+# owner's settings, and a week saved in another one is read back in hers.
+ok("The week editor has no timezone to pick any more",
+   'name="timezone"' not in admin.get("/admin/support-groups").get_data(as_text=True))
+with app.app_context():
+    _owner_row = User.query.filter_by(email="owner@example.com").first()
+    _owner_row.timezone = "America/New_York"
+    db.session.commit()
+r = admin.post("/admin/support-groups/availability", data={
+    "coach": "ayesha", "slot": ["0:9"]}, follow_redirects=True)
+with app.app_context():
+    ok("A week saved now is written on whatever her settings say",
+       {w.timezone for w in intake_svc.list_availability("ayesha")}
+       == {"America/New_York"})
+    # 9am New York is 2pm or 1pm in London, depending on the month.
+    _london = intake_svc.week_grid("ayesha", "Europe/London")
+    _hour = intake_svc.shift_hour(0, 9, "America/New_York", "Europe/London")
+    ok("And an old week written elsewhere is read back on the clock in hand",
+       _london[_hour[0]] == {_hour[1]} and _hour[1] in (13, 14),
+       f"{_london} vs {_hour}")
+    _owner_row = User.query.filter_by(email="owner@example.com").first()
+    _owner_row.timezone = None
+    db.session.commit()
+admin.post("/admin/support-groups/availability", data={
+    "coach": "ayesha", "slot": ["0:9", "0:10", "0:11", "2:14"]},
+    follow_redirects=True)
 
 # Saving again is editing: the week is replaced, not added to.
 admin.post("/admin/support-groups/availability", data={
-    "coach": "ayesha", "timezone": "UTC", "slot": ["0:9"],
+    "coach": "ayesha", "slot": ["0:9"],
 }, follow_redirects=True)
 with app.app_context():
     _shape = sorted((w.weekday, w.start_minute, w.end_minute)
@@ -4159,7 +4202,7 @@ with app.app_context():
        len(intake_svc.list_availability("saman")) > 0)
 
 r = admin.post("/admin/support-groups/availability", data={
-    "coach": "ayesha", "timezone": "UTC",
+    "coach": "ayesha",
 }, follow_redirects=True)
 ok("Clearing every day says so plainly, rather than looking like a no-op",
    "unavailable all week" in r.get_data(as_text=True), flashes(r))
@@ -8368,18 +8411,41 @@ _pinned_page = _tzc.get("/forums/").get_data(as_text=True)
 ok("Pages are written on the chosen clock, not the browser's",
    'data-tz="Europe/Berlin"' in _pinned_page)
 ok("And the browser is told to leave those times alone",
-   'data-tz-pinned="1"' in _pinned_page)
+   'data-tz-settled="1"' in _pinned_page)
 
+# Taking this device's zone is a one-off copy into settings, not a standing
+# arrangement: the site reads the same afterwards wherever they open it.
 r = _tzc.post("/account/timezone",
               data={"follow_browser": "yes", "timezone": "Asia/Karachi",
                     "csrf_token": "x"}, follow_redirects=True)
-ok("Handing it back lets the device lead again",
-   "Times will follow whatever clock your device keeps" in r.get_data(as_text=True))
+ok("A device's own zone can be taken in one click",
+   "Times are now shown in Asia/Karachi" in r.get_data(as_text=True))
 _tzc.post("/account/timezone", json={"timezone": "Pacific/Auckland"})
 with app.app_context():
     _tzuser = User.query.filter_by(email="buyer@example.com").first()
-    ok("And the next page the browser loads moves the clock again",
-       _tzuser.timezone == "Pacific/Auckland" and not _tzuser.timezone_pinned)
+    ok("And the next device to report in doesn't move it",
+       _tzuser.timezone == "Asia/Karachi", _tzuser.timezone)
+ok("So every page they open is on the one clock, whatever they open it on",
+   'data-tz="Asia/Karachi"' in _tzc.get("/forums/").get_data(as_text=True)
+   and 'data-tz-settled="1"' in _tzc.get("/forums/").get_data(as_text=True))
+
+# The one thing the browser still does: fill in a blank on a first visit.
+with app.app_context():
+    _blank = User(email="noclock@example.com", email_verified_at=utcnow())
+    _blank.set_password(USER_PW)
+    db.session.add(_blank)
+    db.session.commit()
+_blankc = app.test_client()
+_blankc.post("/login", data={"email": "noclock@example.com", "password": USER_PW})
+ok("Somebody we know nothing about yet is written in the house clock",
+   'data-tz-settled' not in _blankc.get("/forums/").get_data(as_text=True))
+_blankc.post("/account/timezone", json={"timezone": "America/Denver"})
+with app.app_context():
+    _blank = User.query.filter_by(email="noclock@example.com").first()
+    ok("Their browser says once, and that becomes their settings",
+       _blank.timezone == "America/Denver")
+ok("From then on the page is settled and nothing redraws it",
+   'data-tz-settled="1"' in _blankc.get("/forums/").get_data(as_text=True))
 r = _tzc.post("/account/timezone", data={"timezone": "Mars/Olympus",
                                          "csrf_token": "x"},
               follow_redirects=True)
