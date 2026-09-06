@@ -19,7 +19,7 @@ from functools import lru_cache
 from urllib.parse import unquote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
-from flask import request
+from flask import has_request_context, request
 from flask_login import current_user
 from markupsafe import Markup, escape
 
@@ -82,6 +82,10 @@ def normalize_timezone(name: str | None) -> str | None:
 
 
 def viewer_timezone() -> str:
+    # Nobody is reading it off a request — a sweep, a CLI run, a summary built
+    # for an email — so there is no clock to follow but the house one.
+    if not has_request_context():
+        return DEFAULT_TZ
     if getattr(current_user, "is_authenticated", False):
         saved = normalize_timezone(getattr(current_user, "timezone", None))
         if saved:

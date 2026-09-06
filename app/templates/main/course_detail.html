@@ -193,21 +193,28 @@
         {% if curriculum %}
         <section class="pd-section pd-section--wide" aria-labelledby="pd-curriculum-heading">
           <h2 id="pd-curriculum-heading">What’s inside</h2>
-          {% if product.is_dripped() %}
+          {% set steps = product.release_steps() if product.is_dripped() else [] %}
+          {% if steps %}
           <p class="pd-curriculum__note">
-            Released one module at a time: the first opens as soon as you buy, then a new
-            one every {{ product.drip_days() }} day{{ '' if product.drip_days() == 1 else 's' }}.
+            Released one module at a time:
+            {%- if steps[0].when %} the first opens on {{ steps[0].when|when('%B %d') }}
+            {%- else %} the first opens as soon as you buy{% endif -%}
+            {%- if product.drip_mode_key() == 'interval' %}, then a new one every
+            {{ product.drip_days() }} day{{ '' if product.drip_days() == 1 else 's' }}.
+            {%- else %}, then the rest as listed below.{% endif %}
           </p>
           {% endif %}
           {% set summaries = product.module_summaries() %}
           <ol class="pd-curriculum">
             {% for row in curriculum %}
+            {% set step = steps[loop.index0] if loop.index0 < steps|length else none %}
             <li>
               <strong>{{ row.title }}</strong>
-              {% if product.is_dripped() %}
+              {% if step %}
               <span class="pd-curriculum__when">
-                {%- if loop.first %}Available right away
-                {%- else %}Day {{ loop.index0 * product.drip_days() + 1 }}{% endif -%}
+                {%- if step.when %}{{ step.when|when('%b %d') }}
+                {%- elif step.day == 1 %}Available right away
+                {%- else %}Day {{ step.day }}{% endif -%}
               </span>
               {% endif %}
               {% set inside = summaries[loop.index0] if loop.index0 < summaries|length else '' %}
