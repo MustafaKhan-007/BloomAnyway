@@ -149,6 +149,10 @@ class User(UserMixin, db.Model):
     # payment can't undo it.
     membership_manual_at = db.Column(db.DateTime)
 
+    # When their reel was first put on the home page. Entries are cleared out
+    # every Monday, so being featured is only remembered if it's kept here.
+    reel_featured_at = db.Column(db.DateTime)
+
     # showing-up streak ("I showed up today")
     last_checkin_date = db.Column(db.Date)
     current_streak = db.Column(db.Integer, nullable=False, default=0)
