@@ -7203,6 +7203,145 @@ with app.app_context():
     ok("With nothing written, the promise stands in for it",
        _p.receipt_blurb() == _p.promise)
 
+# --- buying the challenge is joining it, so the receipt comes with a hello ---
+_letters = []
+
+
+def _catch_letters(to, subject, text, html_body=None, template_id=None,
+                   params=None, sender=None, attachments=None):
+    _letters.append({"to": to, "subject": subject, "text": text,
+                     "template_id": template_id, "params": params or {}})
+    return True
+
+
+_mailer.send_email = _catch_letters
+try:
+    with app.app_context():
+        _mailer.send_challenge_welcome(
+            "buyer@example.com", product_name="2-Month Creator Challenge",
+            order_id="C-1", order_date="Sep 06, 2026",
+            perk="2 months of Creator membership",
+            description="  Two months,\n  four stages.  ")
+    _hello = _letters[-1]
+    ok("The challenge welcome goes out on its own Brevo template (#30)",
+       _hello["template_id"] == 30
+       and _hello["params"].get("PRODUCT_NAME") == "2-Month Creator Challenge"
+       and _hello["params"].get("PRODUCT_DESCRIPTION") == "Two months, four stages.",
+       f"got {_hello['template_id']} {_hello['params']}")
+    ok("And says where to go next, and what came with it",
+       _hello["params"].get("CHALLENGE_URL", "").endswith("/challenge")
+       and "/account" in _hello["params"].get("LIBRARY_URL", "")
+       and _hello["params"].get("MEMBERSHIP_INCLUDED")
+       == "2 months of Creator membership"
+       and "already on your account" in _hello["text"],
+       f"got {_hello['params']}")
+
+    with app.app_context():
+        from app.services import catalog as _cat_mark
+        _chal = Product(title="2-Month Creator Challenge",
+                        slug="two-month-creator-challenge", type="course",
+                        status="published", price_cents=29900,
+                        stripe_price_id="price_challenge_r3",
+                        promise="Two months, four stages, zero to income.",
+                        perk_membership_tier="creator",
+                        perk_membership_months=2)
+        db.session.add(_chal)
+        db.session.commit()
+        _chal_id = _chal.id
+        _cat_mark.set_challenge_product(_chal, True)
+
+    def _bought(payment_id, email):
+        _letters.clear()
+        with app.app_context():
+            pay.handle_payment_event("payment.succeeded", {
+                "payment_id": payment_id,
+                "total_amount": 29900,
+                "currency": "USD",
+                "customer": {"email": email},
+                "customer_email": email,
+                "product_cart": [{"product_id": "price_challenge_r3",
+                                  "quantity": 1}],
+                "metadata": {"slug": "two-month-creator-challenge"},
+            })
+            db.session.commit()
+        return [m["subject"] for m in _letters
+                if m["to"] == email]
+
+    _both = _bought("pi_challenge_r3_1", "challenger@example.com")
+    ok("Buying the challenge sends the receipt and the welcome, both",
+       "Your Bloom Anyway receipt" in _both
+       and "Welcome to the challenge" in _both,
+       f"sent {_both}")
+    ok("The welcome names the challenge and the months that came with it",
+       any(m["params"].get("MEMBERSHIP_INCLUDED")
+           == "2 months of Creator membership"
+           and m["params"].get("PRODUCT_NAME") == "2-Month Creator Challenge"
+           for m in _letters if m["template_id"] == 30),
+       [m["params"] for m in _letters])
+
+    with app.app_context():
+        _cat_mark.set_challenge_product(db.session.get(Product, _chal_id), False)
+    _one = _bought("pi_challenge_r3_2", "shopper@example.com")
+    ok("Anything else still gets the receipt on its own",
+       _one == ["Your Bloom Anyway receipt"], f"sent {_one}")
+finally:
+    _mailer.send_email = _real_send_email
+
+_chal_fields = {
+    "title": "2-Month Creator Challenge", "track": "building",
+    "types": ["course"], "slug": "two-month-creator-challenge",
+    "promise": "Two months, four stages, zero to income.",
+    "price": "299.00", "stripe": "price_challenge_r3", "live": "1",
+}
+r = admin.post(f"/admin/products/{_chal_id}/edit",
+               data=dict(_chal_fields, challenge_welcome="1"),
+               follow_redirects=True)
+with app.app_context():
+    ok("Studio is where a product is marked as the challenge",
+       r.status_code == 200
+       and _cat_mark.is_challenge(db.session.get(Product, _chal_id)))
+_chal_form = admin.get(f"/admin/products/{_chal_id}/edit").get_data(as_text=True)
+_tickbox = _chal_form.split('name="challenge_welcome"', 1)[-1].split(">", 1)[0]
+ok("And the editor comes back with it ticked", "checked" in _tickbox, _tickbox)
+_land = client.get("/challenge").get_data(as_text=True)
+ok("Joining the challenge goes where it's sold, once that's here",
+   "/courses/two-month-creator-challenge" in _land
+   and "stan.store" not in _land, "still pointing away")
+# Only one product at a time is the challenge, so saving another leaves it be.
+r = admin.post(f"/admin/products/{_multi_id}/edit", data=dict(_promo_fields),
+               follow_redirects=True)
+with app.app_context():
+    ok("Saving some other product doesn't take the mark off",
+       _cat_mark.is_challenge(db.session.get(Product, _chal_id)))
+with app.app_context():
+    _older = Product(title="2-Month Creator Challenge — Round 1",
+                     slug="challenge-round-one", type="course",
+                     status="published", currency="USD", price_cents=19900,
+                     promise="The first run.")
+    db.session.add(_older)
+    db.session.commit()
+    _older_id = _older.id
+    ok("The marked product wins over anything else named for the challenge",
+       _cat_mark.challenge_product().id == _chal_id,
+       _cat_mark.challenge_product().slug)
+r = admin.post(f"/admin/products/{_chal_id}/edit", data=dict(_chal_fields),
+               follow_redirects=True)
+with app.app_context():
+    ok("And where the mark comes off again",
+       not _cat_mark.is_challenge(db.session.get(Product, _chal_id))
+       and not _cat_mark.challenge_product_id())
+    _cat_svc._purge_product(db.session.get(Product, _older_id))
+    db.session.commit()
+_land = client.get("/challenge").get_data(as_text=True)
+ok("With nothing ticked it still finds the course by name",
+   "/courses/two-month-creator-challenge" in _land)
+with app.app_context():
+    _cat_svc._purge_product(db.session.get(Product, _chal_id))
+    db.session.commit()
+_land = client.get("/challenge").get_data(as_text=True)
+ok("With nothing marked, it points at the store it always did",
+   "stan.store" in _land)
+
 # When a PDF still won't open, the reader has to say why and leave a way in.
 _reader_js = client.get("/static/js/course-reader.js").get_data(as_text=True)
 ok("The reader names what went wrong instead of one blanket sentence",

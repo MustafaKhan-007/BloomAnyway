@@ -257,6 +257,17 @@ def _resolve_product(data: dict, price_id: str | None) -> Product | None:
     return _product_for_price_id(price_id) or _product_from_metadata(data)
 
 
+def _is_challenge(product: Product | None) -> bool:
+    """Whether buying this is joining the challenge, as Studio has it marked."""
+    try:
+        from .catalog import is_challenge
+        return is_challenge(product)
+    except Exception:
+        log.exception("challenge: could not tell what %s is",
+                      getattr(product, "slug", None))
+        return False
+
+
 def _price_id_from_membership_meta(meta: dict | None) -> str | None:
     """Resolve Stripe price id from membership checkout metadata (tier + billing)."""
     if not isinstance(meta, dict):
@@ -1391,6 +1402,28 @@ def handle_payment_event(event_type: str, data: dict) -> Order | None:
             )
         except Exception:
             log.exception("Order receipt email failed for %s", order.ls_order_id)
+
+    # Buying the challenge is joining something that starts, so the receipt
+    # gets a hello alongside it. Sent on its own so a failure either side
+    # doesn't take the other with it.
+    if (send_receipt and order.buyer_email and "@" in order.buyer_email
+            and not addon_checkout and plan is None
+            and _is_challenge(product)):
+        try:
+            from .mailer import send_challenge_welcome
+            when = order.created_at
+            send_challenge_welcome(
+                order.buyer_email,
+                product_name=name,
+                order_id=order.ls_order_id,
+                order_date=when.strftime("%b %d, %Y") if when else "",
+                perk=(product.perk_summary().replace(", free", "")
+                      if product.has_perk() else ""),
+                description=product.receipt_blurb(),
+            )
+        except Exception:
+            log.exception("Challenge welcome email failed for %s",
+                          order.ls_order_id)
 
     if (send_receipt and is_membership and not orphaned
             and order.buyer_email and "@" in order.buyer_email):

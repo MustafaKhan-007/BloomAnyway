@@ -588,10 +588,21 @@ CHALLENGE_ENROLL_URL = (
 
 @bp.route("/challenge")
 def challenge():
-    """2-month Creator Challenge landing."""
+    """2-month Creator Challenge landing.
+
+    Enrolling goes wherever the challenge is actually sold: the course page,
+    once the challenge is a course here, or the Stan store it pointed at back
+    when it wasn't.
+    """
+    from ..services.catalog import challenge_product
+
+    enroll = CHALLENGE_ENROLL_URL
+    sold_here = challenge_product()
+    if sold_here is not None and sold_here.visible_to(current_user):
+        enroll = url_for("main.course_detail", slug=sold_here.slug)
     return render_template(
         "main/challenge.html",
-        challenge_enroll_url=CHALLENGE_ENROLL_URL,
+        challenge_enroll_url=enroll,
     )
 
 

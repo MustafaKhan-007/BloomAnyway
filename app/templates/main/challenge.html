@@ -4,6 +4,8 @@
 
 {% block content %}
 {% set enroll_url = challenge_enroll_url|default('https://stan.store/hustlinmommazbiz/p/2-month-challenge-round-2-waitlist-closed') %}
+{# Leaving the site opens a tab; staying on it doesn't. #}
+{% set enroll_away = enroll_url.startswith('http') %}
 <div class="ch2">
   <section class="ch2-hero">
     <div class="container ch2-hero__inner">
@@ -16,7 +18,7 @@
         wish someone had shown me.
       </p>
       <div class="ch2-hero__ctas">
-        <a class="btn btn--gold" href="{{ enroll_url }}" target="_blank" rel="noopener">Join the Challenge &rarr;</a>
+        <a class="btn btn--gold" href="{{ enroll_url }}"{% if enroll_away %} target="_blank" rel="noopener"{% endif %}>Join the Challenge &rarr;</a>
         <a class="btn btn--quiet ch2-hero__ghost" href="#inside">See what's inside</a>
       </div>
       <p class="ch2-hero__note">2 months of live access &middot; Free access to the Bloom Anyway creator community</p>
@@ -290,7 +292,7 @@
         reel reviews, and free access to the Bloom Anyway creator community.
       </p>
       <p style="margin-top: 1.25rem;">
-        <a class="btn btn--gold" href="{{ enroll_url }}" target="_blank" rel="noopener">Join the Challenge &rarr;</a>
+        <a class="btn btn--gold" href="{{ enroll_url }}"{% if enroll_away %} target="_blank" rel="noopener"{% endif %}>Join the Challenge &rarr;</a>
       </p>
     </div>
   </section>
