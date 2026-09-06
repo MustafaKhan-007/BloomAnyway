@@ -791,10 +791,16 @@ class Product(db.Model):
             facts.append(("Inside", inside))
 
         if self.is_dripped():
+            # A release date that hasn't come yet is the first thing to say:
+            # "right away" is a promise the course wouldn't keep.
+            opens = self.first_release_display()
+            first = f"First module on {opens}" if opens else "First module right away"
             if self.drip_mode_key() == "interval":
                 days = self.drip_days()
                 unit = "day" if days == 1 else f"{days} days"
-                facts.append(("Pace", f"First module right away, then one every {unit}"))
+                facts.append(("Pace", f"{first}, then one every {unit}"))
+            elif opens:
+                facts.append(("Pace", f"{first}, then one at a time on a set schedule"))
             else:
                 facts.append(("Pace", "One module at a time, on a set schedule"))
         elif rows:
@@ -842,6 +848,20 @@ class Product(db.Model):
             return ""
         from .services.timefmt import format_local
         return format_local(self.drip_starts_at, "%b %d, %Y")
+
+    def release_steps(self) -> list[dict]:
+        """When each module opens, for somebody deciding whether to buy."""
+        from .services.drip import public_steps
+        return public_steps(self)
+
+    def first_release_display(self) -> str:
+        """The day module one opens, when that is still ahead of everybody."""
+        steps = self.release_steps()
+        when = steps[0]["when"] if steps else None
+        if when is None:
+            return ""
+        from .services.timefmt import format_local
+        return format_local(when, "%b %d, %Y")
 
     def buyable_by(self, user) -> bool:
         """Only live products sell, and test ones only sell to owners."""

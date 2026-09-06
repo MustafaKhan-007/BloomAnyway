@@ -5581,6 +5581,39 @@ ok("Product page advertises the perk and the schedule",
    and "Released one module at a time" in _dbody
    and "Available right away" in _dbody and "Day 8" in _dbody)
 
+# A launch date is the one thing the page can't call "right away".
+with app.app_context():
+    _dp = Product.query.filter_by(slug="drip-course").first()
+    _launch = utcnow().replace(microsecond=0) + timedelta(days=19)
+    _dp.drip_starts_at = _launch
+    db.session.commit()
+    _opens = _launch.strftime("%b %d")
+    ok("The pace says the day it opens, not right away",
+       f"First module on {_launch.strftime('%b %d, %Y')}"
+       in dict(_dp.glance_facts()).get("Pace", ""),
+       dict(_dp.glance_facts()).get("Pace"))
+_dbody = client.get("/courses/drip-course").get_data(as_text=True)
+ok("And the modules are dated from the launch, not from the buying",
+   "Available right away" not in _dbody and _opens in _dbody
+   and "the first opens on" in _dbody
+   and _launch.strftime("%B %d") in _dbody,
+   f"looking for {_opens}")
+with app.app_context():
+    _dp = Product.query.filter_by(slug="drip-course").first()
+    _began = utcnow().replace(microsecond=0) - timedelta(days=3)
+    _dp.drip_starts_at = _began
+    db.session.commit()
+_dbody = client.get("/courses/drip-course").get_data(as_text=True)
+ok("A launch that's been and gone opens right away, with the rest still dated",
+   "Available right away" in _dbody
+   and (_began + timedelta(days=7)).strftime("%b %d") in _dbody
+   and "Day 8" not in _dbody,
+   f"looking for {(_began + timedelta(days=7)).strftime('%b %d')}")
+with app.app_context():
+    _dp = Product.query.filter_by(slug="drip-course").first()
+    _dp.drip_starts_at = None
+    db.session.commit()
+
 with app.app_context():
     dripper = User(email="dripper@example.com", email_verified_at=utcnow())
     dripper.set_password(USER_PW)

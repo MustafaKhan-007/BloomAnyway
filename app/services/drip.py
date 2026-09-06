@@ -83,6 +83,37 @@ def unlock_times(product, anchor: datetime | None) -> list[datetime | None]:
     return out
 
 
+def public_steps(product, now=None) -> list[dict]:
+    """What each module's opening is, told to somebody who hasn't bought yet.
+
+    There is no purchase to count from, so a schedule pinned to the calendar
+    comes back as dates and one that runs from the purchase comes back as the
+    day it lands on — day 1 being the moment they buy. A date already gone by
+    is day 1 as well: it opens as soon as they buy, which is the truth for
+    anybody reading the page now.
+    """
+    rows = product.curriculum() if product is not None else []
+    if not rows:
+        return []
+    now = now or utcnow()
+    times = unlock_times(product, getattr(product, "drip_starts_at", None))
+    mode = product.drip_mode_key()
+
+    day = 1
+    steps: list[dict] = []
+    for i, row in enumerate(rows):
+        if mode == "gaps" and i:
+            day += max(0, int(row.get("gap_days") or 0))
+        elif mode == "interval" and i:
+            day = i * product.drip_days() + 1
+        opens = times[i] if i < len(times) else None
+        if opens is not None and opens > now:
+            steps.append({"when": opens, "day": None})
+        else:
+            steps.append({"when": None, "day": 1 if opens is not None else day})
+    return steps
+
+
 def reads_it_whole(viewer) -> bool:
     """True for an owner reading their own shelf.
 
