@@ -2444,7 +2444,7 @@ ok("Reply page opens with the sender's message quoted",
    r.status_code == 200 and "Which plan includes the circles?" in _rbody
    and "tess@example.com" in _rbody, f"status {r.status_code}")
 ok("Reply page offers all four verified senders",
-   all(addr in _rbody for addr in ("bloomsupport@bloomanyway.online",
+   all(addr in _rbody for addr in ("customersupport@bloomanyway.online",
                                    "ayesha@bloomanyway.online",
                                    "saman@bloomanyway.online",
                                    "noreply@bloomanyway.online")))
@@ -2482,7 +2482,7 @@ ok("Studio confirms who the reply went to and from",
    and "ayesha@bloomanyway.online" in r.get_data(as_text=True), flashes(r))
 
 # each address wears its own template, and the five params never change
-for _key, _tpl, _from in (("support", 20, "bloomsupport@bloomanyway.online"),
+for _key, _tpl, _from in (("support", 20, "customersupport@bloomanyway.online"),
                           ("saman", 21, "saman@bloomanyway.online"),
                           ("ayesha", 22, "ayesha@bloomanyway.online"),
                           ("noreply", 20, "noreply@bloomanyway.online")):
@@ -2596,7 +2596,7 @@ _mailer.send_email = _orig_send_email
 # --- the public support address is easy to find -----------------------------
 from app.services import settings as _settings  # noqa
 
-SUPPORT_EMAIL = "bloomsupport@bloomanyway.online"
+SUPPORT_EMAIL = "customersupport@bloomanyway.online"
 with app.app_context():
     ok("Support address is the default out of the box",
        _settings.DEFAULTS["contact_email"] == SUPPORT_EMAIL)
@@ -4881,7 +4881,7 @@ ok("A complaint opens the same reply composer, quoting them",
    "Checkout felt confusing on mobile." in _crbody
    and "data-reply-preview" in _crbody)
 ok("With the same senders to choose between",
-   all(a in _crbody for a in ("bloomsupport@bloomanyway.online",
+   all(a in _crbody for a in ("customersupport@bloomanyway.online",
                               "ayesha@bloomanyway.online",
                               "saman@bloomanyway.online")))
 _cx_calls = []

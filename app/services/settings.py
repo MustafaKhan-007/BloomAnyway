@@ -15,14 +15,14 @@ SUPPORT_EMAIL_SEEDED = "_contact_email_seeded"
 #: support addresses we have shipped as the default over time. A site still
 #: sitting on an old one gets moved to the current default; anything the owner
 #: typed themselves is left exactly as it is.
-RETIRED_SUPPORT_EMAILS = ("customersupport@bloomanyway.online",)
+RETIRED_SUPPORT_EMAILS = ("bloomsupport@bloomanyway.online",)
 
 DEFAULTS = {
     "site_title": "Bloom Anyway",
     "instagram_url": "https://instagram.com/",
     "hero_image_url": "",
     "portrait_url": "",
-    "contact_email": "bloomsupport@bloomanyway.online",
+    "contact_email": "customersupport@bloomanyway.online",
     "announcement_text": "",
     "announcement_expires": "",   # ISO date (YYYY-MM-DD); blank = never expires
     "announcement_url": "",       # optional; whole card is the button (URL hidden)
