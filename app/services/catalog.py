@@ -101,6 +101,26 @@ def is_challenge(product: Product | None) -> bool:
                 and product.id == challenge_product_id())
 
 
+def challenge_product() -> Product | None:
+    """The course the challenge is sold as, if it's sold here at all.
+
+    Whatever Studio has marked, and failing that a published course that says
+    challenge in its name — the landing page shouldn't keep sending people
+    away to a store just because a tick box hasn't been found yet. Newest
+    first, so Round 3 takes over from Round 2 on its own.
+    """
+    marked = db.session.get(Product, challenge_product_id() or 0)
+    if marked is not None and marked.status == "published":
+        return marked
+    return (Product.query
+            .filter(Product.status == "published",
+                    Product.test_mode.is_(False),
+                    db.or_(Product.slug.ilike("%challenge%"),
+                           Product.title.ilike("%challenge%")))
+            .order_by(Product.created_at.desc(), Product.id.desc())
+            .first())
+
+
 def set_challenge_product(product: Product, on: bool) -> None:
     """Mark this product as the challenge, or let it go.
 

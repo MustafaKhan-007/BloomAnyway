@@ -590,16 +590,15 @@ CHALLENGE_ENROLL_URL = (
 def challenge():
     """2-month Creator Challenge landing.
 
-    Enrolling goes wherever the challenge is actually sold: the product page,
-    once a product has been marked as the challenge in Studio, or the Stan
-    store it has always pointed at until then.
+    Enrolling goes wherever the challenge is actually sold: the course page,
+    once the challenge is a course here, or the Stan store it pointed at back
+    when it wasn't.
     """
-    from ..services.catalog import challenge_product_id
+    from ..services.catalog import challenge_product
 
     enroll = CHALLENGE_ENROLL_URL
-    sold_here = db.session.get(Product, challenge_product_id() or 0)
-    if (sold_here is not None and sold_here.status == "published"
-            and sold_here.visible_to(current_user)):
+    sold_here = challenge_product()
+    if sold_here is not None and sold_here.visible_to(current_user):
         enroll = url_for("main.course_detail", slug=sold_here.slug)
     return render_template(
         "main/challenge.html",

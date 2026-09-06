@@ -7230,12 +7230,29 @@ r = admin.post(f"/admin/products/{_multi_id}/edit", data=dict(_promo_fields),
 with app.app_context():
     ok("Saving some other product doesn't take the mark off",
        _cat_mark.is_challenge(db.session.get(Product, _chal_id)))
+with app.app_context():
+    _older = Product(title="2-Month Creator Challenge — Round 1",
+                     slug="challenge-round-one", type="course",
+                     status="published", currency="USD", price_cents=19900,
+                     promise="The first run.")
+    db.session.add(_older)
+    db.session.commit()
+    _older_id = _older.id
+    ok("The marked product wins over anything else named for the challenge",
+       _cat_mark.challenge_product().id == _chal_id,
+       _cat_mark.challenge_product().slug)
 r = admin.post(f"/admin/products/{_chal_id}/edit", data=dict(_chal_fields),
                follow_redirects=True)
 with app.app_context():
     ok("And where the mark comes off again",
        not _cat_mark.is_challenge(db.session.get(Product, _chal_id))
        and not _cat_mark.challenge_product_id())
+    _cat_svc._purge_product(db.session.get(Product, _older_id))
+    db.session.commit()
+_land = client.get("/challenge").get_data(as_text=True)
+ok("With nothing ticked it still finds the course by name",
+   "/courses/two-month-creator-challenge" in _land)
+with app.app_context():
     _cat_svc._purge_product(db.session.get(Product, _chal_id))
     db.session.commit()
 _land = client.get("/challenge").get_data(as_text=True)
