@@ -1748,11 +1748,21 @@ def spotlight():
             pick = spot.pick_standout()
             if pick is None:
                 ready, missing = spot.eligible_split()
+                sitting_out = spot.stood_down_leaders()
                 if not ready and missing:
                     note = ("No one's pickable yet — Creator members need an "
                             "Instagram link on their Bloom Anyway profile.")
                 elif not ready:
                     note = "No Creator members to pick from yet."
+                elif sitting_out:
+                    names = ", ".join(row["name"] for row in sitting_out[:3])
+                    note = (f"Only {names} has turned up this month, and the "
+                            "card has been theirs since last month — fill it "
+                            "in by hand if you want them again."
+                            if len(sitting_out) == 1 else
+                            f"Everybody who turned up this month ({names}) has "
+                            "had the card since last month — fill it in by "
+                            "hand if you want a repeat.")
                 else:
                     note = ("Nobody eligible has turned up this month yet, so "
                             "there's no one to hand the card to.")
@@ -1832,6 +1842,9 @@ def spotlight():
             set_setting(key, val)
         spot.mark_slot_saved("creator", filled=bool(values["creator_name"]),
                              end=creator_end)
+        if values["creator_name"]:
+            spot.remember_creator(request.form.get("creator_user_id"),
+                                  values["creator_instagram"])
         spot.mark_slot_saved("reel", filled=bool(values["reel_url"]),
                              end=reel_end)
         flash("Home spotlight saved.", "success")
@@ -1864,9 +1877,10 @@ def spotlight():
         values=values,
         eligible=ready,
         no_instagram=missing,
-        # The list is ranked, so the leader is the front of it — when there is
-        # anything to lead with.
-        top=(ready[0] if ready and ready[0]["score"] else None),
+        # Whoever the button would pick: the ranked list, minus anybody whose
+        # turn it has just been.
+        top=spot.pick_standout(),
+        sitting_out=spot.stood_down_leaders(),
         month_start=spot.month_of_record(),
         draft=draft,
         slots=spot.spotlight_slots(),

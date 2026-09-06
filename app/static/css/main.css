@@ -2665,6 +2665,12 @@ html.is-page-loading { cursor: progress; }
   font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
   background: var(--plum); color: #fff;
 }
+/* Quieter than the picked tag: it explains a skip, it isn't an announcement. */
+.spotlight-satout-tag {
+  margin-left: 6px; padding: 1px 8px; border-radius: 999px; font-size: 11px;
+  font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+  background: var(--ivory-deep); color: var(--ink-soft);
+}
 .spotlight-draft-note {
   margin: 0 0 14px; padding: 10px 12px; border-radius: 10px;
   background: rgba(122, 46, 98, 0.08); font-size: 13.5px; color: var(--plum-deep);

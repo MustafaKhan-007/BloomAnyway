@@ -152,6 +152,10 @@ class User(UserMixin, db.Model):
     # When their reel was first put on the home page. Entries are cleared out
     # every Monday, so being featured is only remembered if it's kept here.
     reel_featured_at = db.Column(db.DateTime)
+    # The last time they were Creator of the Month. The card itself is only
+    # a name and a photo in the settings table, so without this there is no
+    # way to know the same person had it last month.
+    creator_month_at = db.Column(db.DateTime)
 
     # showing-up streak ("I showed up today")
     last_checkin_date = db.Column(db.Date)

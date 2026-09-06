@@ -4615,9 +4615,81 @@ r = admin.post("/admin/spotlight", data={"pick_creator": "1"},
 dbody = r.get_data(as_text=True)
 ok("The month's standout pre-fills the Creator of the month form",
    'value="Draw Me"' in dbody and "had the fullest month" in dbody)
+ok("Picking twice lands on the same person — it isn't a draw",
+   'value="Draw Me"' in admin.post("/admin/spotlight", data={"pick_creator": "1"},
+                                   follow_redirects=True).get_data(as_text=True))
 with app.app_context():
     ok("Picking the standout doesn't publish anything by itself",
        get_setting("creator_name") != "Draw Me")
+
+# --- the card moves on: last month's creator sits the next one out ----------
+with app.app_context():
+    _drawme = User.query.filter_by(email="drawme@example.com").first()
+    _chatty = User.query.filter_by(email="chatty@example.com").first()
+    ok("Nobody has had the card yet, so the fullest month takes it",
+       (_spot.pick_standout() or {}).get("user_id") == _drawme.id)
+r = admin.post("/admin/spotlight", data={
+    "creator_user_id": str(_drawme.id), "creator_name": "Draw Me",
+    "creator_instagram": "@drawmeplease", "creator_blurb": "Turned up daily.",
+    "creator_image_url": "", "creator_expires": "",
+    "reel_url": "", "reel_description": "", "reel_expires": "",
+    "csrf_token": "x"}, follow_redirects=True)
+with app.app_context():
+    _drawme = User.query.filter_by(email="drawme@example.com").first()
+    ok("Saving the card remembers whose it is",
+       _drawme.creator_month_at is not None, flashes(r))
+    ok("So next month's pick passes over them for whoever is next",
+       (_spot.pick_standout() or {}).get("user_id") == _chatty.id)
+    _rows = {row["user_id"]: row for row in _spot.eligible_creators()}
+    ok("Even though they still lead on points",
+       _rows[_drawme.id]["score"] > _rows[_chatty.id]["score"]
+       and _rows[_drawme.id]["stood_down"]
+       and not _rows[_chatty.id]["stood_down"])
+_sbody = admin.get("/admin/spotlight").get_data(as_text=True)
+ok("Studio marks the one sitting this month out", "had the card" in _sbody)
+ok("And the button offers the one it would actually pick",
+   "Chatty One leads" in _sbody)
+
+with app.app_context():
+    # Two months on, their turn comes round again.
+    _drawme = User.query.filter_by(email="drawme@example.com").first()
+    _later = datetime.utcnow() + timedelta(days=70)
+    ok("A card from two months ago is no bar at all",
+       (_spot.pick_standout("UTC", now=_later) or {}).get("user_id") == _drawme.id,
+       str(_spot.pick_standout("UTC", now=_later)))
+
+    # Everybody with a month behind them has just had it: say so plainly
+    # rather than handing over a name the owner has only just taken down.
+    _rested = [row["user_id"] for row in _spot.eligible_split()[0] if row["score"]]
+    for _uid in _rested:
+        db.session.get(User, _uid).creator_month_at = utcnow()
+    db.session.commit()
+    ok("With everybody rested, there is nobody left to pick",
+       _spot.pick_standout() is None
+       and {row["user_id"] for row in _spot.stood_down_leaders()} == set(_rested),
+       str(_rested))
+r = admin.post("/admin/spotlight", data={"pick_creator": "1"},
+               follow_redirects=True)
+ok("And the button explains itself instead of going quiet",
+   "had the card" in r.get_data(as_text=True).lower(), flashes(r))
+with app.app_context():
+    # A card filled in by hand still counts: the handle is who it is.
+    for _uid in _rested:
+        db.session.get(User, _uid).creator_month_at = None
+    db.session.commit()
+r = admin.post("/admin/spotlight", data={
+    "creator_name": "Chatty One", "creator_instagram": "chattyone",
+    "creator_blurb": "Said plenty.", "creator_image_url": "",
+    "creator_expires": "", "reel_url": "", "reel_description": "",
+    "reel_expires": "", "csrf_token": "x"}, follow_redirects=True)
+with app.app_context():
+    _chatty = User.query.filter_by(email="chatty@example.com").first()
+    ok("A card typed in by hand is matched to the member by their handle",
+       _chatty.creator_month_at is not None, flashes(r))
+    _chatty.creator_month_at = None
+    _drawme = User.query.filter_by(email="drawme@example.com").first()
+    _drawme.creator_month_at = None
+    db.session.commit()
 
 with app.app_context():
     from datetime import date as _date
