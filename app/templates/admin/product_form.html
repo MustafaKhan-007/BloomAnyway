@@ -218,6 +218,7 @@
             {%- if product.off_shelf_at and product.is_off_shelf() %}
             <strong>Off the shelves since {{ product.off_shelf_display() }}.</strong>
             {%- endif %}
+            {{ countdown(product.off_shelf_at, zero='Off the shelves now') }}
           </p>
         </div>
       </div>
@@ -251,6 +252,7 @@
             Optional. The product page counts down to it — “Reverting to
             {{ product.compare_at_display() or 'the original price' }} on that
             day” — so a launch price reads as one.
+            {{ countdown(product.price_reverts_at, zero='Back to compare-at now') }}
             {%- if product.price_reverted() %}
             <strong>That day has passed.</strong> Put the price up here and
             swap the Stripe price ID to match: the old price has stopped
@@ -298,6 +300,7 @@
             product page.
             {% if product.promo_ends_at %}
             It disappears on its own {{ product.promo_ends_display() }} (your time).
+            {{ countdown(product.promo_ends_at, zero='The sale is over') }}
             {% else %}
             It runs until you take it down.
             {% endif %}
@@ -500,6 +503,7 @@
               date here and module 1 opens then for everybody at once, with the
               rest following at the interval above. Buy after that and whatever
               has already been released is waiting for them.
+              {{ countdown(product.drip_starts_at, zero='Module 1 is open now') }}
             </p>
           </div>
         </div>

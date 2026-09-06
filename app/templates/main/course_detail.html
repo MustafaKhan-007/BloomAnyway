@@ -51,7 +51,10 @@
               <strong>{{ product.promo_saving_display() }} off right now.</strong>
               Enter <code>{{ product.promo_code_display() }}</code> at checkout.
               {% if product.promo_ends_display() %}
-              <span class="pd-promo__ends">Ends {{ product.promo_ends_display() }}.</span>
+              <span class="pd-promo__ends">
+                Ends {{ product.promo_ends_display() }}.
+                {{ countdown(product.promo_ends_at, zero='The sale just ended', refresh=true) }}
+              </span>
               {% endif %}
             </span>
           </p>
@@ -63,17 +66,21 @@
           {% endif %}
           {# Both of these are days already set in Studio, and both change what
              this costs or whether it can be bought at all, so they are said
-             plainly here rather than arriving as a surprise. #}
+             plainly here rather than arriving as a surprise. The day answers
+             "when"; the clock beside it answers "how long have I got", which
+             is the question actually being asked in front of a price. #}
           {% if product.price_reverts_display() %}
           <p class="pd-hero__deadline">
             Reverting to {{ product.compare_at_display() }} on
             {{ product.price_reverts_display() }}.
+            {{ countdown(product.price_reverts_at, zero='The price just went back up', refresh=true) }}
           </p>
           {% endif %}
           {% if product.off_shelf_at and not product.is_off_shelf() %}
           <p class="pd-hero__deadline">
             Off the shelves on {{ product.off_shelf_display() }}. Buy it before
             then and it stays yours for good.
+            {{ countdown(product.off_shelf_at, zero='Off the shelves now', refresh=true) }}
           </p>
           {% endif %}
           {% if product.has_perk() %}
@@ -202,6 +209,7 @@
             {%- if product.drip_mode_key() == 'interval' %}, then a new one every
             {{ product.drip_days() }} day{{ '' if product.drip_days() == 1 else 's' }}.
             {%- else %}, then the rest as listed below.{% endif %}
+            {% if steps[0].when %}{{ countdown(steps[0].when, zero='Module one is open now', refresh=true) }}{% endif %}
           </p>
           {% endif %}
           {% set summaries = product.module_summaries() %}

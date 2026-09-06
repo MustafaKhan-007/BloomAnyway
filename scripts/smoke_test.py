@@ -1346,6 +1346,10 @@ with app.app_context():
 _pd = client.get("/courses/rebuild-your-week").get_data(as_text=True)
 ok("The product page says what it goes back to, and when",
    "Reverting to $49 on" in _pd and "<s>$49</s>" in _pd, "no notice of the rise")
+ok("And how long is left of the price it is on now",
+   'data-countdown="' in _pd and re.search(r">\s*\d+ days?[,<]", _pd)
+   and 'data-countdown-zero="The price just went back up"' in _pd,
+   "no live timer beside the day it goes up")
 with app.app_context():
     _p = db.session.get(Product, _multi_id)
     _p.price_reverts_at = utcnow() - timedelta(minutes=1)
@@ -1355,7 +1359,8 @@ with app.app_context():
        and _p.price_reverts_display() == "")
 _pd = client.get("/courses/rebuild-your-week").get_data(as_text=True)
 ok("So the page drops the notice and the struck-through price with it",
-   "Reverting to" not in _pd and "<s>$49</s>" not in _pd and "$24" in _pd)
+   "Reverting to" not in _pd and "<s>$49</s>" not in _pd and "$24" in _pd
+   and "data-countdown" not in _pd)
 _sbody = admin.get(f"/admin/products/{_multi_id}/edit").get_data(as_text=True)
 ok("And Studio says the day has passed, since only Stripe can put it up",
    "That day has passed" in _sbody and "swap the Stripe price ID" in _sbody)
@@ -5970,6 +5975,11 @@ _WHEN_RE = (r"unlocks\s+<time datetime=\"[0-9T:-]+Z\" data-when=\"[^\"]+\">"
 _when = re.search(_WHEN_RE + r"\s+your time", _rbody)
 ok("And says what time it opens, on their clock", bool(_when),
    "no local unlock time in the module bar")
+# A date on its own leaves them counting on their fingers; the wait is right
+# there beside it, and it keeps going down while they read.
+ok("Along with how long that wait has left to run",
+   'data-countdown="' in _rbody and "refresh to read it" in _rbody,
+   "no timer on the locked module note")
 _ny = app.test_client()
 _ny.set_cookie("tz", "America/New_York", domain="localhost")
 _ny.post("/login", data={"email": "dripper@example.com", "password": USER_PW})
@@ -6223,6 +6233,80 @@ r = drip_client.get(f"/account/courses/{drip_purchase_id}")
 ok("Someone who bought it before still reads it", r.status_code == 200)
 r = drip_client.get(f"/account/courses/{drip_purchase_id}/file/{mod1_asset_id}")
 ok("Including the files inside it", r.status_code == 200)
+
+# --- a deadline you can watch running down ------------------------------------
+# The day answers "when". Standing in front of a price, the question actually
+# being asked is "how long have I got", so every moment still ahead of a buyer
+# carries the time left beside it. The words are written here, not in the
+# browser: the page is right for a reader with no JavaScript and right at the
+# instant it lands, and the browser only keeps the numbers moving from there.
+from datetime import timezone as _tz
+
+from app.services.timefmt import countdown_tag as _cd
+from app.services.timefmt import time_left_words as _left
+
+_at = datetime(2026, 9, 6, 12, 0, 0, tzinfo=_tz.utc)
+
+
+def _left_at(**kw):
+    return _left(_at + timedelta(**kw), _at)
+
+
+ok("Far out, the time left is counted in whole days",
+   _left_at(days=12, hours=3) == "12 days left", _left_at(days=12, hours=3))
+ok("Inside the week it picks the hours up too",
+   _left_at(days=3, hours=4) == "3 days, 4 hours left", _left_at(days=3, hours=4))
+ok("One of each is said singly",
+   _left_at(days=1, hours=1, minutes=59) == "1 day, 1 hour left",
+   _left_at(days=1, hours=1, minutes=59))
+ok("A round number of days doesn't trail an empty hour on the end",
+   _left_at(days=2, minutes=30) == "2 days left", _left_at(days=2, minutes=30))
+ok("Inside a day it turns into a clock, seconds and all",
+   _left_at(hours=5, minutes=12, seconds=7) == "5:12:07 left",
+   _left_at(hours=5, minutes=12, seconds=7))
+ok("And inside an hour, minutes and seconds are all that is left to say",
+   _left_at(minutes=42, seconds=7) == "42:07 left", _left_at(minutes=42, seconds=7))
+ok("The last seconds still read as a time rather than running out of words",
+   _left_at(seconds=9) == "0:09 left", _left_at(seconds=9))
+ok("A moment already gone has nothing left to count",
+   _left_at(seconds=-1) == "" and _left(None, _at) == "")
+
+_tag = str(_cd(datetime(2027, 1, 1, 0, 0, 0), zero="Off the shelves now",
+               refresh=True))
+ok("The chip carries the exact instant, so no clock has to be agreed on first",
+   'data-countdown="2027-01-01T00:00:00Z"' in _tag and "left</span>" in _tag, _tag)
+ok("Plus what to say when it lands, and that the page is stale from then on",
+   'data-countdown-zero="Off the shelves now"' in _tag
+   and 'data-countdown-refresh="1"' in _tag, _tag)
+ok("Nothing at all is drawn for a moment that has already been and gone",
+   str(_cd(utcnow() - timedelta(minutes=1), zero="Over")) == "",
+   str(_cd(utcnow() - timedelta(minutes=1), zero="Over")))
+_shell = client.get("/courses").get_data(as_text=True)
+ok("Every page says the hour it was built, so a device set wrong can't lie",
+   'data-now-ms="' in _shell and "js/countdown.js" in _shell)
+
+with app.app_context():
+    _p = db.session.get(Product, drip_prod_id)
+    _p.off_shelf_at = utcnow() + timedelta(days=2, hours=5, minutes=1)
+    db.session.commit()
+_pd = client.get("/courses/drip-course").get_data(as_text=True)
+ok("The last day on sale counts itself down on the product page",
+   "Off the shelves on" in _pd and "2 days, 5 hours left" in _pd
+   and 'data-countdown-zero="Off the shelves now"' in _pd,
+   "no live timer beside the shelf date")
+ok("And it asks for the page again when it lands, since the buy button goes",
+   'data-countdown-refresh="1"' in _pd)
+_sbody = admin.get(f"/admin/products/{drip_prod_id}/edit").get_data(as_text=True)
+ok("Studio watches the same clock the buyer does",
+   "2 days, 5 hours left" in _sbody and "js/countdown.js" in _sbody)
+with app.app_context():
+    _p = db.session.get(Product, drip_prod_id)
+    _p.off_shelf_at = utcnow() - timedelta(minutes=1)
+    db.session.commit()
+_pd = client.get("/courses/drip-course").get_data(as_text=True)
+ok("Once it is off the shelves there is no timer left running on the page",
+   "data-countdown" not in _pd and "Off the shelves" in _pd)
+
 with app.app_context():
     _p = db.session.get(Product, drip_prod_id)
     _p.off_shelf_at = None

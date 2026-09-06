@@ -9246,6 +9246,38 @@ a.at-handle:hover { text-decoration: underline; }
   }
 }
 
+/* ========================= live countdown chip ============================ */
+/* One shape for every stretch of time still to run — a sale, a shelf date, a
+   module that hasn't opened — so they all read as the same kind of fact. */
+.countdown {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 2px 10px; border-radius: 999px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(181, 138, 63, 0.55);
+  font-size: 12px; font-weight: 800; line-height: 1.5;
+  color: var(--plum-deep);
+  /* Seconds tick in place instead of nudging the words along with them. */
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.countdown::before {
+  content: ""; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--gold);
+  animation: countdown-beat 2s ease-in-out infinite;
+}
+.countdown--done {
+  background: rgba(61, 20, 49, 0.08);
+  border-color: rgba(61, 20, 49, 0.2);
+}
+.countdown--done::before { background: rgba(61, 20, 49, 0.35); animation: none; }
+@keyframes countdown-beat {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .countdown::before { animation: none; }
+}
+
 /* ======================== Product detail page ============================= */
 .pd-page { padding: 28px 0 64px; }
 .pd-preview-banner {
