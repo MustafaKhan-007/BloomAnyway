@@ -375,7 +375,8 @@ def _stand_down_from(tz_name: str | None = None,
 
 
 def pick_standout(tz_name: str | None = None,
-                  now: datetime | None = None) -> dict | None:
+                  now: datetime | None = None,
+                  ready: list[dict] | None = None) -> dict | None:
     """Whoever put the most into the month, or ``None``.
 
     Not a draw: the fullest month wins, and a tie goes to whoever got there
@@ -387,7 +388,8 @@ def pick_standout(tz_name: str | None = None,
     can't be featured yet, or from people who have just had it. A quiet month
     has no one to hand the card to.
     """
-    ready, _missing = eligible_split(tz_name, now)
+    if ready is None:
+        ready, _missing = eligible_split(tz_name, now)
     for row in ready:
         if not row["score"]:
             break  # the list is ranked, so nothing below this has a month
@@ -397,9 +399,11 @@ def pick_standout(tz_name: str | None = None,
 
 
 def stood_down_leaders(tz_name: str | None = None,
-                       now: datetime | None = None) -> list[dict]:
+                       now: datetime | None = None,
+                       ready: list[dict] | None = None) -> list[dict]:
     """Members with a month behind them who are sitting this one out."""
-    ready, _missing = eligible_split(tz_name, now)
+    if ready is None:
+        ready, _missing = eligible_split(tz_name, now)
     return [row for row in ready if row["score"] and row["stood_down"]]
 
 

@@ -4646,7 +4646,7 @@ with app.app_context():
        and _rows[_drawme.id]["stood_down"]
        and not _rows[_chatty.id]["stood_down"])
 _sbody = admin.get("/admin/spotlight").get_data(as_text=True)
-ok("Studio marks the one sitting this month out", "had the card" in _sbody)
+ok("Studio marks the one sitting this month out", "just had it" in _sbody)
 ok("And the button offers the one it would actually pick",
    "Chatty One leads" in _sbody)
 

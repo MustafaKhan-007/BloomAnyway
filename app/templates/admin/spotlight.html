@@ -89,7 +89,7 @@
             &mdash; <a href="{{ c.profile_url }}" target="_blank" rel="noopener">&#64;{{ c.handle }}</a>
             <span class="spotlight-tally{% if not c.score %} is-quiet{% endif %}">{{ c.score }}</span>
             {% if draft and draft.user_id == c.user_id %}<span class="spotlight-drawn-tag">picked</span>{% endif %}
-            {% if c.stood_down %}<span class="spotlight-satout-tag">had the card</span>{% endif %}
+            {% if c.stood_down %}<span class="spotlight-satout-tag">just had it</span>{% endif %}
             <p class="spotlight-why">{{ c.why|join(' · ') if c.why else 'Nothing this month yet' }}</p>
           </li>
           {% endfor %}

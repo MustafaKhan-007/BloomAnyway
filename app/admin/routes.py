@@ -1748,7 +1748,7 @@ def spotlight():
             pick = spot.pick_standout()
             if pick is None:
                 ready, missing = spot.eligible_split()
-                sitting_out = spot.stood_down_leaders()
+                sitting_out = spot.stood_down_leaders(ready=ready)
                 if not ready and missing:
                     note = ("No one's pickable yet — Creator members need an "
                             "Instagram link on their Bloom Anyway profile.")
@@ -1878,9 +1878,10 @@ def spotlight():
         eligible=ready,
         no_instagram=missing,
         # Whoever the button would pick: the ranked list, minus anybody whose
-        # turn it has just been.
-        top=spot.pick_standout(),
-        sitting_out=spot.stood_down_leaders(),
+        # turn it has just been. Read off the list already in hand — a month
+        # is five queries a member, and this page is slow enough.
+        top=spot.pick_standout(ready=ready),
+        sitting_out=spot.stood_down_leaders(ready=ready),
         month_start=spot.month_of_record(),
         draft=draft,
         slots=spot.spotlight_slots(),
