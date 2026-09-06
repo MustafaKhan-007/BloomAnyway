@@ -382,6 +382,17 @@ def _move_module_content(product: Product, module_moves: dict[int, int],
               "module you removed.", "info")
 
 
+def _save_challenge_mark(product: Product, form) -> None:
+    """Remember whether buying this product is joining the challenge.
+
+    Kept out of :func:`_apply_product_fields` because a brand new product has
+    no id until it is saved, and the mark is that id.
+    """
+    from ..services.catalog import set_challenge_product
+
+    set_challenge_product(product, bool(form.get("challenge_welcome")))
+
+
 def _apply_product_fields(product: Product, form) -> dict[int, int]:
     """Map studio form fields onto a Product (caller commits).
 
@@ -867,6 +878,7 @@ def product_new():
             )
         told = _announce_product(product)
         db.session.commit()
+        _save_challenge_mark(product, request.form)
         flash(f"“{product.title}” created." + _told_suffix(told), "success")
         _warn_test_not_live(product)
         return redirect(url_for("admin.product_edit", product_id=product.id))
@@ -878,6 +890,7 @@ def product_new():
         "admin/product_form.html",
         product=blank,
         is_new=True,
+        is_challenge=False,
         modules=[_blank_module(1), _blank_module(2)],
         max_modules=MAX_MODULES,
         drip_modes=DRIP_MODES,
@@ -932,6 +945,7 @@ def product_edit(product_id):
             flash("Product saved.", "success")
         _warn_test_not_live(product)
         db.session.commit()
+        _save_challenge_mark(product, request.form)
         return redirect(url_for("admin.product_edit", product_id=product.id))
 
     # Anything uploaded before office files were drawn into pages is still a
@@ -951,10 +965,12 @@ def product_edit(product_id):
     modules = product.modules()
     while len(modules) < 2:
         modules.append(_blank_module(len(modules) + 1))
+    from ..services.catalog import is_challenge as _is_challenge_product
     return render_template(
         "admin/product_form.html",
         product=product,
         is_new=False,
+        is_challenge=_is_challenge_product(product),
         modules=modules,
         max_modules=MAX_MODULES,
         drip_modes=DRIP_MODES,

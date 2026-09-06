@@ -75,3 +75,41 @@ def unique_product_slug(title: str, *, exclude_id: int | None = None) -> str:
             return slug
         slug = f"{base}-{n}"[:160]
         n += 1
+
+
+# --- which product is the challenge ------------------------------------------
+#
+# There is one challenge running at a time, so this is one product, kept as a
+# site setting rather than a column: Round 3 takes over from Round 2 by being
+# ticked, and the old one lets go by itself.
+
+CHALLENGE_SETTING = "challenge_product_id"
+
+
+def challenge_product_id() -> int:
+    """The product buying counts as joining the challenge, or ``0``."""
+    from .settings import get_setting
+
+    try:
+        return int((get_setting(CHALLENGE_SETTING) or "").strip() or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def is_challenge(product: Product | None) -> bool:
+    return bool(product is not None and product.id
+                and product.id == challenge_product_id())
+
+
+def set_challenge_product(product: Product, on: bool) -> None:
+    """Mark this product as the challenge, or let it go.
+
+    Unticking only clears the setting when it is this product that holds it,
+    so saving any other product leaves the challenge where it is.
+    """
+    from .settings import set_setting
+
+    if on:
+        set_setting(CHALLENGE_SETTING, str(product.id))
+    elif is_challenge(product):
+        set_setting(CHALLENGE_SETTING, "")
