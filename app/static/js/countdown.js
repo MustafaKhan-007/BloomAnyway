@@ -7,8 +7,11 @@
 
     // A device clock that is out by hours would otherwise call a live sale
     // over, or keep counting one that has ended, so the page carries ours.
+    // Capped either way: enough to put a slipped clock right, not enough for
+    // a page pulled out of a cache to hand back time that has already gone.
     var served = Number(document.documentElement.getAttribute("data-now-ms"));
-    var skew = isFinite(served) && served > 0 ? served - Date.now() : 0;
+    var drift = isFinite(served) && served > 0 ? served - Date.now() : 0;
+    var skew = Math.max(-600000, Math.min(600000, drift));
     var timer = null;
     var refreshAt = 0;
 

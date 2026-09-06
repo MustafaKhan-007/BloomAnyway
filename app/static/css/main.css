@@ -9269,7 +9269,7 @@ a.at-handle:hover { text-decoration: underline; }
   background: rgba(61, 20, 49, 0.08);
   border-color: rgba(61, 20, 49, 0.2);
 }
-.countdown--done::before { background: rgba(61, 20, 49, 0.35); animation: none; }
+.countdown--done::before { background: rgba(61, 20, 49, 0.55); animation: none; }
 @keyframes countdown-beat {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.25; }
@@ -9393,6 +9393,10 @@ a.at-handle:hover { text-decoration: underline; }
 }
 /* A day this stops being what it is today: the price going back up, or the
    last day it can be bought at all. */
+/* The sentence says what changes, and the clock sits under it on its own
+   line, rather than trailing off the end of whichever word runs out first. */
+.pd-hero__deadline .countdown,
+.pd-promo__ends .countdown { display: flex; width: max-content; margin-top: 5px; }
 .pd-hero__deadline {
   flex: 1 1 100%; margin: 0;
   padding: 7px 11px; border-radius: 10px;
