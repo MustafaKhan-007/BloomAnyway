@@ -9,8 +9,8 @@
       <h1>Spotlight</h1>
       <p class="field-help" style="margin: 6px 0 0;">
         Both cards go live only when you save them &mdash; nobody applies for
-        these. Creator of the Month is worked out from who showed up most in
-        the comments this month. (The
+        these. Creator of the Month is worked out from how much of the month
+        somebody was actually here for. (The
         <a href="{{ url_for('admin.reel_reviews') }}">Reel reviews</a> queue is
         the one members apply to.)
       </p>
@@ -52,24 +52,27 @@
         <p class="field-help" style="margin-top: 0;">
           Creator and Full Bloom members who put an Instagram link on their
           Bloom Anyway profile (My space &rarr; Settings). That link is what
-          makes someone pickable; the order is who turned up most in the
-          comments this month. Comments deleted by their author or by you
-          aren't counted, and neither are hidden ones.
+          makes someone pickable; the order is how much of
+          {{ month_start.strftime('%B') }} each of them was here for &mdash;
+          days shown up, posts started, comments left, support sessions sat in,
+          and whether their reel has been on the home page. Anything taken down
+          or hidden doesn't count, and a session booked but missed doesn't
+          either.
         </p>
         <div class="spotlight-draw">
           <button class="btn btn--primary btn--sm" type="submit" name="pick_creator" value="1"
                   {% if not top %}disabled{% endif %}>
-            Pick {{ month_start.strftime('%B') }}'s top commenter
+            Pick {{ month_start.strftime('%B') }}'s standout
           </button>
           <span class="field-help">
             {{ eligible|length }} pickable right now.
             {% if top %}
-            {{ top.name }} leads with {{ top.comments }} comment{{ '' if top.comments == 1 else 's' }}{%
-              if eligible|length > 1 and eligible[1].comments == top.comments %},
+            {{ top.name }} leads on {{ top.why|join(', ') }}{%
+              if eligible|length > 1 and eligible[1].score == top.score %},
             level with {{ eligible[1].name }} but there first{% endif %}
             &mdash; we'll fill in their details below, edit anything, then save.
             {% elif eligible %}
-            Nobody's commented this month yet.
+            Nobody's turned up this month yet.
             {% endif %}
           </span>
         </div>
@@ -80,10 +83,9 @@
             <strong>{{ c.name }}</strong>
             <span class="field-help">{{ c.tier }}</span>
             &mdash; <a href="{{ c.profile_url }}" target="_blank" rel="noopener">&#64;{{ c.handle }}</a>
-            <span class="spotlight-tally{% if not c.comments %} is-quiet{% endif %}">
-              {{ c.comments }} comment{{ '' if c.comments == 1 else 's' }}
-            </span>
+            <span class="spotlight-tally{% if not c.score %} is-quiet{% endif %}">{{ c.score }}</span>
             {% if draft and draft.user_id == c.user_id %}<span class="spotlight-drawn-tag">picked</span>{% endif %}
+            <p class="spotlight-why">{{ c.why|join(' · ') if c.why else 'Nothing this month yet' }}</p>
           </li>
           {% endfor %}
         </ol>
@@ -95,16 +97,15 @@
         <details class="spotlight-missing">
           <summary>{{ no_instagram|length }} Creator member{{ '' if no_instagram|length == 1 else 's' }} with no Instagram link</summary>
           <p class="field-help" style="margin: 6px 0 0;">
-            Counted all the same &mdash; if someone here is out-commenting the
-            list above, a nudge to add their link is all it takes.
+            Counted all the same &mdash; if someone here is out-doing the list
+            above, a nudge to add their link is all it takes.
           </p>
           <ul class="spotlight-list">
             {% for c in no_instagram %}
             <li>
               <strong>{{ c.name }}</strong> <span class="field-help">{{ c.email }}</span>
-              <span class="spotlight-tally{% if not c.comments %} is-quiet{% endif %}">
-                {{ c.comments }} comment{{ '' if c.comments == 1 else 's' }}
-              </span>
+              <span class="spotlight-tally{% if not c.score %} is-quiet{% endif %}">{{ c.score }}</span>
+              <p class="spotlight-why">{{ c.why|join(' · ') if c.why else 'Nothing this month yet' }}</p>
             </li>
             {% endfor %}
           </ul>
@@ -118,8 +119,8 @@
         <legend>Creator of the month</legend>
         {% if draft %}
         <p class="spotlight-draft-note">
-          Picked: <strong>{{ draft.name }}</strong>, with
-          {{ draft.comments }} comment{{ '' if draft.comments == 1 else 's' }} in
+          Picked: <strong>{{ draft.name }}</strong>, on
+          {{ draft.why|join(', ') if draft.why else 'a quiet month' }} in
           {{ month_start.strftime('%B') }}. Nothing is live until you press
           <strong>Save spotlight</strong>.
         </p>
