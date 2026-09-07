@@ -5517,7 +5517,6 @@ a.at-handle:hover { text-decoration: underline; }
 .page-remaster h1 { color: #3d1431; }
 .page-remaster .eyebrow { color: #c79a41; letter-spacing: 0.12em; }
 
-/* Contact page: the direct support address, under the form. */
 /* What this box is for, set apart from the invitation above it so it reads as
    a signpost rather than more of the welcome. */
 .contact-scope {
@@ -5528,22 +5527,6 @@ a.at-handle:hover { text-decoration: underline; }
   background: rgba(239, 167, 51, 0.1);
   font-size: 14.5px; line-height: 1.6;
 }
-.contact-direct {
-  margin-top: 36px;
-  padding: 20px 22px;
-  background: #fff;
-  border: 1px solid rgba(61, 20, 49, 0.08);
-  border-radius: 16px;
-  box-shadow: 0 6px 20px rgba(61, 20, 49, 0.04);
-}
-.contact-direct h2 {
-  margin: 0 0 6px;
-  font-size: 18px;
-  color: #3d1431;
-}
-.contact-direct p { margin: 0; font-size: 15px; line-height: 1.6; }
-.contact-direct a { overflow-wrap: anywhere; }
-
 .ms-journal {
   display: grid;
   gap: 24px;
