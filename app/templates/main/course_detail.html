@@ -9,6 +9,7 @@
 {% set gallery = product.gallery() %}
 {% set contents = product.contents_list() %}
 {% set curriculum = product.curriculum() %}
+{% set held = product.bundle_products() %}
 {% set is_preview = is_preview|default(false) %}
 <div class="pd-page pd-page--{{ lane }}"{% if product.card_style() %} style="{{ product.card_style() }}"{% endif %}>
   {% if is_preview %}
@@ -180,6 +181,44 @@
           </div>
           {% endif %}
         </div>
+        {% endif %}
+
+        {% if held %}
+        {# A bundle is bought once and read as several things, so the page has
+           to name them: nobody should have to work out what they are paying
+           for from the write-up. #}
+        <section class="pd-section pd-section--wide" aria-labelledby="pd-bundle-heading">
+          <h2 id="pd-bundle-heading">Everything in this bundle</h2>
+          <p class="pd-bundle__lede">
+            {{ held|length }} product{{ '' if held|length == 1 else 's' }}, each
+            one whole. They open in My space separately the moment you buy, and
+            each keeps its own place in the reading.
+            {%- if product.bundle_saving_display() %}
+            One at a time they come to {{ product.bundle_value_display() }};
+            together, {{ product.price_display() }} &mdash;
+            a saving of {{ product.bundle_saving_display() }}.
+            {%- endif %}
+          </p>
+          <ul class="pd-bundle">
+            {% for item in held %}
+            <li class="pd-bundle__item">
+              <span class="pd-bundle__mark" aria-hidden="true">&#10022;</span>
+              <div class="pd-bundle__body">
+                {% if item.status == 'published' and item.visible_to(current_user) %}
+                <a class="pd-bundle__title" href="{{ url_for('main.course_detail', slug=item.slug) }}">{{ item.title }}</a>
+                {% else %}
+                <span class="pd-bundle__title">{{ item.title }}</span>
+                {% endif %}
+                <p class="pd-bundle__meta">
+                  {{ item.type_pill()|title }}
+                  {%- if item.price_display() %} &middot; {{ item.price_display() }} on its own{% endif %}
+                </p>
+                {% if item.promise %}<p class="pd-bundle__promise">{{ item.promise }}</p>{% endif %}
+              </div>
+            </li>
+            {% endfor %}
+          </ul>
+        </section>
         {% endif %}
 
         {% if contents %}

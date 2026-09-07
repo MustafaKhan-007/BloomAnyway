@@ -1175,6 +1175,25 @@
     });
   })();
 
+  /* ---- product form: BUNDLE asks what is in the bundle ----
+     Ticking the kind is what makes the picker relevant, so it appears then
+     rather than sitting open on every product. The ticks inside it are left
+     in the form when it is hidden: unticking BUNDLE to look at something and
+     ticking it back must not empty the bundle out. */
+  (function () {
+    var row = document.querySelector("[data-bundle-pick]");
+    if (!row) return;
+    var tick = document.querySelector('input[name="types"][value="bundle"]');
+    if (!tick) return;
+    tick.addEventListener("change", function () {
+      if (tick.checked) {
+        row.removeAttribute("hidden");
+      } else {
+        row.setAttribute("hidden", "");
+      }
+    });
+  })();
+
   /* ---- collapsible long tables (show a few rows, expand on demand) ---- */
   document.querySelectorAll("table[data-collapsible]").forEach(function (table) {
     var limit = parseInt(table.getAttribute("data-collapsible"), 10) || 10;

@@ -424,6 +424,10 @@ class Product(db.Model):
     #: JSON list of every kind this is, when it is more than one. ``type`` above
     #: stays the primary so single-kind callers need to know nothing about this.
     types_json = db.Column(db.Text)
+    #: For a bundle: the ids of the products it hands over, in the order they
+    #: were picked. A short list read whole every time, same as the kinds
+    #: above, so it lives here rather than in a table of its own.
+    bundle_json = db.Column(db.Text)
     subject = db.Column(db.String(60))   # filterable catalogue subject
     status = db.Column(db.String(20), nullable=False, default="draft")
     # Test mode: a real, buyable product that only owners can see, so the
@@ -795,10 +799,17 @@ class Product(db.Model):
                 size += f", {lessons} lesson" + ("" if lessons == 1 else "s")
             facts.append(("Size", size))
 
+        held = self.bundle_products()
+        if held:
+            facts.append(("Inside", f"{len(held)} product"
+                                    + ("" if len(held) == 1 else "s")
+                                    + ", each one whole"))
+
         noted = {a.parent_asset_id for a in self.assets if a.parent_asset_id}
         inside = content_phrase(self.top_level_assets(), noted)
         if inside:
-            facts.append(("Inside", inside))
+            facts.append(("Inside", inside) if not held
+                         else ("Also here", inside))
 
         if self.is_dripped():
             # A release date that hasn't come yet is the first thing to say:
@@ -821,8 +832,10 @@ class Product(db.Model):
         if self.has_perk():
             facts.append(("Also included", self.perk_summary()))
         # A line or two isn't worth a column of its own: a single guide with
-        # nothing but its file would only narrow the write-up beside it.
-        enough = len(facts) > 2
+        # nothing but its file would only narrow the write-up beside it. A
+        # bundle is the exception — how many things are in it is the first
+        # question asked about one, so it earns the card on its own.
+        enough = len(facts) > 2 or bool(held)
         if enough and self.is_guide():
             # Counted after that test, so saying it can't be what brings a
             # thin card into being.
@@ -1083,6 +1096,70 @@ class Product(db.Model):
     def has_type(self, key: str) -> bool:
         return (key or "").strip().lower() in self.types()
 
+    # --- a bundle: one price, several products ------------------------------
+    # The tick above says it is a bundle; this says what is in it. Ids rather
+    # than a join table, because it is never queried across — it is read whole
+    # to show a page or to hand the contents over after a payment.
+
+    def bundle_ids(self) -> list[int]:
+        """The products inside, in the order they were picked."""
+        try:
+            raw = json.loads(self.bundle_json) if self.bundle_json else []
+        except ValueError:
+            return []
+        out: list[int] = []
+        for value in raw if isinstance(raw, list) else []:
+            try:
+                pid = int(value)
+            except (TypeError, ValueError):
+                continue
+            if pid > 0 and pid != self.id and pid not in out:
+                out.append(pid)
+        return out
+
+    def set_bundle(self, ids) -> None:
+        """Store what is in the bundle. Itself and repeats are dropped."""
+        cleaned: list[int] = []
+        for value in ids or []:
+            try:
+                pid = int(value)
+            except (TypeError, ValueError):
+                continue
+            if pid > 0 and pid != self.id and pid not in cleaned:
+                cleaned.append(pid)
+        self.bundle_json = json.dumps(cleaned) if cleaned else None
+
+    def bundle_products(self) -> list["Product"]:
+        """The rows behind those ids, still in the picked order.
+
+        Anything deleted since is simply not there: the list is looked up
+        every time rather than trusted, so a stale id can't break a page.
+        """
+        ids = self.bundle_ids()
+        if not ids:
+            return []
+        rows = Product.query.filter(Product.id.in_(ids)).all()
+        by_id = {p.id: p for p in rows}
+        return [by_id[i] for i in ids if i in by_id]
+
+    def bundle_value_cents(self) -> int:
+        """What the contents come to bought one at a time."""
+        return sum(p.price_cents or 0 for p in self.bundle_products())
+
+    def bundle_value_display(self) -> str:
+        """"$86" — the contents at their own prices, added up."""
+        total = self.bundle_value_cents()
+        return self._money_display(total) if total else ""
+
+    def bundle_saving_display(self) -> str:
+        """"$27" — what buying it together takes off, or "" if it takes nothing."""
+        if self.price_cents is None:
+            return ""
+        saving = self.bundle_value_cents() - self.price_cents
+        if saving <= 0:
+            return ""
+        return self._money_display(saving)
+
     def type_pills(self) -> list[str]:
         """One pill per kind, for the places with room to show all of them."""
         return [PRODUCT_KIND_PILLS.get(k, k.upper()) for k in self.types()]
@@ -1101,7 +1178,12 @@ class Product(db.Model):
         way. Anything with a course in it — a bundle that carries one, a guide
         marked as both — is not a guide here, and the course wording applies.
         """
-        return "course" not in self.types()
+        if "course" in self.types():
+            return False
+        contents = self.bundle_products()
+        if contents:
+            return all("course" not in p.types() for p in contents)
+        return True
 
     def publish_blockers(self):
         """List of human-readable requirements missing before publishing."""

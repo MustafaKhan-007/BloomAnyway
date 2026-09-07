@@ -203,12 +203,16 @@ def courses():
     # `lane` is only a mobile focus / scroll hint.
     healing = _courses_lane("healing", h_filter, sort)
     building = _courses_lane("building", b_filter, sort)
-    def _bundle(track):
+    def _bundles(track):
         rows = _hide_test(Product.query.filter_by(
             status="published", track=track)).all()
-        return next((p for p in rows if p.has_type("bundle")), None)
+        rows = [p for p in rows if p.has_type("bundle")]
+        rows.sort(key=lambda p: (p.sort_order, p.id))
+        return rows
 
-    bundles = {"healing": _bundle("healing"), "building": _bundle("building")}
+    # Every bundle in the track, not the first one found: a track can sell
+    # more than one, and the second is not a bundle nobody may see.
+    bundles = {"healing": _bundles("healing"), "building": _bundles("building")}
     owned_purchases = {}
     if current_user.is_authenticated:
         from ..services import course_reader as reader_svc

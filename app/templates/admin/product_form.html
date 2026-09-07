@@ -133,6 +133,50 @@
                  value="{{ product.badge or '' }}" placeholder="NEW">
         </div>
       </div>
+      {# Only asked once BUNDLE is ticked above, since it is the one kind that
+         is made of other products rather than of files. The ticks stay in the
+         form either way, so unticking by accident loses nothing. #}
+      <div class="form-row bundle-pick-row" data-bundle-pick
+           {{ '' if 'bundle' in product.types() else 'hidden' }}>
+        <div class="field" style="flex:2;">
+          <input type="hidden" name="bundle_pick" value="1">
+          <span class="field__label">What&rsquo;s in the bundle</span>
+          {% if bundle_choices %}
+          <div class="bundle-pick">
+            {% for choice in bundle_choices %}
+            <label class="checkline checkline--sm bundle-pick__row">
+              <input type="checkbox" name="bundle" value="{{ choice.id }}"
+                     {{ 'checked' if choice.id in bundle_held }}>
+              <span class="bundle-pick__name">{{ choice.title }}</span>
+              <span class="bundle-pick__meta">
+                {{ choice.type_pill()|title }}
+                {%- if choice.price_display() %} &middot; {{ choice.price_display() }}{% endif %}
+                {%- if choice.status != 'published' %} &middot; Draft{% endif %}
+              </span>
+            </label>
+            {% endfor %}
+          </div>
+          <p class="field-help">
+            Tick each product this hands over. Buying the bundle puts every one
+            of them in the buyer&rsquo;s My Space on its own &mdash; its own
+            reading progress, its own schedule if it is drip-fed, its own free
+            months if it carries any. The bundle keeps its own price and its
+            own Stripe price ID in <em>Pricing &amp; checkout</em> below; that
+            is the only thing anybody is charged.
+          </p>
+          <p class="field-help">
+            Add one later and everybody who has already bought the bundle gets
+            it when you save. Take one out and they keep what they were given
+            &mdash; only new buyers see the shorter list.
+          </p>
+          {% else %}
+          <p class="field-help">
+            Nothing to put in one yet. Create the products first and they will
+            be listed here to tick.
+          </p>
+          {% endif %}
+        </div>
+      </div>
       <div class="form-row">
         <div class="field" style="flex:2;">
           <label for="promise">One-line promise</label>
