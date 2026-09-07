@@ -139,7 +139,9 @@
           <td>
             {# The name is the way in: opening it says what they own, which is
                the question that used to mean going through Stripe. #}
-            <a class="member-open" data-member-open
+            {# No spinner: with JavaScript this unfolds where it stands, and
+               the loader would sit there over a page that never left. #}
+            <a class="member-open" data-member-open data-no-loader
                href="{{ url_for('admin.members', q=q or none, membership=membership_filter or none, open=m.id) }}#member-{{ m.id }}"
                aria-expanded="{{ 'true' if is_open else 'false' }}"
                aria-controls="owns-{{ m.id }}">
