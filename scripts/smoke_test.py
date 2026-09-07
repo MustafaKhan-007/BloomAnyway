@@ -7450,11 +7450,14 @@ finally:
 
 _landed = client.get("/courses/drip-course?bought=1",
                      follow_redirects=True).get_data(as_text=True)
-ok("Landing there says the file is coming by email",
-   "the receipt has the file with it" in _landed
+ok("Landing there after buying a course says the receipt is coming",
+   "The receipt is on its way to your email" in _landed
+   and "read here on the site" in _landed
    and "waiting in My space" in _landed)
+ok("And it doesn't promise a file a course never sends",
+   "the receipt has the file with it" not in _landed)
 ok("And the page says nothing of the sort on an ordinary visit",
-   "the receipt has the file with it"
+   "waiting in My space"
    not in client.get("/courses/drip-course").get_data(as_text=True))
 
 # A long message shouldn't make its inbox row taller than the screen.
