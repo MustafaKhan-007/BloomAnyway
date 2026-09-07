@@ -138,13 +138,13 @@
          form either way, so unticking by accident loses nothing. #}
       <div class="form-row bundle-pick-row" data-bundle-pick
            {{ '' if 'bundle' in product.types() else 'hidden' }}>
-        <div class="field" style="flex:2;">
+        <div class="field">
           <input type="hidden" name="bundle_pick" value="1">
           <span class="field__label">What&rsquo;s in the bundle</span>
           {% if bundle_choices %}
           <div class="bundle-pick">
             {% for choice in bundle_choices %}
-            <label class="checkline checkline--sm bundle-pick__row">
+            <label class="bundle-pick__row">
               <input type="checkbox" name="bundle" value="{{ choice.id }}"
                      {{ 'checked' if choice.id in bundle_held }}>
               <span class="bundle-pick__name">{{ choice.title }}</span>
