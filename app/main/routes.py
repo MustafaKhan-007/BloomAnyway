@@ -206,7 +206,12 @@ def courses():
     def _bundles(track):
         rows = _hide_test(Product.query.filter_by(
             status="published", track=track)).all()
-        rows = [p for p in rows if p.has_type("bundle")]
+        # A bundle off the shelves goes, rather than staying with a mark on
+        # it: a single product is worth knowing existed, but an offer that
+        # closed is only a way of putting things together that can no longer
+        # be bought. Whoever owns one still opens it from My space.
+        rows = [p for p in rows
+                if p.has_type("bundle") and not p.is_off_shelf()]
         rows.sort(key=lambda p: (p.sort_order, p.id))
         return rows
 

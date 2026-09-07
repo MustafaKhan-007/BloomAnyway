@@ -9191,10 +9191,31 @@ _cg = _catalogue("/courses")
 ok("The catalogue's bundle slot lists what is in it, not the write-up",
    "The Whole Shelf" in _cg
    and "The Boundaries Pages · Saying It Out Loud" in _cg, "no contents on the card")
+ok("Bundles come first, above the products they are made of",
+   0 < _cg.find('class="cg-bundles"') < _cg.find('class="cg-lanes"'),
+   f"bundles@{_cg.find('class=\"cg-bundles\"')} lanes@{_cg.find('class=\"cg-lanes\"')}")
+_lanes = _cg.split('class="cg-lanes"', 1)[-1]
 ok("And a bundle still stays out of the ordinary lane grid",
-   "The Whole Shelf" not in _cg.split('class="cg-bundles"', 1)[0]
-   and "The Boundaries Pages" in _cg.split('class="cg-bundles"', 1)[0],
+   "The Whole Shelf" not in _lanes and "The Boundaries Pages" in _lanes,
    "the bundle is in the grid with the things inside it")
+
+# An offer that has closed is not worth a card. A single product keeps its
+# off-the-shelves mark; a bundle simply goes.
+with app.app_context():
+    _b = db.session.get(Product, _bundle_id)
+    _b.off_shelf_at = utcnow() - timedelta(minutes=1)
+    db.session.commit()
+_off = _catalogue("/courses")
+ok("A bundle off the shelves leaves the catalogue rather than lingering",
+   "The Whole Shelf" not in _off, "the closed bundle is still on Courses")
+ok("While a single product off the shelves stays, marked",
+   "The Boundaries Pages" in _off)
+ok("And the bundle's own page is still there for whoever bought it",
+   client.get("/courses/the-whole-shelf").status_code == 200)
+with app.app_context():
+    _b = db.session.get(Product, _bundle_id)
+    _b.off_shelf_at = None
+    db.session.commit()
 
 # Paying for it once opens each of them separately.
 with app.app_context():
