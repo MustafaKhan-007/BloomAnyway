@@ -75,3 +75,83 @@ def unique_product_slug(title: str, *, exclude_id: int | None = None) -> str:
             return slug
         slug = f"{base}-{n}"[:160]
         n += 1
+
+
+# --- which product is the challenge ------------------------------------------
+#
+# There is one challenge running at a time, so this is one product, kept as a
+# site setting rather than a column: Round 3 takes over from Round 2 by being
+# ticked, and the old one lets go by itself.
+
+CHALLENGE_SETTING = "challenge_product_id"
+
+
+def challenge_product_id() -> int:
+    """The product buying counts as joining the challenge, or ``0``."""
+    from .settings import get_setting
+
+    try:
+        return int((get_setting(CHALLENGE_SETTING) or "").strip() or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def is_challenge(product: Product | None) -> bool:
+    return bool(product is not None and product.id
+                and product.id == challenge_product_id())
+
+
+def named_for_challenge(text: str | None) -> bool:
+    """Whether something is called the challenge, whatever else it says."""
+    return "challenge" in (text or "").lower()
+
+
+def counts_as_challenge(product: Product | None, name: str = "") -> bool:
+    """Whether buying this is somebody joining the challenge.
+
+    The tick in Studio settles it when it has been made. Without one, a course
+    named for the challenge is the challenge, and a payment that can't be
+    matched to a course at all goes on the name it was bought under. Somebody
+    who has paid to join shouldn't miss their welcome over a box nobody found.
+    """
+    marked = challenge_product_id()
+    if marked:
+        return bool(product is not None and product.id == marked)
+    if product is not None:
+        return (named_for_challenge(product.title)
+                or named_for_challenge(product.slug))
+    return named_for_challenge(name)
+
+
+def challenge_product() -> Product | None:
+    """The course the challenge is sold as, if it's sold here at all.
+
+    Whatever Studio has marked, and failing that a published course that says
+    challenge in its name — the landing page shouldn't keep sending people
+    away to a store just because a tick box hasn't been found yet. Newest
+    first, so Round 3 takes over from Round 2 on its own.
+    """
+    marked = db.session.get(Product, challenge_product_id() or 0)
+    if marked is not None and marked.status == "published":
+        return marked
+    return (Product.query
+            .filter(Product.status == "published",
+                    Product.test_mode.is_(False),
+                    db.or_(Product.slug.ilike("%challenge%"),
+                           Product.title.ilike("%challenge%")))
+            .order_by(Product.created_at.desc(), Product.id.desc())
+            .first())
+
+
+def set_challenge_product(product: Product, on: bool) -> None:
+    """Mark this product as the challenge, or let it go.
+
+    Unticking only clears the setting when it is this product that holds it,
+    so saving any other product leaves the challenge where it is.
+    """
+    from .settings import set_setting
+
+    if on:
+        set_setting(CHALLENGE_SETTING, str(product.id))
+    elif is_challenge(product):
+        set_setting(CHALLENGE_SETTING, "")

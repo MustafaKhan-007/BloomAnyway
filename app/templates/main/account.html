@@ -293,6 +293,11 @@
             <li>Daily quotes &amp; badges</li>
             <li>Courses, guides &amp; free Hub picks</li>
           </ul>
+          {% if perk_from %}
+          <p class="ms-exact__renews">
+            Membership came free with something you bought — it opens on {{ perk_from }}.
+          </p>
+          {% endif %}
           <a class="btn btn--primary btn--sm" href="{{ url_for('main.membership', next=url_for('main.account')) }}">See memberships</a>
           {% endif %}
         </div>
@@ -417,7 +422,7 @@
               <a href="{{ url_for('main.courses') }}">Courses &amp; Guides</a>
               with this email.
             </span>
-            <span class="lib-hero__lede-hand">Your downloads and reading progress.</span>
+            <span class="lib-hero__lede-hand">Everything you own, and where you left off.</span>
           </p>
         </div>
         <span class="lib-hero__bloom" aria-hidden="true"></span>

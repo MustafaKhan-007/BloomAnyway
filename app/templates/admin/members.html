@@ -127,7 +127,9 @@
       </thead>
       <tbody>
         {% for m in people %}
-        <tr>
+        {% set shelf = shelves.get(m.id) or [] %}
+        {% set is_open = opened == m.id %}
+        <tr id="member-{{ m.id }}">
           <td class="studio-bulk__check">
             {% if not m.is_admin %}
             <input type="checkbox" name="ids" value="{{ m.id }}" form="bulk-members" data-bulk-item
@@ -135,7 +137,20 @@
             {% endif %}
           </td>
           <td>
-            {{ m.public_name() }}
+            {# The name is the way in: opening it says what they own, which is
+               the question that used to mean going through Stripe. #}
+            {# No spinner: with JavaScript this unfolds where it stands, and
+               the loader would sit there over a page that never left. #}
+            <a class="member-open" data-member-open data-no-loader
+               href="{{ url_for('admin.members', q=q or none, membership=membership_filter or none, open=m.id) }}#member-{{ m.id }}"
+               aria-expanded="{{ 'true' if is_open else 'false' }}"
+               aria-controls="owns-{{ m.id }}">
+              <span class="member-open__mark" aria-hidden="true"></span>
+              {{ m.public_name() }}
+            </a>
+            <span class="member-open__count">
+              {% if shelf %}{{ shelf|length }} product{{ '' if shelf|length == 1 else 's' }}{% else %}nothing bought{% endif %}
+            </span>
             {% if m.is_admin %} <span class="status-pill">owner</span>{% endif %}
             {% if m.is_demo %} <span class="status-pill">stand-in</span>{% endif %}
             {% if m.membership_is_canceling() %}
@@ -173,6 +188,52 @@
               <input type="hidden" name="membership_filter" value="{{ membership_filter }}">
               <button class="btn btn--danger btn--sm" type="submit">Remove</button>
             </form>
+            {% endif %}
+          </td>
+        </tr>
+        <tr class="member-owns" id="owns-{{ m.id }}" data-member-panel{% if not is_open %} hidden{% endif %}>
+          <td colspan="6">
+            <p class="member-owns__head">What {{ m.public_name() }} owns</p>
+            {% if shelf %}
+            <ul class="member-owns__list">
+              {% for item in shelf %}
+              <li class="member-owns__item">
+                <span class="member-owns__what">
+                  <strong>
+                    {%- if item.slug %}
+                    <a href="{{ url_for('main.course_detail', slug=item.slug) }}">{{ item.title }}</a>
+                    {%- else %}{{ item.title }}{% endif -%}
+                  </strong>
+                  <small>
+                    Bought {{ item.bought|when('%b %d, %Y') }}.
+                    {%- if item.put_away %} They have put it away themselves &mdash; it sits on their shelf marked, and they can bring it back.{% endif %}
+                    {%- if item.perk %} Carries {{ item.perk }}, which goes with it.{% endif %}
+                  </small>
+                </span>
+                <form method="post"
+                      action="{{ url_for('admin.member_purchase_remove', user_id=m.id, purchase_id=item.id) }}"
+                      data-confirm="Remove “{{ item.title }}” from {{ m.public_name() }}’s My Space for good? They keep no copy on the site and are told it has gone. This cannot be undone."
+                      data-confirm-title="Remove their access?"
+                      data-confirm-ok="Remove access">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="q" value="{{ q }}">
+                  <input type="hidden" name="membership_filter" value="{{ membership_filter }}">
+                  <button class="btn btn--danger btn--sm" type="submit">Remove access</button>
+                </form>
+              </li>
+              {% endfor %}
+            </ul>
+            <p class="field-help member-owns__note">
+              Removing takes the course out of their My Space altogether &mdash;
+              not the marked-as-put-away they can undo. Nothing is refunded
+              here; do that in Stripe if it is owed.
+            </p>
+            {% else %}
+            <p class="field-help" style="margin: 0;">
+              Nothing bought yet. Anything they buy shows up here, and a
+              membership on its own doesn&rsquo;t &mdash; that is the column
+              across from their name.
+            </p>
             {% endif %}
           </td>
         </tr>

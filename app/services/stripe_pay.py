@@ -81,6 +81,7 @@ def create_checkout_session(
     metadata: dict | None = None,
     quantity: int = 1,
     trial_days: int = 0,
+    submit_note: str = "",
 ) -> str:
     """Create a Stripe Checkout Session and return the hosted URL.
 
@@ -90,6 +91,10 @@ def create_checkout_session(
     ``trial_days`` holds off the first charge that long. Stripe only takes it
     on a subscription, and only between 1 and 730, so anything else is left
     off rather than sent and refused.
+
+    ``submit_note`` is printed above the pay button on Stripe's own page — the
+    last thing read before the money goes, which is where a term like "this
+    one can't be refunded" belongs as well as on ours.
     """
     _configure_stripe()
     price_id = (product_id or "").strip()
@@ -109,6 +114,10 @@ def create_checkout_session(
         "metadata": meta,
         "allow_promotion_codes": True,
     }
+    note = " ".join((submit_note or "").split())
+    if note:
+        # Stripe takes 1200 characters here and refuses the lot if given more.
+        params["custom_text"] = {"submit": {"message": note[:1200]}}
     if customer_email:
         params["customer_email"] = customer_email.strip().lower()
     if customer_name:
@@ -255,6 +264,21 @@ def _product_from_metadata(data: dict) -> Product | None:
 
 def _resolve_product(data: dict, price_id: str | None) -> Product | None:
     return _product_for_price_id(price_id) or _product_from_metadata(data)
+
+
+def _is_challenge(product: Product | None, name: str = "") -> bool:
+    """Whether buying this is somebody joining the challenge.
+
+    Goes on the name of what was bought when Studio has nothing ticked, so the
+    welcome doesn't wait on a setting the owner was never told to make.
+    """
+    try:
+        from .catalog import counts_as_challenge
+        return counts_as_challenge(product, name)
+    except Exception:
+        log.exception("challenge: could not tell what %s is",
+                      getattr(product, "slug", None) or name)
+        return False
 
 
 def _price_id_from_membership_meta(meta: dict | None) -> str | None:
@@ -1384,13 +1408,31 @@ def handle_payment_event(event_type: str, data: dict) -> Order | None:
                 amount=order.total_display(),
                 order_date=order_date,
                 attachments=came_with,
-                perk=(product.perk_summary().replace(", free", "")
-                      if product is not None and product.has_perk() else ""),
+                perk=(product.perk_offer() if product is not None else ""),
                 description=(product.receipt_blurb()
                              if product is not None else ""),
             )
         except Exception:
             log.exception("Order receipt email failed for %s", order.ls_order_id)
+
+    # Buying the challenge is joining something that starts, so the receipt
+    # gets a hello alongside it. Sent on its own so a failure either side
+    # doesn't take the other with it.
+    if (send_receipt and order.buyer_email and "@" in order.buyer_email
+            and not addon_checkout and plan is None
+            and _is_challenge(product, name)):
+        try:
+            from .challenge import send_welcome
+            sent = send_welcome(order.buyer_email, product=product,
+                                order=order, name=name)
+            # Said out loud either way: when one of these goes missing the
+            # first question is whether the purchase was ever read as joining.
+            log.info("challenge: %s joined by buying %s — welcome %s",
+                     order.buyer_email, name or "(unnamed)",
+                     "sent" if sent else "not sent")
+        except Exception:
+            log.exception("Challenge welcome email failed for %s",
+                          order.ls_order_id)
 
     if (send_receipt and is_membership and not orphaned
             and order.buyer_email and "@" in order.buyer_email):

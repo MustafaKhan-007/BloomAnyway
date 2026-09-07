@@ -19,7 +19,7 @@ from functools import lru_cache
 from urllib.parse import unquote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
-from flask import request
+from flask import has_request_context, request
 from flask_login import current_user
 from markupsafe import Markup, escape
 
@@ -81,11 +81,33 @@ def normalize_timezone(name: str | None) -> str | None:
     return raw
 
 
+def account_timezone(user=None) -> str:
+    """The clock one person keeps, as their settings have it.
+
+    Everything written for somebody who is signed in goes through here: the
+    times they read, and the times they type in. One answer for the whole
+    site, which is why nothing else has to ask them for it.
+    """
+    who = user if user is not None else current_user
+    return normalize_timezone(getattr(who, "timezone", None)) or DEFAULT_TZ
+
+
+def has_account_timezone(user=None) -> bool:
+    """Whether we already know this person's clock without having to guess."""
+    who = user if user is not None else current_user
+    return bool(getattr(who, "is_authenticated", False)
+                and normalize_timezone(getattr(who, "timezone", None)))
+
+
 def viewer_timezone() -> str:
-    if getattr(current_user, "is_authenticated", False):
-        saved = normalize_timezone(getattr(current_user, "timezone", None))
-        if saved:
-            return saved
+    # Nobody is reading it off a request — a sweep, a CLI run, a summary built
+    # for an email — so there is no clock to follow but the house one.
+    if not has_request_context():
+        return DEFAULT_TZ
+    # Settings win outright for anybody signed in. The device is only ever
+    # consulted for a visitor we have nothing saved for.
+    if has_account_timezone():
+        return account_timezone()
     cookie = normalize_timezone(request.cookies.get("tz"))
     return cookie or DEFAULT_TZ
 
@@ -130,6 +152,69 @@ def local_tag(dt, fmt: str = DEFAULT_FMT, tz_name: str | None = None) -> Markup:
     return Markup(
         f'<time datetime="{stamp}"{redraw}>'
         f'{escape(format_local(dt, fmt, tz_name))}</time>')
+
+
+# --- counting down to a moment that is still ahead ------------------------
+
+def time_left_words(dt: datetime | None, now: datetime | None = None) -> str:
+    """How long is left before a moment, said the way a person would say it.
+
+    A fortnight off, the minutes are noise, so it reads in days. Inside a day
+    it turns into a clock, because that is when somebody weighing up a sale
+    wants the seconds. Once the moment has passed there is nothing left to
+    count and this is empty — whoever asked says what happens instead.
+    """
+    if not isinstance(dt, datetime):
+        return ""
+    aware = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    at = now or datetime.now(timezone.utc)
+    if at.tzinfo is None:
+        at = at.replace(tzinfo=timezone.utc)
+    left = int((aware - at).total_seconds())
+    if left <= 0:
+        return ""
+    days, rest = divmod(left, 86400)
+    hours, rest = divmod(rest, 3600)
+    minutes, seconds = divmod(rest, 60)
+    if days >= 7:
+        return f"{days} days left"
+    if days >= 1:
+        day_word = "1 day" if days == 1 else f"{days} days"
+        if not hours:
+            return f"{day_word} left"
+        hour_word = "1 hour" if hours == 1 else f"{hours} hours"
+        return f"{day_word}, {hour_word} left"
+    if hours:
+        return f"{hours}:{minutes:02d}:{seconds:02d} left"
+    return f"{minutes}:{seconds:02d} left"
+
+
+def countdown_tag(dt, zero: str = "", refresh: bool = False) -> Markup:
+    """Time left that keeps going down for as long as the page is open.
+
+    The words are written here first, so the page reads right the instant it
+    arrives and stays readable with no JavaScript at all; the browser only
+    keeps them moving from there. ``zero`` is what it says when the moment
+    lands, and ``refresh`` asks for the page to be fetched again a moment
+    later — for the spots where that same moment changes the price beside it
+    or takes the buy button away.
+    """
+    if not isinstance(dt, datetime):
+        return Markup("")
+    aware = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    words = time_left_words(aware)
+    # A moment already behind us has no countdown to show: the page around it
+    # is drawn for after, and ``zero`` is only for the one that lands while
+    # somebody is looking at the page.
+    if not words:
+        return Markup("")
+    stamp = aware.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    bits = ['class="countdown"', f'data-countdown="{stamp}"']
+    if zero:
+        bits.append(f'data-countdown-zero="{escape(zero)}"')
+    if refresh:
+        bits.append('data-countdown-refresh="1"')
+    return Markup(f'<span {" ".join(bits)}>{escape(words)}</span>')
 
 
 def local_now(tz_name: str | None = None) -> datetime:

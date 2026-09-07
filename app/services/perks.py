@@ -9,8 +9,7 @@ from __future__ import annotations
 from calendar import monthrange
 from datetime import datetime
 
-from ..models import (MEMBERSHIP_LABELS, Product, ShopPurchase,
-                      higher_membership, utcnow)
+from ..models import Product, ShopPurchase, higher_membership, utcnow
 
 
 def add_months(start: datetime, months: int) -> datetime:
@@ -36,9 +35,12 @@ def perk_products() -> list[Product]:
         cached = None
     if cached is not None:
         return cached
+    from ..extensions import db
+
     rows = (Product.query
             .filter(Product.perk_membership_tier.isnot(None),
-                    Product.perk_membership_months > 0)
+                    db.or_(Product.perk_membership_months > 0,
+                           Product.perk_ends_at.isnot(None)))
             .all())
     out = [p for p in rows if p.has_perk()]
     try:
@@ -76,11 +78,13 @@ def _match(purchase: ShopPurchase, products: list[Product]) -> Product | None:
 def perk_state(user) -> dict:
     """The membership perk this buyer holds right now.
 
-    ``{"tier": "creator" | "", "until": datetime | None, "expired": bool}``.
-    ``expired`` marks someone whose perk has run out and needs dropping back
-    to whatever they actually pay for.
+    ``{"tier": "creator" | "", "until": datetime | None, "expired": bool,
+    "starts": datetime | None}``. ``expired`` marks someone whose perk has run
+    out and needs dropping back to whatever they actually pay for; ``starts``
+    is a perk they've bought that hasn't opened yet, which is waiting rather
+    than either of those.
     """
-    out = {"tier": "", "until": None, "expired": False}
+    out = {"tier": "", "until": None, "expired": False, "starts": None}
     if user is None or not getattr(user, "id", None):
         return out
 
@@ -100,9 +104,15 @@ def perk_state(user) -> dict:
         product = _match(purchase, products)
         if product is None:
             continue
-        until = add_months(purchase.purchased_at or now, product.perk_months())
+        starts, until = product.perk_window(purchase.purchased_at or now)
         if until <= now:
             out["expired"] = True
+            continue
+        if starts > now:
+            # Bought, paid for, and not open yet. Nothing to grant today and
+            # nothing to take away either — it comes on by itself on the day.
+            if out["starts"] is None or starts < out["starts"]:
+                out["starts"] = starts
             continue
         best = higher_membership(best, product.perk_tier())
         if out["until"] is None or until > out["until"]:
@@ -121,9 +131,7 @@ def perk_summary_for(purchase) -> str:
     product = _match(purchase, perk_products()) if purchase is not None else None
     if product is None or not product.has_perk():
         return ""
-    months = product.perk_months()
-    label = MEMBERSHIP_LABELS.get(product.perk_tier(), product.perk_tier())
-    return f"{months} month{'' if months == 1 else 's'} of {label} membership"
+    return product.perk_offer()
 
 
 def announce(user, purchase) -> bool:
@@ -147,13 +155,15 @@ def announce(user, purchase) -> bool:
     held = getattr(user, "membership", None) or "none"
     if higher_membership(held, product.perk_tier()) == held:
         return False
-    until = add_months(purchase.purchased_at or utcnow(), product.perk_months())
-    if until <= utcnow():
+    now = utcnow()
+    starts, until = product.perk_window(purchase.purchased_at or now)
+    if until <= now:
         return False
 
+    when = (f"it starts on {starts.strftime('%b %d, %Y')} and runs until"
+            if starts > now else "it is on your account now, until")
     body = (f"“{product.title}” came with {perk_summary_for(purchase)} — "
-            f"it is on your account now, until "
-            f"{until.strftime('%b %d, %Y')}.")[:300]
+            f"{when} {until.strftime('%b %d, %Y')}.")[:300]
     # Linking a purchase happens more than once — at checkout, at signup, on a
     # webhook retry — and each one runs through here.
     already = (Notification.query
@@ -165,12 +175,27 @@ def announce(user, purchase) -> bool:
     return True
 
 
+def perk_display(user) -> dict:
+    """What to tell a member about their perk: when it ends, or when it opens.
+
+    ``{"until": "Dec 31, 2026", "from": ""}`` — one or the other, since a perk
+    they are holding has nothing to wait for and one they are waiting on isn't
+    running yet.
+    """
+    from .timefmt import format_local
+
+    out = {"until": "", "from": ""}
+    state = perk_state(user)
+    try:
+        if state["tier"] and state["until"] is not None:
+            out["until"] = format_local(state["until"], "%b %d, %Y")
+        elif state["starts"] is not None:
+            out["from"] = format_local(state["starts"], "%b %d, %Y")
+    except Exception:
+        pass
+    return out
+
+
 def perk_end_display(user) -> str:
     """Human end date for an active perk, or empty."""
-    state = perk_state(user)
-    if not state["tier"] or state["until"] is None:
-        return ""
-    try:
-        return state["until"].strftime("%b %d, %Y")
-    except Exception:
-        return ""
+    return perk_display(user)["until"]

@@ -1254,6 +1254,13 @@ ok("The catalogue tile shows the sale price over the old one",
    "lib-card__price--promo" in _tile and "<s>$24</s>" in _tile)
 ok("With the saving and the code on the card",
    "lib-card__promo" in _tile and "SPRING25" in _tile and "$6 off" in _tile)
+# A sale price used to be the whole of the card's bottom row, leaving the one
+# product somebody is most likely to want with no way through to it.
+_sale_card = _tile.split("lib-card__price--promo", 1)[-1].split("</article>", 1)[0]
+ok("And a way in, same as every other card",
+   "/courses/rebuild-your-week" in _sale_card
+   and "lib-card__btn--primary" in _sale_card
+   and "View" in _sale_card, _sale_card[-400:])
 
 # Half a promo is no promo, and one that doesn't save anything isn't a sale.
 for _bad, _why in (({"promo_price": "18.00", "promo_code": ""}, "no code"),
@@ -1339,6 +1346,10 @@ with app.app_context():
 _pd = client.get("/courses/rebuild-your-week").get_data(as_text=True)
 ok("The product page says what it goes back to, and when",
    "Reverting to $49 on" in _pd and "<s>$49</s>" in _pd, "no notice of the rise")
+ok("And how long is left of the price it is on now",
+   'data-countdown="' in _pd and re.search(r">\s*\d+ days?[,<]", _pd)
+   and 'data-countdown-zero="The price just went back up"' in _pd,
+   "no live timer beside the day it goes up")
 with app.app_context():
     _p = db.session.get(Product, _multi_id)
     _p.price_reverts_at = utcnow() - timedelta(minutes=1)
@@ -1348,7 +1359,8 @@ with app.app_context():
        and _p.price_reverts_display() == "")
 _pd = client.get("/courses/rebuild-your-week").get_data(as_text=True)
 ok("So the page drops the notice and the struck-through price with it",
-   "Reverting to" not in _pd and "<s>$49</s>" not in _pd and "$24" in _pd)
+   "Reverting to" not in _pd and "<s>$49</s>" not in _pd and "$24" in _pd
+   and "data-countdown" not in _pd)
 _sbody = admin.get(f"/admin/products/{_multi_id}/edit").get_data(as_text=True)
 ok("And Studio says the day has passed, since only Stripe can put it up",
    "That day has passed" in _sbody and "swap the Stripe price ID" in _sbody)
@@ -1359,6 +1371,69 @@ with app.app_context():
     _p = db.session.get(Product, _multi_id)
     ok("Clearing the date puts it back to an ordinary price",
        _p.price_reverts_at is None and not _p.shows_compare_at())
+
+# --- a guide is bought knowing it can't be handed back ------------------------
+# A guide opens the second it is paid for, so the term has to be read before
+# the money moves, not found afterwards on a policy page nobody opened.
+r = admin.post("/admin/products/new", data={
+    "title": "The Boundaries Workbook", "track": "healing", "type": "workbook",
+    "promise": "Twenty pages you can write in.", "price": "12.00",
+    "stripe": "price_boundaries", "live": "1",
+}, follow_redirects=True)
+with app.app_context():
+    _guide = Product.query.filter_by(slug="the-boundaries-workbook").first()
+    ok("A workbook counts as a guide",
+       _guide is not None and _guide.status == "published" and _guide.is_guide(),
+       f"got {_guide.status if _guide else None}")
+    ok("Anything with a course in it doesn't",
+       not db.session.get(Product, _multi_id).is_guide())
+    ok("Nor a bundle that carries one",
+       not Product(type="bundle", types_json='["bundle", "course"]').is_guide())
+_gd = client.get("/courses/the-boundaries-workbook").get_data(as_text=True)
+_terms = _gd.split('class="pd-hero__terms"', 1)[-1].split("</p>", 1)[0]
+ok("The guide's page says it can't be refunded, up against the price",
+   "pd-hero__terms" in _gd and "Guides are non-refundable" in _terms,
+   _gd[-400:])
+ok("With the reason, and the policy a click away",
+   "opens the" in _terms and "/refunds" in _terms, _terms)
+ok("And it sits above the button, not after it",
+   _gd.index("pd-hero__terms") < _gd.index("Buy now"))
+_cd = client.get("/courses/rebuild-your-week").get_data(as_text=True)
+ok("A course keeps the fourteen days and says nothing of the sort",
+   "Buy now" in _cd and "non-refundable" not in _cd)
+with app.app_context():
+    from app.services import legal_copy as _legal
+    ok("The policy page leads its guides section with it",
+       "**Guides are non-refundable.**" in _legal.REFUNDS
+       and "## Guides" in _legal.REFUNDS and "## Courses" in _legal.REFUNDS)
+    ok("Courses keep their fourteen days under their own heading",
+       "**14 days**" in _legal.REFUNDS.split("## Courses", 1)[-1]
+       and "14 days" not in _legal.REFUNDS.split("## Guides", 1)[-1]
+                                           .split("## Courses", 1)[0])
+    ok("Without signing away what the law gives anyone",
+       "takes away a refund right the law gives you" in _legal.REFUNDS)
+    ok("The terms say the same where they describe the shop",
+       "guides are **non-refundable**" in _legal.TERMS)
+    ok("And the version bumped, so the live pages get rewritten",
+       _legal.LEGAL_COPY_VERSION > "2026-08-26")
+# The pay button itself is on Stripe's page, so the line has to travel there.
+_sent = []
+_real_create = pay.stripe.checkout.Session.create
+pay.stripe.checkout.Session.create = lambda **kw: (
+    _sent.append(kw) or type("S", (), {"url": "https://checkout.test/x"})())
+try:
+    r = client.get("/checkout/product/the-boundaries-workbook")
+    ok("Buying a guide hands Stripe the line for above its pay button",
+       r.status_code == 302 and _sent
+       and _sent[-1].get("custom_text", {}).get("submit", {}).get("message")
+       == _legal.GUIDE_NO_REFUND,
+       f"got {_sent[-1].get('custom_text') if _sent else None}")
+    r = client.get("/checkout/product/rebuild-your-week")
+    ok("A course's checkout goes over without one",
+       r.status_code == 302 and "custom_text" not in _sent[-1],
+       f"got {_sent[-1].get('custom_text')}")
+finally:
+    pay.stripe.checkout.Session.create = _real_create
 
 # Anything still posting one type keeps working, and so does a product that
 # has only ever had one.
@@ -2327,6 +2402,16 @@ r = client.post("/contact", data={"name": "x", "email": "x@y.com", "message": "h
                 follow_redirects=False)
 ok("Contact honeypot silently redirects", r.status_code == 302)
 
+# The form reaches the two people who run the site, so it says so before the
+# box rather than after — nobody should pour out a stuck place into an inbox
+# that was only ever going to answer about a password.
+_cbody = client.get("/contact").get_data(as_text=True)
+ok("The contact page says it is for the website itself",
+   "Anything to do with the website" in _cbody
+   and "That is all this form is for" in _cbody)
+ok("And points everything else where it will actually be answered",
+   'href="/forums/"' in _cbody and "/support-groups" in _cbody, "no way onward")
+
 # --- contact form: every owner hears about it, and it lands in the Inbox ----
 from app.models import ContactMessage as _CM
 from app.services import mailer as _mailer
@@ -2444,7 +2529,7 @@ ok("Reply page opens with the sender's message quoted",
    r.status_code == 200 and "Which plan includes the circles?" in _rbody
    and "tess@example.com" in _rbody, f"status {r.status_code}")
 ok("Reply page offers all four verified senders",
-   all(addr in _rbody for addr in ("bloomsupport@bloomanyway.online",
+   all(addr in _rbody for addr in ("customersupport@bloomanyway.online",
                                    "ayesha@bloomanyway.online",
                                    "saman@bloomanyway.online",
                                    "noreply@bloomanyway.online")))
@@ -2482,7 +2567,7 @@ ok("Studio confirms who the reply went to and from",
    and "ayesha@bloomanyway.online" in r.get_data(as_text=True), flashes(r))
 
 # each address wears its own template, and the five params never change
-for _key, _tpl, _from in (("support", 20, "bloomsupport@bloomanyway.online"),
+for _key, _tpl, _from in (("support", 20, "customersupport@bloomanyway.online"),
                           ("saman", 21, "saman@bloomanyway.online"),
                           ("ayesha", 22, "ayesha@bloomanyway.online"),
                           ("noreply", 20, "noreply@bloomanyway.online")):
@@ -2596,7 +2681,7 @@ _mailer.send_email = _orig_send_email
 # --- the public support address is easy to find -----------------------------
 from app.services import settings as _settings  # noqa
 
-SUPPORT_EMAIL = "bloomsupport@bloomanyway.online"
+SUPPORT_EMAIL = "customersupport@bloomanyway.online"
 with app.app_context():
     ok("Support address is the default out of the box",
        _settings.DEFAULTS["contact_email"] == SUPPORT_EMAIL)
@@ -3154,6 +3239,7 @@ ok("Second Reel of the Week entry in the same week is blocked",
 with app.app_context():
     sub = ReelSubmission.query.first()
     sub_id = sub.id
+    sub_author_id = sub.user_id
     ok("The entry keeps the share count and the raw video",
        sub.share_count == 412 and sub.has_raw_video()
        and sub.week_key == rotw_svc.current_week_key())
@@ -3180,6 +3266,8 @@ ok("The home page credits whoever sent it in",
 with app.app_context():
     ok("Only one entry is flagged as featured",
        ReelSubmission.query.filter_by(featured=True).count() == 1)
+    ok("Being featured is written on the member, not just the entry",
+       db.session.get(User, sub_author_id).reel_featured_at is not None)
 hub = client.get("/watch").get_data(as_text=True)
 ok("The member sees their reel made the home page",
    "featured on the home page" in hub)
@@ -3213,6 +3301,8 @@ with app.app_context():
        db.session.get(ReelReviewApplication, reviewed_id).disk_name is None)
     ok("Monday clears last week's Reel of the Week entries",
        cleared["reel_of_week"] == 1 and ReelSubmission.query.count() == 0)
+    ok("Having been Reel of the Week outlives the entry it came from",
+       db.session.get(User, sub_author_id).reel_featured_at is not None)
 ok("The published review is still readable after the clear-out",
    client.get(f"/watch/reviews/{review_id}").status_code == 200)
 
@@ -3340,6 +3430,15 @@ ok("Free members cannot schedule peer sessions",
    and _booked_by_free == 0,
    f"{flashes(r)} | meetings={_booked_by_free}")
 
+# The hour they type is the hour on their own clock — the one in their
+# settings. The form has no timezone on it, and one sent anyway is ignored.
+with app.app_context():
+    _sched_user = User.query.filter_by(email="stranger@example.com").first()
+    _sched_user.timezone = "Asia/Karachi"
+    db.session.commit()
+ok("Nothing on the scheduling form asks a member which zone they mean",
+   'name="timezone"' not in
+   stranger_client.get("/support-groups").get_data(as_text=True))
 r = stranger_client.post("/support-groups/schedule",
                          data={"circle_id": heal_cid, "meeting_date": _sg_date,
                                "meeting_time": _sg_time, "timezone": "UTC"},
@@ -3352,6 +3451,14 @@ with app.app_context():
             .order_by(SupportGroupMeeting.id.desc()).first())
     ok("Peer meeting exists after member schedule", peer is not None)
     mid = peer.id
+    from app.services.timefmt import parse_owner_parts as _parse_when
+    _karachi = _parse_when(_sg_date, _sg_time, "Asia/Karachi")
+    ok("Booked on the clock in their settings, not the one the form posted",
+       peer.scheduled_at.replace(second=0, microsecond=0) == _karachi,
+       f"{peer.scheduled_at} wanted {_karachi}")
+    _sched_user = User.query.filter_by(email="stranger@example.com").first()
+    _sched_user.timezone = None
+    db.session.commit()
     ok("Scheduler is seated as host",
        SupportGroupApplication.query.filter_by(
            meeting_id=mid, status="selected").count() == 1)
@@ -3480,14 +3587,29 @@ ok("After 30 minutes the room redirects to wrap",
    r.status_code in (301, 302)
    and f"/support-groups/meetings/{mid}/wrap" in (r.headers.get("Location") or ""))
 with app.app_context():
+    # Finishing settles each seat against the room: the member who opened it
+    # was there, the host who never did was not. Length of stay doesn't come
+    # into it — the one who joined only had it open for a moment.
+    _settled = {a.id: (a.status, a.joined_at is not None) for a
+                in SupportGroupApplication.query.filter_by(meeting_id=mid).all()}
+    ok("Whoever opened the room is marked as having come",
+       any(st == "attended" and came for st, came in _settled.values()),
+       str(_settled))
+    ok("And a seat that never opened it is a no-show, not an attendance",
+       any(st == "no_show" and not came for st, came in _settled.values()),
+       str(_settled))
+    _past = db.session.get(SupportGroupMeeting, mid)
+    ok("Turnout counts the ones who came, out of the ones who booked",
+       sg_svc.turnout(_past) == {"joined": 1, "booked": 2, "tracked": True},
+       str(sg_svc.turnout(_past)))
     restore = db.session.get(SupportGroupMeeting, mid)
     restore.status = "scheduled"
     restore.scheduled_at = utcnow() + timedelta(hours=20)
     restore.reminded_at = None
-    # opening the live room marked everyone "attended" — put the seats back
-    # too, or the later reminder and cancel tests have nobody to talk to
+    # the session has been settled — put the seats back where they were, or
+    # the later reminder and cancel tests have nobody to talk to
     for _seat in SupportGroupApplication.query.filter_by(meeting_id=mid).all():
-        if _seat.status == "attended":
+        if _seat.status in ("attended", "no_show"):
             _seat.status = "selected"
     db.session.commit()
 
@@ -3826,9 +3948,12 @@ with app.app_context():
 with app.app_context():
     _done = db.session.get(SupportGroupMeeting, wrap_mid)
     sg_svc.complete_meeting(_done)
-    ok("Completing a session moves the seats to attended",
-       all(s.status == "attended"
-           for s in sg_svc.meeting_seats(_done, include_attended=True)))
+    ok("Completing a session settles every seat off 'selected'",
+       sg_svc.meeting_seats(_done) == []
+       and len(sg_svc.meeting_seats(_done, include_attended=True)) == 2)
+    ok("Nobody opened this room, so Studio says so rather than inventing a full house",
+       sg_svc.turnout(_done) == {"joined": 0, "booked": 2, "tracked": True},
+       str(sg_svc.turnout(_done)))
 _wbody = wrap_client.get(f"/support-groups/meetings/{wrap_mid}/wrap").get_data(as_text=True)
 ok("The wrap page still names who was in the room after it completes",
    "sgwraphost" in _wbody, "peers list came back empty")
@@ -4124,7 +4249,7 @@ ok("And what is already saved comes back ticked",
    and 'checked' in _wbody)
 
 r = admin.post("/admin/support-groups/availability", data={
-    "coach": "ayesha", "timezone": "UTC",
+    "coach": "ayesha",
     # Monday morning in one run, plus a lone Wednesday hour.
     "slot": ["0:9", "0:10", "0:11", "2:14"],
 }, follow_redirects=True)
@@ -4135,17 +4260,43 @@ with app.app_context():
     _shape = sorted((w.weekday, w.start_minute, w.end_minute) for w in _wins)
     ok("Hours next to each other become one window, not four",
        _shape == [(0, 540, 720), (2, 840, 900)], f"got {_shape}")
-    ok("All of it saved in the timezone chosen for the week",
+    ok("All of it saved on the owner's own clock, with nothing to pick",
        {w.timezone for w in _wins} == {"UTC"})
     ok("The editor can read its own week back",
        intake_svc.week_grid("ayesha")[0] == {9, 10, 11}
        and intake_svc.week_grid("ayesha")[2] == {14})
     ok("And members get bookable slots from it",
        len(intake_svc.open_slots("ayesha", viewer_tz="UTC")) > 0)
+# Studio stopped asking which zone a week is in — it is the zone in the
+# owner's settings, and a week saved in another one is read back in hers.
+ok("The week editor has no timezone to pick any more",
+   'name="timezone"' not in admin.get("/admin/support-groups").get_data(as_text=True))
+with app.app_context():
+    _owner_row = User.query.filter_by(email="owner@example.com").first()
+    _owner_row.timezone = "America/New_York"
+    db.session.commit()
+r = admin.post("/admin/support-groups/availability", data={
+    "coach": "ayesha", "slot": ["0:9"]}, follow_redirects=True)
+with app.app_context():
+    ok("A week saved now is written on whatever her settings say",
+       {w.timezone for w in intake_svc.list_availability("ayesha")}
+       == {"America/New_York"})
+    # 9am New York is 2pm or 1pm in London, depending on the month.
+    _london = intake_svc.week_grid("ayesha", "Europe/London")
+    _hour = intake_svc.shift_hour(0, 9, "America/New_York", "Europe/London")
+    ok("And an old week written elsewhere is read back on the clock in hand",
+       _london[_hour[0]] == {_hour[1]} and _hour[1] in (13, 14),
+       f"{_london} vs {_hour}")
+    _owner_row = User.query.filter_by(email="owner@example.com").first()
+    _owner_row.timezone = None
+    db.session.commit()
+admin.post("/admin/support-groups/availability", data={
+    "coach": "ayesha", "slot": ["0:9", "0:10", "0:11", "2:14"]},
+    follow_redirects=True)
 
 # Saving again is editing: the week is replaced, not added to.
 admin.post("/admin/support-groups/availability", data={
-    "coach": "ayesha", "timezone": "UTC", "slot": ["0:9"],
+    "coach": "ayesha", "slot": ["0:9"],
 }, follow_redirects=True)
 with app.app_context():
     _shape = sorted((w.weekday, w.start_minute, w.end_minute)
@@ -4156,7 +4307,7 @@ with app.app_context():
        len(intake_svc.list_availability("saman")) > 0)
 
 r = admin.post("/admin/support-groups/availability", data={
-    "coach": "ayesha", "timezone": "UTC",
+    "coach": "ayesha",
 }, follow_redirects=True)
 ok("Clearing every day says so plainly, rather than looking like a no-op",
    "unavailable all week" in r.get_data(as_text=True), flashes(r))
@@ -4169,6 +4320,49 @@ with app.app_context():
         "ayesha", {(utcnow() + timedelta(days=2)).weekday(): [9, 10, 11, 12, 13, 14]},
         tz_name="UTC")
     ok("Setup restored", len(intake_svc.open_slots("ayesha", viewer_tz="UTC")) > 0)
+
+# --- Studio's Recent table: seats that were taken, and who actually came -----
+# It read finished sessions for live seats, so every one of them showed 0 / 8
+# however full it had been, and there was nothing to say who turned up.
+with app.app_context():
+    _turn_host = User(email="sg-turnout-host@example.com", username="sgturnhost",
+                      membership="healing", email_verified_at=utcnow())
+    _turn_host.set_password(USER_PW)
+    _turn_guest = User(email="sg-turnout-guest@example.com", username="sgturnguest",
+                       membership="healing", email_verified_at=utcnow())
+    _turn_guest.set_password(USER_PW)
+    db.session.add_all([_turn_host, _turn_guest])
+    db.session.commit()
+    _turn_when = utcnow() + timedelta(days=3, hours=2)
+    _turn_meet, _turn_err = sg_svc.schedule_peer_session(
+        _turn_host, circle_id=heal_cid,
+        date_s=_turn_when.strftime("%Y-%m-%d"),
+        time_s=_turn_when.strftime("%H:%M"), tz_name="UTC")
+    ok("A session to look back on", _turn_meet is not None and not _turn_err,
+       _turn_err)
+    sg_svc.join_peer_session(_turn_guest, _turn_meet.id)
+    ok("Opening the room is what counts as coming",
+       sg_svc.mark_joined(_turn_meet, _turn_guest) is True
+       and sg_svc.mark_joined(_turn_meet, _turn_guest) is False)
+    sg_svc.complete_meeting(_turn_meet)
+    _turn_id = _turn_meet.id
+_rbody = admin.get("/admin/support-groups").get_data(as_text=True)
+_recent = _rbody.split("<h2 style=\"margin-top:0;\">Recent</h2>", 1)[-1]
+ok("A finished session shows the seats it had, not an empty room",
+   "2 / 8" in _recent, "Recent still counts live seats only")
+ok("And says how many of them came", "1 of 2" in _recent)
+with app.app_context():
+    _older = db.session.get(SupportGroupMeeting, wrap_mid)
+    # A session from before arrivals were noted: every seat was marked
+    # attended on the way out, so there is nothing honest to count.
+    for _seat in SupportGroupApplication.query.filter_by(meeting_id=_older.id).all():
+        _seat.status = "attended"
+        _seat.joined_at = None
+    db.session.commit()
+    ok("A session from before this was recorded says so rather than claiming nobody came",
+       sg_svc.turnout(_older)["tracked"] is False)
+ok("Which Studio prints as such",
+   "not recorded" in admin.get("/admin/support-groups").get_data(as_text=True))
 
 
 # site image uploads (hero / story teaser)
@@ -4310,7 +4504,8 @@ with app.app_context():
     ok("Creator photo setting points at media route",
        get_setting("creator_image_url") == "/media/site/creator")
 
-# --- spotlight: eligible list, the month's top commenter, expiry notices ----
+# --- spotlight: eligible list, the month's standout, expiry notices ---------
+from app.models import CheckIn as _CheckIn   # noqa: E402
 from app.services import spotlight as _spot   # noqa: E402
 
 with app.app_context():
@@ -4387,15 +4582,15 @@ with app.app_context():
        and _tally[_drawme_id]["comments"] == 1)
 
     _ready, _missing = _spot.eligible_split()
-    ok("The eligible list is ordered by who commented most",
+    ok("The eligible list is ordered by whose month adds up to most",
        _ready[0]["name"] == "Chatty One" and _ready[0]["comments"] == 6)
     ok("Members with no Instagram link are still counted, just not pickable",
        any(c["email"] == "quiet@example.com" and c["comments"] == 2
            for c in _missing))
-    ok("The top commenter is who gets picked",
-       (_spot.pick_top_commenter() or {}).get("user_id") == _chatty_id)
-    ok("A month nobody commented in has nobody to hand the card to",
-       _spot.pick_top_commenter("UTC", now=_now + timedelta(days=400)) is None)
+    ok("The fullest month is who gets picked",
+       (_spot.pick_standout() or {}).get("user_id") == _chatty_id)
+    ok("A month nobody turned up in has nobody to hand the card to",
+       _spot.pick_standout("UTC", now=_now + timedelta(days=400)) is None)
 
     # Same total, finished sooner: the earlier of the two leads.
     _tied = User(email="tied@example.com", display_name="Tied Early",
@@ -4410,11 +4605,87 @@ with app.app_context():
         _said(_tied.id, f"Tied {_i}", 120 - _i)
     db.session.commit()
     ok("A tie goes to whoever got there first",
-       (_spot.pick_top_commenter() or {}).get("user_id") == _tied.id)
+       (_spot.pick_standout() or {}).get("user_id") == _tied.id)
     ForumComment.query.filter_by(user_id=_tied.id).delete(
         synchronize_session=False)
     db.session.delete(_tied)
     db.session.commit()
+
+# The other four things a month is read by: days here, posts, sessions sat in,
+# and a reel that made the home page.
+with app.app_context():
+    _drawme = User.query.filter_by(email="drawme@example.com").first()
+    _chatty_id = User.query.filter_by(email="chatty@example.com").first().id
+    _month_start, _month_end, _ = _spot.month_window("UTC")
+    _today = datetime.utcnow().date()
+    _first = max(_month_start.date(), _today - timedelta(days=4))
+    _days = [_first + timedelta(days=_i)
+             for _i in range((_today - _first).days + 1)]
+    for _day in _days:
+        db.session.add(_CheckIn(user_id=_drawme.id, day=_day))
+    # One from before the month opened, which this month can't claim.
+    db.session.add(_CheckIn(user_id=_drawme.id,
+                            day=_month_start.date() - timedelta(days=1)))
+    db.session.commit()
+
+    _here = _spot.checkin_tally([_drawme.id, _chatty_id], "UTC")
+    ok("Showing up is counted by the day, inside this month only",
+       _here[_drawme.id]["days"] == len(_days)
+       and _here[_drawme.id]["run"] == len(_days)
+       and _chatty_id not in _here,
+       f"tally={_here}")
+
+    _heal = ForumCategory.query.filter_by(slug="healing").first()
+    db.session.add(ForumPost(category_id=_heal.id, user_id=_drawme.id,
+                             title="A whole month of turning up",
+                             body="Here's what I made."))
+    db.session.add(ForumPost(category_id=_heal.id, user_id=_drawme.id,
+                             title="Taken down again", body="Gone.",
+                             hidden=True))
+    db.session.commit()
+    _wrote = _spot.post_tally([_drawme.id], "UTC")
+    _standing_posts = ForumPost.query.filter_by(user_id=_drawme.id,
+                                                hidden=False).count()
+    ok("Posts count towards the month, unless they were taken down",
+       _wrote[_drawme.id]["posts"] == _standing_posts
+       and ForumPost.query.filter_by(user_id=_drawme.id, hidden=True).count() == 2,
+       f"counted={_wrote[_drawme.id]['posts']} standing={_standing_posts}")
+
+    _sat = SupportGroupMeeting(circle_id=None, capacity=6, kind="peer",
+                               status="completed",
+                               scheduled_at=datetime.utcnow() - timedelta(hours=3))
+    _missed = SupportGroupMeeting(circle_id=None, capacity=6, kind="peer",
+                                  status="completed",
+                                  scheduled_at=datetime.utcnow() - timedelta(hours=2))
+    db.session.add_all([_sat, _missed])
+    db.session.flush()
+    db.session.add(SupportGroupApplication(user_id=_drawme.id, meeting_id=_sat.id,
+                                           message="", status="attended"))
+    db.session.add(SupportGroupApplication(user_id=_drawme.id, meeting_id=_missed.id,
+                                           message="", status="selected"))
+    db.session.commit()
+    _seats = _spot.session_tally([_drawme.id], "UTC")
+    ok("A session counts once you've actually sat in it, not once booked",
+       _seats[_drawme.id]["sessions"] == 1)
+
+    _drawme.reel_featured_at = utcnow()
+    db.session.commit()
+
+    _ready, _missing = _spot.eligible_split()
+    _lead = _ready[0]
+    _expected = (len(_days) * _spot.POINTS_PER_DAY
+                 + 1 * _spot.POINTS_PER_COMMENT
+                 + _standing_posts * _spot.POINTS_PER_POST
+                 + 1 * _spot.POINTS_PER_SESSION
+                 + _spot.POINTS_FOR_REEL)
+    ok("A quiet month of showing up outranks a loud month of comments alone",
+       _lead["user_id"] == _drawme.id and _lead["score"] == _expected,
+       f"lead={_lead['name']} score={_lead['score']} want={_expected}")
+    ok("The score says what it's made of",
+       "1 session" in _lead["why"] and f"{_standing_posts} posts" in _lead["why"]
+       and "1 comment" in _lead["why"] and "reel of the week" in _lead["why"]
+       and any(w.startswith(f"{len(_days)} day") for w in _lead["why"]),
+       f"why={_lead['why']}")
 
 r = admin.get("/admin/spotlight")
 sbody = r.get_data(as_text=True)
@@ -4422,17 +4693,90 @@ ok("Spotlight page lists who can be Creator of the month",
    r.status_code == 200 and "Draw Me" in sbody
    and 'name="pick_creator"' in sbody
    and "Reel reviews" in sbody)
-ok("Spotlight page shows the month's comment counts",
-   "6 comments" in sbody and sbody.index("Chatty One") < sbody.index("Draw Me"))
+ok("Spotlight page shows what each member's month added up to",
+   "reel of the week" in sbody and "1 session" in sbody
+   and sbody.index("Draw Me") < sbody.index("Chatty One"))
 
 r = admin.post("/admin/spotlight", data={"pick_creator": "1"},
                follow_redirects=True)
 dbody = r.get_data(as_text=True)
-ok("The month's top commenter pre-fills the Creator of the month form",
-   'value="Chatty One"' in dbody and "led the comments this month" in dbody)
+ok("The month's standout pre-fills the Creator of the month form",
+   'value="Draw Me"' in dbody and "had the fullest month" in dbody)
+ok("Picking twice lands on the same person — it isn't a draw",
+   'value="Draw Me"' in admin.post("/admin/spotlight", data={"pick_creator": "1"},
+                                   follow_redirects=True).get_data(as_text=True))
 with app.app_context():
-    ok("Picking the top commenter doesn't publish anything by itself",
-       get_setting("creator_name") != "Chatty One")
+    ok("Picking the standout doesn't publish anything by itself",
+       get_setting("creator_name") != "Draw Me")
+
+# --- the card moves on: last month's creator sits the next one out ----------
+with app.app_context():
+    _drawme = User.query.filter_by(email="drawme@example.com").first()
+    _chatty = User.query.filter_by(email="chatty@example.com").first()
+    ok("Nobody has had the card yet, so the fullest month takes it",
+       (_spot.pick_standout() or {}).get("user_id") == _drawme.id)
+r = admin.post("/admin/spotlight", data={
+    "creator_user_id": str(_drawme.id), "creator_name": "Draw Me",
+    "creator_instagram": "@drawmeplease", "creator_blurb": "Turned up daily.",
+    "creator_image_url": "", "creator_expires": "",
+    "reel_url": "", "reel_description": "", "reel_expires": "",
+    "csrf_token": "x"}, follow_redirects=True)
+with app.app_context():
+    _drawme = User.query.filter_by(email="drawme@example.com").first()
+    ok("Saving the card remembers whose it is",
+       _drawme.creator_month_at is not None, flashes(r))
+    ok("So next month's pick passes over them for whoever is next",
+       (_spot.pick_standout() or {}).get("user_id") == _chatty.id)
+    _rows = {row["user_id"]: row for row in _spot.eligible_creators()}
+    ok("Even though they still lead on points",
+       _rows[_drawme.id]["score"] > _rows[_chatty.id]["score"]
+       and _rows[_drawme.id]["stood_down"]
+       and not _rows[_chatty.id]["stood_down"])
+_sbody = admin.get("/admin/spotlight").get_data(as_text=True)
+ok("Studio marks the one sitting this month out", "just had it" in _sbody)
+ok("And the button offers the one it would actually pick",
+   "Chatty One leads" in _sbody)
+
+with app.app_context():
+    # Two months on, their turn comes round again.
+    _drawme = User.query.filter_by(email="drawme@example.com").first()
+    _later = datetime.utcnow() + timedelta(days=70)
+    ok("A card from two months ago is no bar at all",
+       (_spot.pick_standout("UTC", now=_later) or {}).get("user_id") == _drawme.id,
+       str(_spot.pick_standout("UTC", now=_later)))
+
+    # Everybody with a month behind them has just had it: say so plainly
+    # rather than handing over a name the owner has only just taken down.
+    _rested = [row["user_id"] for row in _spot.eligible_split()[0] if row["score"]]
+    for _uid in _rested:
+        db.session.get(User, _uid).creator_month_at = utcnow()
+    db.session.commit()
+    ok("With everybody rested, there is nobody left to pick",
+       _spot.pick_standout() is None
+       and {row["user_id"] for row in _spot.stood_down_leaders()} == set(_rested),
+       str(_rested))
+r = admin.post("/admin/spotlight", data={"pick_creator": "1"},
+               follow_redirects=True)
+ok("And the button explains itself instead of going quiet",
+   "had the card" in r.get_data(as_text=True).lower(), flashes(r))
+with app.app_context():
+    # A card filled in by hand still counts: the handle is who it is.
+    for _uid in _rested:
+        db.session.get(User, _uid).creator_month_at = None
+    db.session.commit()
+r = admin.post("/admin/spotlight", data={
+    "creator_name": "Chatty One", "creator_instagram": "chattyone",
+    "creator_blurb": "Said plenty.", "creator_image_url": "",
+    "creator_expires": "", "reel_url": "", "reel_description": "",
+    "reel_expires": "", "csrf_token": "x"}, follow_redirects=True)
+with app.app_context():
+    _chatty = User.query.filter_by(email="chatty@example.com").first()
+    ok("A card typed in by hand is matched to the member by their handle",
+       _chatty.creator_month_at is not None, flashes(r))
+    _chatty.creator_month_at = None
+    _drawme = User.query.filter_by(email="drawme@example.com").first()
+    _drawme.creator_month_at = None
+    db.session.commit()
 
 with app.app_context():
     from datetime import date as _date
@@ -4800,7 +5144,7 @@ ok("A complaint opens the same reply composer, quoting them",
    "Checkout felt confusing on mobile." in _crbody
    and "data-reply-preview" in _crbody)
 ok("With the same senders to choose between",
-   all(a in _crbody for a in ("bloomsupport@bloomanyway.online",
+   all(a in _crbody for a in ("customersupport@bloomanyway.online",
                               "ayesha@bloomanyway.online",
                               "saman@bloomanyway.online")))
 _cx_calls = []
@@ -5500,6 +5844,39 @@ ok("Product page advertises the perk and the schedule",
    and "Released one module at a time" in _dbody
    and "Available right away" in _dbody and "Day 8" in _dbody)
 
+# A launch date is the one thing the page can't call "right away".
+with app.app_context():
+    _dp = Product.query.filter_by(slug="drip-course").first()
+    _launch = utcnow().replace(microsecond=0) + timedelta(days=19)
+    _dp.drip_starts_at = _launch
+    db.session.commit()
+    _opens = _launch.strftime("%b %d")
+    ok("The pace says the day it opens, not right away",
+       f"First module on {_launch.strftime('%b %d, %Y')}"
+       in dict(_dp.glance_facts()).get("Pace", ""),
+       dict(_dp.glance_facts()).get("Pace"))
+_dbody = client.get("/courses/drip-course").get_data(as_text=True)
+ok("And the modules are dated from the launch, not from the buying",
+   "Available right away" not in _dbody and _opens in _dbody
+   and "the first opens on" in _dbody
+   and _launch.strftime("%B %d") in _dbody,
+   f"looking for {_opens}")
+with app.app_context():
+    _dp = Product.query.filter_by(slug="drip-course").first()
+    _began = utcnow().replace(microsecond=0) - timedelta(days=3)
+    _dp.drip_starts_at = _began
+    db.session.commit()
+_dbody = client.get("/courses/drip-course").get_data(as_text=True)
+ok("A launch that's been and gone opens right away, with the rest still dated",
+   "Available right away" in _dbody
+   and (_began + timedelta(days=7)).strftime("%b %d") in _dbody
+   and "Day 8" not in _dbody,
+   f"looking for {(_began + timedelta(days=7)).strftime('%b %d')}")
+with app.app_context():
+    _dp = Product.query.filter_by(slug="drip-course").first()
+    _dp.drip_starts_at = None
+    db.session.commit()
+
 with app.app_context():
     dripper = User(email="dripper@example.com", email_verified_at=utcnow())
     dripper.set_password(USER_PW)
@@ -5535,6 +5912,128 @@ with app.app_context():
     ok("Told once, not once per webhook",
        _Note.query.filter_by(user_id=dripper.id, kind="membership").count() == 1)
 
+# --- a perk that runs to a date, instead of for a number of months ------------
+# "Three months from when they buy" is one way to give membership away. "Until
+# the season closes" is the other, and now the owner picks which.
+_season_close = utcnow().replace(microsecond=0) + timedelta(days=45)
+r = admin.post("/admin/products/new", data={
+    "title": "Season Pass", "track": "building", "type": "course",
+    "price": "59.00", "promise": "One season, everything in it.",
+    "stripe": "price_season_pass", "live": "1",
+    "perk_tier": "creator", "perk_months": "3", "perk_start_on_buy": "1",
+    "perk_ends_date": _season_close.strftime("%Y-%m-%d"),
+    "perk_ends_time": "23:59",
+}, follow_redirects=True)
+with app.app_context():
+    from app.services.timefmt import format_local as _fmt_local
+    _season = Product.query.filter_by(slug="season-pass").first()
+    ok("Studio saves a perk that ends on a day of the owner's choosing",
+       r.status_code == 200 and _season is not None
+       and _season.perk_ends_at is not None and _season.perk_starts_at is None
+       and _season.has_perk())
+    _season_id, _closes_at = _season.id, _season.perk_ends_at
+    _closes = _fmt_local(_closes_at, "%b %d, %Y")
+    ok("And reads as a date where it used to read as a length",
+       _season.perk_summary() == f"Creator membership, free until {_closes}",
+       _season.perk_summary())
+    _early = _season.perk_window(utcnow() - timedelta(days=200))
+    _late = _season.perk_window(utcnow())
+    ok("Everybody's runs out together, however long ago they bought",
+       _early[1] == _late[1] == _closes_at
+       and _early[0] < _late[0], f"{_early} vs {_late}")
+ok("The product page says what they get and until when",
+   f"Creator membership, free until {_closes}"
+   in client.get("/courses/season-pass").get_data(as_text=True))
+
+with app.app_context():
+    _sb = User(email="seasonal@example.com", email_verified_at=utcnow())
+    _sb.set_password(USER_PW)
+    db.session.add(_sb)
+    db.session.commit()
+_season_pay = _payment_payload("9105", "seasonal@example.com",
+                               "price_season_pass", amount=5900,
+                               product_name="Season Pass")
+client.post("/webhooks/stripe", data=_season_pay,
+            headers=_stripe_headers(_season_pay))
+with app.app_context():
+    from app.services.perks import perk_state as _pstate
+    _sb = User.query.filter_by(email="seasonal@example.com").first()
+    ok("Buying it hands over the membership until that day, not for three months",
+       _sb.membership == "creator" and _pstate(_sb)["until"] == _closes_at,
+       f"{_sb.membership} until {_pstate(_sb)['until']}")
+
+# The other half of it: a perk bought now that doesn't open until later.
+_season_opens = utcnow().replace(microsecond=0) + timedelta(days=10)
+with app.app_context():
+    _sp = db.session.get(Product, _season_id)
+    _sp.perk_starts_at = _season_opens
+    db.session.commit()
+    _waiter = User(email="waiting@example.com", email_verified_at=utcnow())
+    _waiter.set_password(USER_PW)
+    db.session.add(_waiter)
+    db.session.commit()
+_wait_pay = _payment_payload("9106", "waiting@example.com", "price_season_pass",
+                             amount=5900, product_name="Season Pass")
+client.post("/webhooks/stripe", data=_wait_pay, headers=_stripe_headers(_wait_pay))
+with app.app_context():
+    _w = User.query.filter_by(email="waiting@example.com").first()
+    ok("A perk with a start date doesn't land until the day it opens",
+       _w.membership == "none" and _pstate(_w)["starts"] == _season_opens,
+       f"{_w.membership} starts {_pstate(_w)['starts']}")
+_wait_client = app.test_client()
+_wait_client.post("/login", data={"email": "waiting@example.com",
+                                  "password": USER_PW})
+ok("And My space says when it opens, rather than nothing at all",
+   f"it opens on {_fmt_local(_season_opens, '%b %d, %Y')}"
+   in _wait_client.get("/account").get_data(as_text=True))
+with app.app_context():
+    from app.services.memberships import reconcile_user as _reconcile
+    _sp = db.session.get(Product, _season_id)
+    _sp.perk_starts_at = utcnow() - timedelta(minutes=1)
+    db.session.commit()
+    _w = User.query.filter_by(email="waiting@example.com").first()
+    _reconcile(_w)
+    db.session.commit()
+    ok("Then lands on its own once the day comes, with nobody buying again",
+       _w.membership == "creator")
+    _sp.perk_ends_at = utcnow() - timedelta(minutes=1)
+    db.session.commit()
+    _reconcile(_w)
+    db.session.commit()
+    ok("And goes again on the day it ends",
+       _w.membership == "none" and db.session.get(Product, _season_id).perk_ended())
+
+_season_fields = {
+    "title": "Season Pass", "track": "building", "type": "course",
+    "slug": "season-pass", "price": "59.00",
+    "promise": "One season, everything in it.",
+    "stripe": "price_season_pass", "live": "1",
+    "perk_tier": "creator", "perk_months": "3",
+}
+r = admin.post(f"/admin/products/{_season_id}/edit", data=dict(
+    _season_fields,
+    perk_starts_date=(utcnow() + timedelta(days=30)).strftime("%Y-%m-%d"),
+    perk_ends_date=(utcnow() + timedelta(days=5)).strftime("%Y-%m-%d"),
+), follow_redirects=True)
+with app.app_context():
+    _sp = db.session.get(Product, _season_id)
+    ok("A membership that ends before it starts is turned down",
+       "end before it starts" in r.get_data(as_text=True)
+       and _sp.perk_ends_at is None and _sp.perk_starts_at is not None)
+    ok("And what's left is the months, from the day it opens",
+       _sp.perk_months() == 3
+       and _sp.perk_summary().startswith("3 months of Creator membership, free from"),
+       _sp.perk_summary())
+r = admin.post(f"/admin/products/{_season_id}/edit",
+               data=dict(_season_fields, perk_start_on_buy="1"),
+               follow_redirects=True)
+with app.app_context():
+    _sp = db.session.get(Product, _season_id)
+    ok("Handing the dates back leaves the months as they always were",
+       _sp.perk_starts_at is None and _sp.perk_ends_at is None
+       and _sp.perk_summary() == "3 months of Creator membership, free",
+       _sp.perk_summary())
+
 drip_client = app.test_client()
 drip_client.post("/login", data={"email": "dripper@example.com", "password": USER_PW})
 r = drip_client.get(f"/account/courses/{drip_purchase_id}")
@@ -5551,6 +6050,11 @@ _WHEN_RE = (r"unlocks\s+<time datetime=\"[0-9T:-]+Z\" data-when=\"[^\"]+\">"
 _when = re.search(_WHEN_RE + r"\s+your time", _rbody)
 ok("And says what time it opens, on their clock", bool(_when),
    "no local unlock time in the module bar")
+# A date on its own leaves them counting on their fingers; the wait is right
+# there beside it, and it keeps going down while they read.
+ok("Along with how long that wait has left to run",
+   'data-countdown="' in _rbody and "refresh to read it" in _rbody,
+   "no timer on the locked module note")
 _ny = app.test_client()
 _ny.set_cookie("tz", "America/New_York", domain="localhost")
 _ny.post("/login", data={"email": "dripper@example.com", "password": USER_PW})
@@ -5804,6 +6308,80 @@ r = drip_client.get(f"/account/courses/{drip_purchase_id}")
 ok("Someone who bought it before still reads it", r.status_code == 200)
 r = drip_client.get(f"/account/courses/{drip_purchase_id}/file/{mod1_asset_id}")
 ok("Including the files inside it", r.status_code == 200)
+
+# --- a deadline you can watch running down ------------------------------------
+# The day answers "when". Standing in front of a price, the question actually
+# being asked is "how long have I got", so every moment still ahead of a buyer
+# carries the time left beside it. The words are written here, not in the
+# browser: the page is right for a reader with no JavaScript and right at the
+# instant it lands, and the browser only keeps the numbers moving from there.
+from datetime import timezone as _tz
+
+from app.services.timefmt import countdown_tag as _cd
+from app.services.timefmt import time_left_words as _left
+
+_at = datetime(2026, 9, 6, 12, 0, 0, tzinfo=_tz.utc)
+
+
+def _left_at(**kw):
+    return _left(_at + timedelta(**kw), _at)
+
+
+ok("Far out, the time left is counted in whole days",
+   _left_at(days=12, hours=3) == "12 days left", _left_at(days=12, hours=3))
+ok("Inside the week it picks the hours up too",
+   _left_at(days=3, hours=4) == "3 days, 4 hours left", _left_at(days=3, hours=4))
+ok("One of each is said singly",
+   _left_at(days=1, hours=1, minutes=59) == "1 day, 1 hour left",
+   _left_at(days=1, hours=1, minutes=59))
+ok("A round number of days doesn't trail an empty hour on the end",
+   _left_at(days=2, minutes=30) == "2 days left", _left_at(days=2, minutes=30))
+ok("Inside a day it turns into a clock, seconds and all",
+   _left_at(hours=5, minutes=12, seconds=7) == "5:12:07 left",
+   _left_at(hours=5, minutes=12, seconds=7))
+ok("And inside an hour, minutes and seconds are all that is left to say",
+   _left_at(minutes=42, seconds=7) == "42:07 left", _left_at(minutes=42, seconds=7))
+ok("The last seconds still read as a time rather than running out of words",
+   _left_at(seconds=9) == "0:09 left", _left_at(seconds=9))
+ok("A moment already gone has nothing left to count",
+   _left_at(seconds=-1) == "" and _left(None, _at) == "")
+
+_tag = str(_cd(datetime(2027, 1, 1, 0, 0, 0), zero="Off the shelves now",
+               refresh=True))
+ok("The chip carries the exact instant, so no clock has to be agreed on first",
+   'data-countdown="2027-01-01T00:00:00Z"' in _tag and "left</span>" in _tag, _tag)
+ok("Plus what to say when it lands, and that the page is stale from then on",
+   'data-countdown-zero="Off the shelves now"' in _tag
+   and 'data-countdown-refresh="1"' in _tag, _tag)
+ok("Nothing at all is drawn for a moment that has already been and gone",
+   str(_cd(utcnow() - timedelta(minutes=1), zero="Over")) == "",
+   str(_cd(utcnow() - timedelta(minutes=1), zero="Over")))
+_shell = client.get("/courses").get_data(as_text=True)
+ok("Every page says the hour it was built, so a device set wrong can't lie",
+   'data-now-ms="' in _shell and "js/countdown.js" in _shell)
+
+with app.app_context():
+    _p = db.session.get(Product, drip_prod_id)
+    _p.off_shelf_at = utcnow() + timedelta(days=2, hours=5, minutes=1)
+    db.session.commit()
+_pd = client.get("/courses/drip-course").get_data(as_text=True)
+ok("The last day on sale counts itself down on the product page",
+   "Off the shelves on" in _pd and "2 days, 5 hours left" in _pd
+   and 'data-countdown-zero="Off the shelves now"' in _pd,
+   "no live timer beside the shelf date")
+ok("And it asks for the page again when it lands, since the buy button goes",
+   'data-countdown-refresh="1"' in _pd)
+_sbody = admin.get(f"/admin/products/{drip_prod_id}/edit").get_data(as_text=True)
+ok("Studio watches the same clock the buyer does",
+   "2 days, 5 hours left" in _sbody and "js/countdown.js" in _sbody)
+with app.app_context():
+    _p = db.session.get(Product, drip_prod_id)
+    _p.off_shelf_at = utcnow() - timedelta(minutes=1)
+    db.session.commit()
+_pd = client.get("/courses/drip-course").get_data(as_text=True)
+ok("Once it is off the shelves there is no timer left running on the page",
+   "data-countdown" not in _pd and "Off the shelves" in _pd)
+
 with app.app_context():
     _p = db.session.get(Product, drip_prod_id)
     _p.off_shelf_at = None
@@ -6191,7 +6769,7 @@ with app.app_context():
         module_index=1, sort_order=97)
     db.session.add(_junk)
     db.session.commit()
-    ok("One that won't draw keeps its file and stays a download",
+    ok("One that won't draw keeps the file it came as",
        not _assets_svc.redraw(_junk) and _junk.kind == "other"
        and _junk.filename == "not-really.pptx")
     db.session.delete(_junk)
@@ -6278,6 +6856,82 @@ with app.app_context():
         if (_a.filename or "").startswith("posting-deck"):
             _assets_svc.delete_file(_a)
             db.session.delete(_a)
+    db.session.commit()
+
+# --- a course is read here, not handed over ----------------------------------
+# Everything a buyer opens is streamed to be shown, never to be kept: the
+# reader has nothing that says Download, the file route only ever answers
+# "inline", and the players don't offer to save what they are playing.
+_rbody = drip_client.get(f"/account/courses/{drip_purchase_id}").get_data(as_text=True)
+ok("Nothing in the reader offers to hand the file over",
+   ">Download<" not in _rbody and "Open download" not in _rbody
+   and "download=1" not in _rbody and "data-download-url" not in _rbody,
+   "a download is still on offer")
+r = drip_client.get(
+    f"/account/courses/{drip_purchase_id}/file/{mod1_asset_id}")
+ok("The file itself is served to be shown",
+   r.status_code == 200
+   and r.headers.get("Content-Disposition", "").startswith("inline"),
+   r.headers.get("Content-Disposition"))
+r = drip_client.get(
+    f"/account/courses/{drip_purchase_id}/file/{mod1_asset_id}?download=1")
+ok("And asking it nicely for an attachment gets a page to read anyway",
+   r.status_code == 200
+   and r.headers.get("Content-Disposition", "").startswith("inline")
+   and "attachment" not in (r.headers.get("Content-Disposition") or ""),
+   r.headers.get("Content-Disposition"))
+
+with app.app_context():
+    _clip = ProductAsset(
+        product_id=drip_prod_id, filename="lesson.mp4", kind="video",
+        mime="video/mp4", size=8, data=b"\x00\x00\x00\x18ftypmp42",
+        module_index=1, sort_order=95)
+    db.session.add(_clip)
+    db.session.commit()
+    _clip_id = _clip.id
+_vbody = drip_client.get(
+    f"/account/courses/{drip_purchase_id}?module=1&item={_clip_id}").get_data(as_text=True)
+ok("A lesson video plays without offering to keep it",
+   'controlslist="nodownload"' in _vbody and "data-no-contextmenu" in _vbody,
+   "the player still has a save button in it")
+
+# A file nothing here can draw is the one case with no page to show. It opens
+# in a tab of its own rather than being handed over, and nobody is left
+# holding something they bought and cannot reach.
+with app.app_context():
+    _odd = ProductAsset(
+        product_id=drip_prod_id, filename="mystery.bin", kind="other",
+        mime="application/octet-stream", size=4, data=b"junk",
+        module_index=1, sort_order=94)
+    db.session.add(_odd)
+    db.session.commit()
+    _odd_id = _odd.id
+_xbody = drip_client.get(
+    f"/account/courses/{drip_purchase_id}?module=1&item={_odd_id}").get_data(as_text=True)
+ok("What the reader can't draw is opened, not downloaded",
+   "Open it in a new tab" in _xbody
+   and "opens best as a download" not in _xbody
+   and f"/file/{_odd_id}?download" not in _xbody, "still a download button")
+with app.app_context():
+    for _gone in (_clip_id, _odd_id):
+        _row = db.session.get(ProductAsset, _gone)
+        if _row is not None:
+            db.session.delete(_row)
+    db.session.commit()
+
+# The old shop link predates the reader. It still answers for a purchase with
+# nothing here to read, and stands down for one that has pages of its own.
+with app.app_context():
+    from app.services import course_reader as _reader_svc
+    _dripbuy = db.session.get(ShopPurchase, drip_purchase_id)
+    _dripbuy.file_key = "shop-guide.pdf"
+    db.session.commit()
+    ok("A purchase with pages here counts as readable on the site",
+       _reader_svc.reads_on_site(_dripbuy))
+r = drip_client.get(f"/account/shop/{drip_purchase_id}/download")
+ok("So the old download link stops answering for it", r.status_code == 404)
+with app.app_context():
+    db.session.get(ShopPurchase, drip_purchase_id).file_key = None
     db.session.commit()
 
 # Modules and lessons can be reordered and removed. What a row holds is pinned
@@ -6454,6 +7108,15 @@ with app.app_context():
     ok("And repeats the membership that comes with it",
        "3 months of Creator membership, free" in _facts.get("Also included", ""),
        f"got {_facts.get('Also included')!r}")
+    _gp = Product.query.filter_by(slug="glance-course").first()
+    ok("A course's facts card says nothing about refunds",
+       "Refunds" not in dict(_gp.glance_facts()))
+    _gp.set_types(["workbook"])
+    ok("A guide's answers it there too, where a buyer is scanning",
+       dict(_gp.glance_facts()).get("Refunds", "").startswith("Non-refundable"),
+       f"got {dict(_gp.glance_facts()).get('Refunds')!r}")
+    _gp.set_types(["course"])
+    db.session.commit()
     _bare = Product(slug="bare-glance", title="Bare Glance", type="guide",
                     status="published", promise="x", price_cents=500,
                     stripe_price_id="price_bare")
@@ -7076,7 +7739,7 @@ try:
             perk="3 months of Creator membership")
     ok("A receipt says what membership came with the purchase",
        "3 months of Creator membership" in _carried["text"]
-       and "already on your account" in _carried["text"]
+       and "find it on your account" in _carried["text"]
        and _carried["params"].get("MEMBERSHIP_INCLUDED")
        == "3 months of Creator membership",
        f"got {_carried}")
@@ -7085,7 +7748,7 @@ try:
             "buyer@example.com", order_id="R-3", product_name="Plain Guide",
             amount="$20", order_date="Sep 02, 2026")
     ok("And says nothing about one when there isn't one",
-       "already on your account" not in _carried["text"]
+       "find it on your account" not in _carried["text"]
        and not _carried["params"].get("MEMBERSHIP_INCLUDED"))
     # A product's name is rarely enough to remind somebody in a month what
     # they bought, so the owner writes the line the receipt uses.
@@ -7121,6 +7784,195 @@ with app.app_context():
     db.session.commit()
     ok("With nothing written, the promise stands in for it",
        _p.receipt_blurb() == _p.promise)
+
+# --- buying the challenge is joining it, so the receipt comes with a hello ---
+_letters = []
+
+
+def _catch_letters(to, subject, text, html_body=None, template_id=None,
+                   params=None, sender=None, attachments=None):
+    _letters.append({"to": to, "subject": subject, "text": text,
+                     "template_id": template_id, "params": params or {}})
+    return True
+
+
+_mailer.send_email = _catch_letters
+try:
+    with app.app_context():
+        _mailer.send_challenge_welcome(
+            "buyer@example.com", product_name="2-Month Creator Challenge",
+            order_id="C-1", order_date="Sep 06, 2026",
+            perk="2 months of Creator membership",
+            description="  Two months,\n  four stages.  ")
+    _hello = _letters[-1]
+    ok("The challenge welcome goes out on its own Brevo template (#30)",
+       _hello["template_id"] == 30
+       and _hello["params"].get("PRODUCT_NAME") == "2-Month Creator Challenge"
+       and _hello["params"].get("PRODUCT_DESCRIPTION") == "Two months, four stages.",
+       f"got {_hello['template_id']} {_hello['params']}")
+    ok("And says where to go next, and what came with it",
+       _hello["params"].get("CHALLENGE_URL", "").endswith("/challenge")
+       and "/account" in _hello["params"].get("LIBRARY_URL", "")
+       and _hello["params"].get("MEMBERSHIP_INCLUDED")
+       == "2 months of Creator membership"
+       and "find it on your account" in _hello["text"],
+       f"got {_hello['params']}")
+
+    with app.app_context():
+        from app.services import catalog as _cat_mark
+        _chal = Product(title="2-Month Creator Challenge",
+                        slug="two-month-creator-challenge", type="course",
+                        status="published", price_cents=29900,
+                        stripe_price_id="price_challenge_r3",
+                        promise="Two months, four stages, zero to income.",
+                        perk_membership_tier="creator",
+                        perk_membership_months=2)
+        db.session.add(_chal)
+        db.session.commit()
+        _chal_id = _chal.id
+        _cat_mark.set_challenge_product(_chal, True)
+
+    def _bought(payment_id, email, price="price_challenge_r3",
+                slug="two-month-creator-challenge"):
+        _letters.clear()
+        with app.app_context():
+            pay.handle_payment_event("payment.succeeded", {
+                "payment_id": payment_id,
+                "total_amount": 29900,
+                "currency": "USD",
+                "customer": {"email": email},
+                "customer_email": email,
+                "product_cart": [{"product_id": price, "quantity": 1}],
+                "metadata": {"slug": slug},
+            })
+            db.session.commit()
+        return [m["subject"] for m in _letters
+                if m["to"] == email]
+
+    _both = _bought("pi_challenge_r3_1", "challenger@example.com")
+    ok("Buying the challenge sends the receipt and the welcome, both",
+       "Your Bloom Anyway receipt" in _both
+       and "Welcome to the challenge" in _both,
+       f"sent {_both}")
+    ok("The welcome names the challenge and the months that came with it",
+       any(m["params"].get("MEMBERSHIP_INCLUDED")
+           == "2 months of Creator membership"
+           and m["params"].get("PRODUCT_NAME") == "2-Month Creator Challenge"
+           for m in _letters if m["template_id"] == 30),
+       [m["params"] for m in _letters])
+
+    # Nobody found the tick box, and somebody joined anyway. The course is
+    # called the challenge; that is enough to be welcomed to it.
+    with app.app_context():
+        _cat_mark.set_challenge_product(db.session.get(Product, _chal_id), False)
+    _untkd = _bought("pi_challenge_r3_2", "unticked@example.com")
+    ok("A course named for the challenge welcomes its buyers with no tick at all",
+       "Your Bloom Anyway receipt" in _untkd
+       and "Welcome to the challenge" in _untkd, f"sent {_untkd}")
+
+    with app.app_context():
+        _plain = Product(title="A Steadier Week", slug="a-steadier-week",
+                         type="guide", status="published", currency="USD",
+                         price_cents=1900, stripe_price_id="price_plain_week",
+                         promise="One week at a time.")
+        db.session.add(_plain)
+        db.session.commit()
+        _plain_id = _plain.id
+    _one = _bought("pi_plain_week_1", "shopper@example.com",
+                   price="price_plain_week", slug="a-steadier-week")
+    ok("Anything else still gets the receipt on its own",
+       _one == ["Your Bloom Anyway receipt"], f"sent {_one}")
+
+    # And when the welcome missed somebody anyway, Studio can make it good.
+    _letters.clear()
+    _again = admin.post("/admin/send-challenge-welcome",
+                        data={"email": "challenger@example.com"},
+                        follow_redirects=True).get_data(as_text=True)
+    ok("A welcome that has already gone out isn't sent twice",
+       "already had the challenge welcome" in _again and not _letters,
+       f"sent {[m['subject'] for m in _letters]}")
+    _letters.clear()
+    _byhand = admin.post("/admin/send-challenge-welcome",
+                         data={"email": "missed@example.com"},
+                         follow_redirects=True).get_data(as_text=True)
+    ok("Somebody the purchase never reached can be sent it by hand",
+       any(m["template_id"] == 30 and m["to"] == "missed@example.com"
+           for m in _letters),
+       f"sent {[(m['to'], m['template_id']) for m in _letters]}")
+    ok("And the owner is told there's no purchase here under that address",
+       "No purchase on record" in _byhand)
+    _letters.clear()
+    ok("A typo where the address should be sends nothing",
+       "Type the address they bought with"
+       in admin.post("/admin/send-challenge-welcome", data={"email": "nope"},
+                     follow_redirects=True).get_data(as_text=True)
+       and not _letters)
+    _studio_dash = admin.get("/admin/").get_data(as_text=True)
+    ok("The send sits with the other missed-purchase tools in Studio",
+       "Challenge welcome missing?" in _studio_dash)
+    ok("And Studio's own enrol button goes where the landing page goes",
+       "/courses/two-month-creator-challenge" in _studio_dash
+       and "stan.store" not in _studio_dash, "still pointing at the store")
+    with app.app_context():
+        _cat_svc._purge_product(db.session.get(Product, _plain_id))
+        db.session.commit()
+finally:
+    _mailer.send_email = _real_send_email
+
+_chal_fields = {
+    "title": "2-Month Creator Challenge", "track": "building",
+    "types": ["course"], "slug": "two-month-creator-challenge",
+    "promise": "Two months, four stages, zero to income.",
+    "price": "299.00", "stripe": "price_challenge_r3", "live": "1",
+}
+r = admin.post(f"/admin/products/{_chal_id}/edit",
+               data=dict(_chal_fields, challenge_welcome="1"),
+               follow_redirects=True)
+with app.app_context():
+    ok("Studio is where a product is marked as the challenge",
+       r.status_code == 200
+       and _cat_mark.is_challenge(db.session.get(Product, _chal_id)))
+_chal_form = admin.get(f"/admin/products/{_chal_id}/edit").get_data(as_text=True)
+_tickbox = _chal_form.split('name="challenge_welcome"', 1)[-1].split(">", 1)[0]
+ok("And the editor comes back with it ticked", "checked" in _tickbox, _tickbox)
+_land = client.get("/challenge").get_data(as_text=True)
+ok("Joining the challenge goes where it's sold, once that's here",
+   "/courses/two-month-creator-challenge" in _land
+   and "stan.store" not in _land, "still pointing away")
+# Only one product at a time is the challenge, so saving another leaves it be.
+r = admin.post(f"/admin/products/{_multi_id}/edit", data=dict(_promo_fields),
+               follow_redirects=True)
+with app.app_context():
+    ok("Saving some other product doesn't take the mark off",
+       _cat_mark.is_challenge(db.session.get(Product, _chal_id)))
+with app.app_context():
+    _older = Product(title="2-Month Creator Challenge — Round 1",
+                     slug="challenge-round-one", type="course",
+                     status="published", currency="USD", price_cents=19900,
+                     promise="The first run.")
+    db.session.add(_older)
+    db.session.commit()
+    _older_id = _older.id
+    ok("The marked product wins over anything else named for the challenge",
+       _cat_mark.challenge_product().id == _chal_id,
+       _cat_mark.challenge_product().slug)
+r = admin.post(f"/admin/products/{_chal_id}/edit", data=dict(_chal_fields),
+               follow_redirects=True)
+with app.app_context():
+    ok("And where the mark comes off again",
+       not _cat_mark.is_challenge(db.session.get(Product, _chal_id))
+       and not _cat_mark.challenge_product_id())
+    _cat_svc._purge_product(db.session.get(Product, _older_id))
+    db.session.commit()
+_land = client.get("/challenge").get_data(as_text=True)
+ok("With nothing ticked it still finds the course by name",
+   "/courses/two-month-creator-challenge" in _land)
+with app.app_context():
+    _cat_svc._purge_product(db.session.get(Product, _chal_id))
+    db.session.commit()
+_land = client.get("/challenge").get_data(as_text=True)
+ok("With nothing marked, it points at the store it always did",
+   "stan.store" in _land)
 
 # When a PDF still won't open, the reader has to say why and leave a way in.
 _reader_js = client.get("/static/js/course-reader.js").get_data(as_text=True)
@@ -8065,18 +8917,41 @@ _pinned_page = _tzc.get("/forums/").get_data(as_text=True)
 ok("Pages are written on the chosen clock, not the browser's",
    'data-tz="Europe/Berlin"' in _pinned_page)
 ok("And the browser is told to leave those times alone",
-   'data-tz-pinned="1"' in _pinned_page)
+   'data-tz-settled="1"' in _pinned_page)
 
+# Taking this device's zone is a one-off copy into settings, not a standing
+# arrangement: the site reads the same afterwards wherever they open it.
 r = _tzc.post("/account/timezone",
               data={"follow_browser": "yes", "timezone": "Asia/Karachi",
                     "csrf_token": "x"}, follow_redirects=True)
-ok("Handing it back lets the device lead again",
-   "Times will follow whatever clock your device keeps" in r.get_data(as_text=True))
+ok("A device's own zone can be taken in one click",
+   "Times are now shown in Asia/Karachi" in r.get_data(as_text=True))
 _tzc.post("/account/timezone", json={"timezone": "Pacific/Auckland"})
 with app.app_context():
     _tzuser = User.query.filter_by(email="buyer@example.com").first()
-    ok("And the next page the browser loads moves the clock again",
-       _tzuser.timezone == "Pacific/Auckland" and not _tzuser.timezone_pinned)
+    ok("And the next device to report in doesn't move it",
+       _tzuser.timezone == "Asia/Karachi", _tzuser.timezone)
+ok("So every page they open is on the one clock, whatever they open it on",
+   'data-tz="Asia/Karachi"' in _tzc.get("/forums/").get_data(as_text=True)
+   and 'data-tz-settled="1"' in _tzc.get("/forums/").get_data(as_text=True))
+
+# The one thing the browser still does: fill in a blank on a first visit.
+with app.app_context():
+    _blank = User(email="noclock@example.com", email_verified_at=utcnow())
+    _blank.set_password(USER_PW)
+    db.session.add(_blank)
+    db.session.commit()
+_blankc = app.test_client()
+_blankc.post("/login", data={"email": "noclock@example.com", "password": USER_PW})
+ok("Somebody we know nothing about yet is written in the house clock",
+   'data-tz-settled' not in _blankc.get("/forums/").get_data(as_text=True))
+_blankc.post("/account/timezone", json={"timezone": "America/Denver"})
+with app.app_context():
+    _blank = User.query.filter_by(email="noclock@example.com").first()
+    ok("Their browser says once, and that becomes their settings",
+       _blank.timezone == "America/Denver")
+ok("From then on the page is settled and nothing redraws it",
+   'data-tz-settled="1"' in _blankc.get("/forums/").get_data(as_text=True))
 r = _tzc.post("/account/timezone", data={"timezone": "Mars/Olympus",
                                          "csrf_token": "x"},
               follow_redirects=True)
@@ -8090,6 +8965,138 @@ ok("Studio's inbox stamps its rows on the owner's clock, not the server's",
    and 'data-when="%b %d, %H:%M"' in _sbody, "inbox still prints raw UTC")
 _sbody = admin.get("/admin/members").get_data(as_text=True)
 ok("So does the member list", 'data-when="%b %d, %Y"' in _sbody)
+
+# --- studio: what a member owns, and taking one of them back off them -------
+# Answering "what has she actually bought?" meant going through Stripe. The
+# member list answers it now, and can take something back — properly, not the
+# put-it-away a member does to their own shelf, because the reason for doing
+# it from Studio is that they shouldn't have it at all.
+from app.models import CourseProgress as _Progress
+from app.models import Notification as _Note3
+from app.models import ShopPurchase as _Shop
+
+with app.app_context():
+    _shelf_user = User(email="shelfy@example.com", display_name="Shelfy Reader",
+                       email_verified_at=utcnow())
+    _shelf_user.set_password(USER_PW)
+    db.session.add(_shelf_user)
+    db.session.commit()
+    _shelf_id = _shelf_user.id
+    _catalogued = Product.query.filter_by(slug="drip-course").first()
+    _bought = _Shop(lemon_squeezy_order_id="SHELF-1",
+                    customer_email="shelfy@example.com", user_id=_shelf_id,
+                    product_name=_catalogued.title,
+                    variant_id=_catalogued.stripe_price_id, status="linked")
+    _older = _Shop(lemon_squeezy_order_id="SHELF-2",
+                   customer_email="shelfy@example.com", user_id=_shelf_id,
+                   product_name="An Old Workbook", status="linked",
+                   purchased_at=utcnow() - timedelta(days=200))
+    db.session.add_all([_bought, _older])
+    db.session.commit()
+    _bought_id, _older_id = _bought.id, _older.id
+    _bought_title = _catalogued.title
+    db.session.add(_Progress(user_id=_shelf_id, shop_purchase_id=_bought_id,
+                             current_page=4, percent=30))
+    db.session.commit()
+
+_sbody = admin.get("/admin/members?q=shelfy").get_data(as_text=True)
+ok("A member's row says how much they have bought", "2 products" in _sbody)
+ok("Opening the name lists each thing, catalogue title and all",
+   "What Shelfy Reader owns" in _sbody and _bought_title in _sbody
+   and "An Old Workbook" in _sbody, "no shelf under the member")
+ok("The shelf starts folded away, so the list still reads as a list",
+   "data-member-panel hidden" in _sbody)
+_sbody = admin.get(f"/admin/members?q=shelfy&open={_shelf_id}").get_data(as_text=True)
+ok("And a member asked for by name comes back open, with nothing running",
+   f'id="owns-{_shelf_id}" data-member-panel>' in _sbody
+   and 'aria-expanded="true"' in _sbody)
+
+r = admin.post(f"/admin/members/{_shelf_id}/owns/{_older_id}/remove",
+               follow_redirects=True)
+_after = r.get_data(as_text=True)
+ok("Studio takes one thing off a member's shelf",
+   "Removed \u201cAn Old Workbook\u201d from Shelfy Reader" in _after
+   and "been told" in _after, flashes(r))
+with app.app_context():
+    ok("The purchase is gone, not marked — nothing is left to restore",
+       db.session.get(_Shop, _older_id) is None)
+    _note = (_Note3.query.filter_by(user_id=_shelf_id, kind="course")
+             .order_by(_Note3.id.desc()).first())
+    ok("And the member is told, in as many words",
+       _note is not None
+       and _note.body == "Your access to \u201cAn Old Workbook\u201d has been removed.",
+       _note.body if _note else "no notification")
+
+shelf_client = app.test_client()
+shelf_client.post("/login", data={"email": "shelfy@example.com", "password": USER_PW})
+_mine = shelf_client.get("/account?tab=saved").get_data(as_text=True)
+ok("It has left their My Space rather than sitting there marked",
+   f"/account/courses/{_older_id}" not in _mine
+   and f"/account/courses/{_bought_id}" in _mine,
+   "the shelf still has a card for it")
+ok("Though the note telling them why is waiting in their bell",
+   "An Old Workbook" in _mine)
+
+r = admin.post(f"/admin/members/{_shelf_id}/owns/{_bought_id}/remove",
+               follow_redirects=True)
+with app.app_context():
+    ok("Reading progress that hung off it goes too, instead of blocking it",
+       db.session.get(_Shop, _bought_id) is None
+       and _Progress.query.filter_by(shop_purchase_id=_bought_id).first() is None)
+r = shelf_client.get(f"/account/courses/{_bought_id}")
+ok("And the reader will not open it any more", r.status_code == 404)
+_sbody = admin.get(f"/admin/members?q=shelfy&open={_shelf_id}").get_data(as_text=True)
+ok("Studio says the shelf is empty rather than showing a stale list",
+   "Nothing bought yet" in _sbody and "nothing bought" in _sbody)
+
+# A purchase that belongs to somebody else can't be reached through a member
+# whose page happens to be open.
+with app.app_context():
+    _theirs = _Shop(lemon_squeezy_order_id="SHELF-3",
+                    customer_email="plainmember@example.com",
+                    user_id=User.query.filter_by(
+                        email="plainmember@example.com").first().id,
+                    product_name="Not Yours", status="linked")
+    db.session.add(_theirs)
+    db.session.commit()
+    _theirs_id = _theirs.id
+r = admin.post(f"/admin/members/{_shelf_id}/owns/{_theirs_id}/remove",
+               follow_redirects=True)
+with app.app_context():
+    ok("Somebody else's purchase can't be removed through this member",
+       "on this member" in r.get_data(as_text=True),
+       flashes(r))
+    ok("And it is still theirs afterwards",
+       db.session.get(_Shop, _theirs_id) is not None)
+
+# Free membership months came with the purchase, so they go with it as well.
+with app.app_context():
+    _season = Product.query.filter_by(slug="season-pass").first()
+    _perked = _Shop(lemon_squeezy_order_id="SHELF-4",
+                    customer_email="shelfy@example.com", user_id=_shelf_id,
+                    product_name=_season.title,
+                    variant_id=_season.stripe_price_id, status="linked")
+    db.session.add(_perked)
+    db.session.commit()
+    _perked_id = _perked.id
+    from app.services.memberships import reconcile_user as _rec
+    _rec(db.session.get(User, _shelf_id))
+    db.session.commit()
+    ok("A product carrying free months puts the member on that tier",
+       db.session.get(User, _shelf_id).membership == "creator",
+       db.session.get(User, _shelf_id).membership)
+_sbody = admin.get(f"/admin/members?q=shelfy&open={_shelf_id}").get_data(as_text=True)
+ok("Studio warns that the membership goes with it",
+   "which goes with it" in _sbody and "Creator membership" in _sbody)
+r = admin.post(f"/admin/members/{_shelf_id}/owns/{_perked_id}/remove",
+               follow_redirects=True)
+ok("Removing it says the membership was worked out again",
+   "free membership from it was recalculated" in r.get_data(as_text=True),
+   flashes(r))
+with app.app_context():
+    ok("And they drop back to what they actually pay for",
+       db.session.get(User, _shelf_id).membership == "none",
+       db.session.get(User, _shelf_id).membership)
 
 # --- the stylesheet is still readable text ---------------------------------
 # Twice now an edit has been saved with UTF-8 read back as Latin-1, which turns

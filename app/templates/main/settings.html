@@ -196,14 +196,16 @@
     <div class="settings-block">
       <h3>Times and dates</h3>
       <p class="field-help">
-        Session times, unlock dates and everything else are written on your own
-        clock. We read the timezone your device is set to — never your location —
-        and follow it as it changes.
+        This is the one clock the whole site keeps for you. Session times,
+        unlock dates, everything with an hour on it is written here and
+        nowhere else asks you again. We took it from the timezone your device
+        was set to when you first signed in — never your location — and it
+        stays put now unless you change it.
       </p>
       <p class="field-help">
         Right now you're seeing times in <strong>{{ tz_label }}</strong>{% if tz_pinned %},
         which you chose here{% endif %}.
-        <span data-tz-device-only hidden>Your device says <strong data-tz-detected>—</strong>.</span>
+        <span data-tz-device-only hidden>This device is set to <strong data-tz-detected>—</strong>.</span>
       </p>
       <form method="post" action="{{ url_for('main.save_timezone') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -221,14 +223,12 @@
         </div>
         <button class="btn btn--secondary btn--sm" type="submit">Use this timezone</button>
       </form>
-      {% if tz_pinned %}
       <form method="post" action="{{ url_for('main.save_timezone') }}" style="margin-top: 10px;">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="follow_browser" value="yes">
         <input type="hidden" name="timezone" data-tz-detected value="">
-        <button class="btn--quiet" type="submit">Follow my device again</button>
+        <button class="btn--quiet" type="submit">Use this device&rsquo;s timezone</button>
       </form>
-      {% endif %}
     </div>
 
     <div class="settings-block">

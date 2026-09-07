@@ -35,6 +35,41 @@ def catalog_product_for_purchase(purchase: ShopPurchase) -> Product | None:
     return None
 
 
+def catalog_products_for(purchases) -> dict[int, Product]:
+    """The same match as :func:`catalog_product_for_purchase`, for a whole list.
+
+    Studio's member list needs a title for every shelf on the page, and asking
+    per purchase turned that into a query each. The catalogue is small enough
+    to read once and match against in memory.
+    """
+    rows = list(purchases or [])
+    if not rows:
+        return {}
+    by_key: dict[str, Product] = {}
+    by_title: dict[str, Product] = {}
+    for product in Product.query.all():
+        for raw in (product.stripe_price_id, product.ls_variant_id):
+            key = (raw or "").strip()
+            if key:
+                by_key.setdefault(key, product)
+        title = (product.title or "").strip().lower()
+        if title:
+            by_title.setdefault(title, product)
+    out: dict[int, Product] = {}
+    for purchase in rows:
+        found = None
+        for raw in (purchase.variant_id, purchase.product_id):
+            key = (raw or "").strip()
+            if key and key in by_key:
+                found = by_key[key]
+                break
+        if found is None:
+            found = by_title.get((purchase.product_name or "").strip().lower())
+        if found is not None:
+            out[purchase.id] = found
+    return out
+
+
 def primary_asset(product: Product | None) -> ProductAsset | None:
     if product is None:
         return None
@@ -78,6 +113,16 @@ def open_item(module: dict | None, wanted: int | None) -> ProductAsset | None:
             if item.id == wanted:
                 return item
     return contents[0]
+
+
+def reads_on_site(purchase: ShopPurchase) -> bool:
+    """Whether this purchase has pages of its own to open in the reader.
+
+    The answer to "may this be handed over as a file": no, wherever there is
+    something here to read instead.
+    """
+    product = catalog_product_for_purchase(purchase)
+    return bool(product is not None and product.top_level_assets())
 
 
 def owned_purchase(user, purchase_id: int) -> ShopPurchase | None:

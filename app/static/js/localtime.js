@@ -61,8 +61,11 @@
   }
 
   /* ---- redraw anything the server wrote on a different clock ---- */
-  // Somebody who picked a zone in settings meant it, even sitting somewhere else.
-  if (root.hasAttribute("data-tz-pinned")) return;
+  // Only ever the first page of a first visit. Once an account carries a
+  // timezone, that is the clock the whole site is written on and this device
+  // doesn't get a say — somebody in settings meant what they said, and
+  // somebody travelling wants the site to read the same as it did at home.
+  if (root.hasAttribute("data-tz-settled")) return;
   if (!served || served === zone) return;
 
   var cache = {};

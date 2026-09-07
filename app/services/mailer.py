@@ -72,7 +72,7 @@ def _mail_from() -> str:
 #: mail (welcomes, receipts, session notices) ignores all of this and keeps
 #: using MAIL_FROM — only mail a person composes gets to pick a face.
 SENDERS: tuple[tuple[str, str, str, str], ...] = (
-    ("support", "Customer Support", "bloomsupport@bloomanyway.online",
+    ("support", "Customer Support", "customersupport@bloomanyway.online",
      "BREVO_TEMPLATE_CUSTOMER_SUPPORT"),
     ("ayesha", "Ayesha", "ayesha@bloomanyway.online",
      "BREVO_TEMPLATE_REPLY_HEALING"),
@@ -542,9 +542,11 @@ def send_order_receipt(
         if attached else ""
     )
     included = (perk or "").strip()
+    # Written to hold for a perk that starts later as well as one that is on
+    # the account the moment they pay: the offer itself says which it is.
     membership = (
-        f"\n\nThis one comes with {included}, already on your account — "
-        "sign in with this address and it's there."
+        f"\n\nThis one comes with {included} — sign in with this address and "
+        "you'll find it on your account."
         if included else ""
     )
     blurb = " ".join((description or "").split())
@@ -579,6 +581,56 @@ def send_order_receipt(
         params=params,
         attachments=attachments,
     )
+
+
+def send_challenge_welcome(
+    to: str,
+    *,
+    product_name: str,
+    order_id: str = "",
+    order_date: str = "",
+    perk: str = "",
+    description: str = "",
+) -> bool:
+    """Send the challenge welcome (#30), alongside the receipt.
+
+    The receipt is proof of purchase; this is the hello. Buying the challenge
+    is joining something that starts, so the two go out together rather than
+    leaving somebody with a receipt and no idea what happens next.
+    """
+    template_id = _int_config("BREVO_TEMPLATE_CHALLENGE_WELCOME", 30) or None
+    product = (product_name or "").strip() or "the 2-Month Creator Challenge"
+    oid = str(order_id or "").strip()
+    when = (order_date or "").strip()
+    included = (perk or "").strip()
+    blurb = " ".join((description or "").split())
+    challenge_url = _public_href("/challenge")
+    library_url = _public_href("/account?tab=saved")
+    subject = "Welcome to the challenge"
+    text = (
+        f"You're in — welcome to {product}.\n\n"
+        + (f"{blurb}\n\n" if blurb else "")
+        + "Everything you've bought sits in your library, and it's the first "
+        "place to go: " + library_url + "\n\n"
+        + (f"It comes with {included} — sign in with this address and you'll "
+           "find it on your account.\n\n" if included else "")
+        + "What the two months look like: " + challenge_url + "\n\n"
+        "Your receipt is on its way separately.\n\n"
+        "— Bloom Anyway"
+    )
+    if not template_id:
+        return send_email(to, subject, text)
+
+    params = {
+        "PRODUCT_NAME": product,
+        "ORDER_ID": oid,
+        "ORDER_DATE": when,
+        "MEMBERSHIP_INCLUDED": included,
+        "PRODUCT_DESCRIPTION": blurb,
+        "CHALLENGE_URL": challenge_url,
+        "LIBRARY_URL": library_url,
+    }
+    return send_email(to, subject, text, template_id=template_id, params=params)
 
 
 def send_healing_welcome(

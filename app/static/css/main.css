@@ -2646,13 +2646,16 @@ html.is-page-loading { cursor: progress; }
   margin: 12px 0 4px;
 }
 .spotlight-list li.is-drawn { background: rgba(122, 46, 98, 0.07); border-radius: 8px; padding-left: 8px; }
-/* the month's comment count, sitting at the end of each name */
+/* what the month came to, sitting at the end of each name */
 .spotlight-tally {
   margin-left: 6px; padding: 1px 8px; border-radius: 999px; font-size: 11.5px;
   font-weight: 700; background: var(--ivory-deep); color: var(--plum-deep);
   white-space: nowrap;
 }
+.spotlight-tally::after { content: " pts"; font-weight: 600; opacity: 0.75; }
 .spotlight-tally.is-quiet { color: var(--ink-soft); font-weight: 600; }
+/* and what made it up, under the name */
+.spotlight-why { margin: 2px 0 0; font-size: 12.5px; color: var(--ink-soft); }
 /* a standings list reads better numbered, but the numbers sit outside the
    card, so bring them back in */
 .spotlight-standings { list-style: decimal; padding-left: 22px; margin-left: 0; }
@@ -2661,6 +2664,12 @@ html.is-page-loading { cursor: progress; }
   margin-left: 6px; padding: 1px 8px; border-radius: 999px; font-size: 11px;
   font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
   background: var(--plum); color: #fff;
+}
+/* Quieter than the picked tag: it explains a skip, it isn't an announcement. */
+.spotlight-satout-tag {
+  margin-left: 6px; padding: 1px 8px; border-radius: 999px; font-size: 11px;
+  font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+  background: var(--ivory-deep); color: var(--ink-soft);
 }
 .spotlight-draft-note {
   margin: 0 0 14px; padding: 10px 12px; border-radius: 10px;
@@ -2712,6 +2721,51 @@ a.studio-member-filter.is-active {
 }
 a.studio-member-filter.is-active span { color: #fff; }
 .link-fields--locked { opacity: 0.9; }
+
+/* ---------- a member, opened onto what they own ---------- */
+.member-open {
+  display: inline-flex; align-items: center; gap: 7px;
+  color: inherit; text-decoration: none; font-weight: 700;
+}
+.member-open:hover { color: var(--plum); }
+.member-open__mark {
+  width: 0; height: 0; flex: none;
+  border-left: 6px solid currentColor;
+  border-top: 4.5px solid transparent;
+  border-bottom: 4.5px solid transparent;
+  opacity: 0.55;
+  transition: transform 140ms ease;
+}
+.member-open[aria-expanded="true"] .member-open__mark {
+  transform: rotate(90deg) translateX(1px);
+}
+.member-open__count {
+  display: block; margin-top: 2px;
+  font-size: 11.5px; color: var(--ink-soft);
+}
+.member-owns > td {
+  background: rgba(61, 20, 49, 0.035);
+  border-top: 0;
+  padding: 12px 14px 14px;
+}
+.member-owns__head {
+  margin: 0 0 8px; font-size: 12px; font-weight: 800;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft);
+}
+.member-owns__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.member-owns__item {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 14px; flex-wrap: wrap;
+  padding: 9px 12px; border-radius: 11px;
+  background: #fff; border: 1px solid rgba(61, 20, 49, 0.1);
+}
+.member-owns__what { display: block; min-width: 0; }
+.member-owns__what strong { display: block; font-size: 14px; }
+.member-owns__what small {
+  display: block; margin-top: 2px;
+  font-size: 12px; line-height: 1.5; color: var(--ink-soft);
+}
+.member-owns__note { margin: 9px 0 0; max-width: 70ch; }
 
 /* ---------- Membership plans & comparison ---------- */
 .membership-hero { text-align: center; padding-bottom: 8px; }
@@ -3234,95 +3288,6 @@ a.studio-member-filter.is-active span { color: #fff; }
   gap: 10px; padding: 10px 12px; border-radius: 12px; background: var(--ivory-deep);
 }
 
-.tz-picker {
-  position: relative;
-  max-width: 100%;
-}
-.tz-picker__search {
-  width: 100%;
-  min-height: 42px;
-  padding: 10px 12px;
-  font-size: 14px;
-  border: 1.5px solid rgba(122, 46, 98, 0.28);
-  border-radius: 10px;
-  background: #fff;
-  color: var(--ink);
-}
-.tz-picker__search:focus {
-  border-color: var(--plum);
-  outline: 2px solid rgba(122, 46, 98, 0.16);
-  outline-offset: 1px;
-}
-.tz-picker__list {
-  position: absolute;
-  z-index: 40;
-  left: 0;
-  right: 0;
-  top: calc(100% + 4px);
-  max-height: 148px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 2px 0;
-  margin: 0;
-  background: #fff;
-  border: 1px solid rgba(122, 46, 98, 0.22);
-  border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(45, 16, 36, 0.12);
-}
-.tz-picker.is-open .tz-picker__list { display: block; }
-.tz-picker__group { padding: 0; }
-.tz-picker__group-label {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  padding: 4px 10px 3px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
-  background: #f7f2ee;
-  border-bottom: 1px solid rgba(122, 46, 98, 0.08);
-}
-.tz-picker__opt {
-  display: block;
-  width: 100%;
-  text-align: left;
-  padding: 4px 10px;
-  margin: 0;
-  border: 0;
-  background: transparent;
-  font-size: 11.5px;
-  line-height: 1.3;
-  color: var(--ink);
-  cursor: pointer;
-}
-.tz-picker__opt:hover,
-.tz-picker__opt:focus {
-  background: rgba(122, 46, 98, 0.08);
-  outline: none;
-}
-.tz-picker__opt.is-selected {
-  background: rgba(122, 46, 98, 0.12);
-  font-weight: 600;
-  color: var(--plum);
-}
-.tz-picker__empty {
-  margin: 0;
-  padding: 10px;
-  font-size: 12px;
-  color: var(--ink-soft);
-  text-align: center;
-}
-.tz-picker__chosen {
-  margin: 6px 0 0;
-  font-size: 12px;
-  color: var(--ink-soft);
-}
-.tz-picker__chosen strong {
-  color: var(--ink);
-  font-weight: 600;
-}
 .sg-intakes { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
 .sg-intake {
   border: 1px solid rgba(122, 46, 98, 0.14);
@@ -5552,6 +5517,16 @@ a.at-handle:hover { text-decoration: underline; }
 .page-remaster h1 { color: #3d1431; }
 .page-remaster .eyebrow { color: #c79a41; letter-spacing: 0.12em; }
 
+/* What this box is for, set apart from the invitation above it so it reads as
+   a signpost rather than more of the welcome. */
+.contact-scope {
+  margin: 12px 0 0;
+  padding: 11px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(181, 138, 63, 0.4);
+  background: rgba(239, 167, 51, 0.1);
+  font-size: 14.5px; line-height: 1.6;
+}
 .ms-journal {
   display: grid;
   gap: 24px;
@@ -9309,6 +9284,38 @@ a.at-handle:hover { text-decoration: underline; }
   }
 }
 
+/* ========================= live countdown chip ============================ */
+/* One shape for every stretch of time still to run — a sale, a shelf date, a
+   module that hasn't opened — so they all read as the same kind of fact. */
+.countdown {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 2px 10px; border-radius: 999px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(181, 138, 63, 0.55);
+  font-size: 12px; font-weight: 800; line-height: 1.5;
+  color: var(--plum-deep);
+  /* Seconds tick in place instead of nudging the words along with them. */
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.countdown::before {
+  content: ""; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--gold);
+  animation: countdown-beat 2s ease-in-out infinite;
+}
+.countdown--done {
+  background: rgba(61, 20, 49, 0.08);
+  border-color: rgba(61, 20, 49, 0.2);
+}
+.countdown--done::before { background: rgba(61, 20, 49, 0.55); animation: none; }
+@keyframes countdown-beat {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .countdown::before { animation: none; }
+}
+
 /* ======================== Product detail page ============================= */
 .pd-page { padding: 28px 0 64px; }
 .pd-preview-banner {
@@ -9422,8 +9429,24 @@ a.at-handle:hover { text-decoration: underline; }
   border: 1px solid rgba(90, 49, 88, 0.16);
   font-size: 13px; font-weight: 600; color: var(--plum-deep);
 }
+/* What buying it commits them to, sat with the price rather than a page
+   away. Quiet enough not to shout down the button under it, plain enough
+   that nobody can say they were never told. */
+.pd-hero__terms {
+  flex: 1 1 100%; margin: 0;
+  padding: 8px 11px; border-radius: 10px;
+  background: rgba(61, 20, 49, 0.05);
+  border: 1px solid rgba(61, 20, 49, 0.12);
+  font-size: 12.5px; line-height: 1.55; color: var(--ink-soft);
+}
+.pd-hero__terms strong { color: var(--plum-deep); }
+.pd-hero__terms a { color: var(--plum-deep); }
 /* A day this stops being what it is today: the price going back up, or the
    last day it can be bought at all. */
+/* The sentence says what changes, and the clock sits under it on its own
+   line, rather than trailing off the end of whichever word runs out first. */
+.pd-hero__deadline .countdown,
+.pd-promo__ends .countdown { display: flex; width: max-content; margin-top: 5px; }
 .pd-hero__deadline {
   flex: 1 1 100%; margin: 0;
   padding: 7px 11px; border-radius: 10px;

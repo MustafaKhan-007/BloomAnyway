@@ -11,7 +11,7 @@ from datetime import date
 from flask import current_app
 
 from ..extensions import db
-from ..models import ReelSubmission
+from ..models import ReelSubmission, utcnow
 from .reel_reviews import atlanta_today, is_instagram_reel_url, week_monday
 from .settings import set_setting
 
@@ -73,6 +73,11 @@ def feature(submission: ReelSubmission) -> None:
     for other in week_submissions(submission.week_key):
         other.featured = (other.id == submission.id)
     submission.featured = True
+    # These rows are cleared out on Monday. Having been on the home page is
+    # something Creator of the Month looks at, so the fact is kept on the
+    # member — the first time it happened, which is what "at least once" needs.
+    if submission.author is not None and submission.author.reel_featured_at is None:
+        submission.author.reel_featured_at = utcnow()
     who = submission.author.public_name() if submission.author else ""
     set_setting("reel_url", submission.reel_url)
     if who:

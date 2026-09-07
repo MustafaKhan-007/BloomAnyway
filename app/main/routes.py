@@ -31,8 +31,10 @@ from ..services.badges import CATEGORIES, category_progress, earned_badges
 from ..services.catalog import remove_demo_catalog
 from ..services import stripe_pay as pay
 from ..services.journey import build_journey_pdf
+from ..services.legal_copy import GUIDE_NO_REFUND
 from ..services.mailer import send_contact_notification
-from ..services.perks import perk_end_display
+from ..services.perks import perk_display
+from ..services.timefmt import account_timezone
 from ..services.recommend import INTENTS, valid_intent_keys
 from ..services.listings import (ListingError, can_add_listing, listing_limit,
                                  process_listing_image)
@@ -319,6 +321,9 @@ def checkout_product(slug):
             customer_email=email,
             customer_name=name,
             metadata={"slug": product.slug, "kind": "product"},
+            # The product page says this too, but the pay button is on
+            # Stripe's page, and that is the last thing anyone reads.
+            submit_note=GUIDE_NO_REFUND if product.is_guide() else "",
         )
     except pay.StripeError as exc:
         flash(str(exc), "error")
@@ -580,18 +585,19 @@ def membership():
                            back_url=back_url, back_label=back_label)
 
 
-CHALLENGE_ENROLL_URL = (
-    "https://stan.store/hustlinmommazbiz/p/"
-    "2-month-challenge-round-2-waitlist-closed"
-)
-
-
 @bp.route("/challenge")
 def challenge():
-    """2-month Creator Challenge landing."""
+    """2-month Creator Challenge landing.
+
+    Enrolling goes wherever the challenge is actually sold: the course page,
+    once the challenge is a course here, or the Stan store it pointed at back
+    when it wasn't.
+    """
+    from ..services.challenge import enroll_url
+
     return render_template(
         "main/challenge.html",
-        challenge_enroll_url=CHALLENGE_ENROLL_URL,
+        challenge_enroll_url=enroll_url(current_user),
     )
 
 
@@ -995,6 +1001,7 @@ def account():
         prod = reader_svc.catalog_product_for_purchase(p)
         purchase_catalog[p.id] = prod
         readable[p.id] = bool(prod and prod.has_assets())
+    _perk_now = perk_display(current_user)
     return render_template(
         "main/account.html", greeting=greeting, orders=orders,
         favorites=favorites,
@@ -1007,7 +1014,8 @@ def account():
             MembershipPlan.query.filter_by(
                 tier=current_user.effective_membership()).first()
         ),
-        perk_until=perk_end_display(current_user),
+        perk_until=_perk_now["until"],
+        perk_from=_perk_now["from"],
         active_tab=tab,
         journal_entries=journal,
         today_entry=today_entry,
@@ -1071,12 +1079,23 @@ def shop_restore(purchase_id):
 @bp.route("/account/shop/<int:purchase_id>/download")
 @login_required
 def shop_download(purchase_id):
-    """Serve a self-hosted shop file only to the purchaser who owns it."""
+    """Hand over a file only where the site has no way to show it.
+
+    This predates the reader, and is all a purchase from back then has. Once
+    the same thing can be read here, it is read here: a course is not handed
+    out as a file, so the old link stops answering for it.
+    """
+    from ..services import course_reader as reader_svc
+
     purchase = db.session.get(ShopPurchase, purchase_id)
     if (purchase is None
             or purchase.user_id != current_user.id
             or purchase.status != "linked"
             or not purchase.file_key):
+        abort(404)
+    if reader_svc.reads_on_site(purchase):
+        log.info("shop download %s refused: it has pages to read here",
+                 purchase_id)
         abort(404)
     # file_key is a basename only — never allow path traversal
     key = os.path.basename(purchase.file_key.strip())
@@ -1140,14 +1159,16 @@ def course_reader(purchase_id):
     progress = reader_svc.get_progress(current_user.id, purchase.id)
     bookmarks = progress.bookmarks() if progress else []
     resuming = progress is not None and (progress.module_index or 0) == active_module
-    download_url = None
-    if asset:
-        download_url = url_for(
-            "main.course_file", purchase_id=purchase.id, asset_id=asset.id, download=1)
-    elif purchase.download_url:
-        download_url = purchase.download_url
-    elif purchase.file_key:
-        download_url = url_for("main.shop_download", purchase_id=purchase.id)
+    # A course is read here and nowhere else — nothing on this page hands the
+    # file over. The one link left is for a purchase from before the reader
+    # existed, which has no pages of its own to open: taking that away would
+    # leave the buyer with nothing at all rather than with less.
+    offsite_url = None
+    if asset is None:
+        if purchase.download_url:
+            offsite_url = purchase.download_url
+        elif purchase.file_key:
+            offsite_url = url_for("main.shop_download", purchase_id=purchase.id)
     return render_template(
         "main/course_reader.html",
         purchase=purchase,
@@ -1164,7 +1185,7 @@ def course_reader(purchase_id):
                      and product is not None and product.is_dripped()),
         progress=progress,
         bookmarks=bookmarks,
-        download_url=download_url,
+        offsite_url=offsite_url,
         start_page=(progress.current_page if resuming and progress.current_page else 1),
         start_percent=(progress.percent if resuming else 0),
     )
@@ -1198,8 +1219,6 @@ def course_file(purchase_id, asset_id):
     from ..services import assets as asset_svc
 
     raw_name = (asset.filename or "file").replace('"', "")
-    as_download = (request.args.get("download") or "").strip().lower() in ("1", "true", "yes")
-    disposition = "attachment" if as_download else "inline"
     mime = asset.mime or "application/octet-stream"
 
     if asset.body is not None and not asset.disk_name:
@@ -1217,7 +1236,10 @@ def course_file(purchase_id, asset_id):
     else:  # uploaded before files moved to the disk
         resp = Response(bytes(asset.data or b""), mimetype=mime)
         resp.headers["Accept-Ranges"] = "none"
-    resp.headers["Content-Disposition"] = f'{disposition}; filename="{raw_name}"'
+    # Always inline. This used to answer ?download=1 with an attachment, which
+    # was the Download in the reader's menu; a course is for reading on the
+    # site, so the header says show it, whoever asks and however they ask.
+    resp.headers["Content-Disposition"] = f'inline; filename="{raw_name}"'
     # A ranged read answers with a slice of the file, not the file. Telling the
     # browser to keep that slice for five minutes let it serve the fragment back
     # for a later whole-file request, which a PDF reader sees as a truncated,
@@ -2091,12 +2113,13 @@ def reel_review_stream(review_id):
 @bp.route("/account/timezone", methods=["POST"])
 @login_required
 def save_timezone():
-    """Remember which clock to write times on.
+    """Remember which clock to write times on. Settings, and nothing else.
 
-    Every page quietly reports the browser's own zone, which is right for
-    almost everybody and follows them when they move. Anyone who picks a zone
-    in settings has said otherwise, so that choice is pinned and the quiet
-    report stops overwriting it until they hand it back.
+    The account's timezone is the one clock the whole site uses for somebody,
+    so once there is one, only they can change it — here, or by taking this
+    device's zone. The browser's quiet report fills in a blank account on a
+    first visit and is ignored ever after, which is what stops the site
+    reading differently on a phone than on a laptop.
     """
     from ..services.timefmt import normalize_timezone
     from_browser = request.is_json or request.form.get("from") == "browser"
@@ -2104,16 +2127,20 @@ def save_timezone():
     if raw is None and request.is_json:
         raw = (request.get_json(silent=True) or {}).get("timezone")
     tz = normalize_timezone(raw)
-    follow = (request.form.get("follow_browser") or "").strip() == "yes"
+    from_device = (request.form.get("follow_browser") or "").strip() == "yes"
 
-    if follow:
-        current_user.timezone_pinned = False
+    if from_device:
         if tz:
             current_user.timezone = tz
-        db.session.commit()
-        flash("Times will follow whatever clock your device keeps.", "success")
+            current_user.timezone_pinned = False
+            db.session.commit()
+            flash(f"Times are now shown in {tz}, the clock this device keeps.",
+                  "success")
+        else:
+            flash("Your browser didn't say which timezone it keeps.", "error")
     elif from_browser:
-        if tz and not current_user.timezone_pinned and current_user.timezone != tz:
+        # A first visit, before they have ever said. After that it is theirs.
+        if tz and not (current_user.timezone or "").strip():
             current_user.timezone = tz
             db.session.commit()
     elif tz:
@@ -2296,7 +2323,7 @@ def support_groups_page():
     }
     my_one_on_ones = []
     if current_user.is_authenticated:
-        member_tz = (current_user.timezone or "UTC").strip() or "UTC"
+        member_tz = account_timezone(current_user)
         if current_user.is_member():
             can_schedule, schedule_err = sg_svc.can_schedule_peer(current_user)
             alert_circle_ids = sg_svc.user_topic_alert_ids(current_user.id)
@@ -2486,7 +2513,8 @@ def schedule_support_session():
         flash("Support groups are for Healing, Creator, and Full Bloom members.", "error")
         return redirect(url_for("main.membership", next=url_for("main.support_groups_page")))
     circle_id = request.form.get("circle_id", type=int)
-    tz = (request.form.get("timezone") or current_user.timezone or "UTC").strip()
+    # Whatever clock they read the site on is the clock they typed this on.
+    tz = account_timezone(current_user)
     meeting, err = sg_svc.schedule_peer_session(
         current_user,
         circle_id=circle_id,
@@ -2639,6 +2667,10 @@ def support_session_room(meeting_id):
     except daily_svc.DailyError as exc:
         flash(str(exc), "error")
         return redirect(url_for("main.support_groups_page"))
+
+    # They are through the door: the room opened for them and a token is in
+    # hand. Noted once, so Studio can say who came rather than who booked.
+    sg_svc.mark_joined(meeting, current_user)
 
     # The room counts down to its own end, so the client needs when that is and
     # what the server thinks the time is — a wrong clock shouldn't move it.

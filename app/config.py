@@ -151,6 +151,11 @@ class Config:
     BREVO_TEMPLATE_REPLY_HEALING = int(
         os.environ.get("BREVO_TEMPLATE_REPLY_HEALING", "22") or 0
     )
+    # Sent alongside the receipt when what was bought is the challenge, so the
+    # buyer gets what they paid for and what happens next in the same breath.
+    BREVO_TEMPLATE_CHALLENGE_WELCOME = int(
+        os.environ.get("BREVO_TEMPLATE_CHALLENGE_WELCOME", "30") or 0
+    )
     # Optional absolute site origin for email CTAs when no request context.
     PUBLIC_BASE_URL = (
         os.environ.get("PUBLIC_BASE_URL", "").strip()

@@ -81,8 +81,10 @@
       <form method="post" action="{{ url_for('main.schedule_support_session') }}" class="sg-schedule">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="circle_id" value="{{ c.id }}">
-        <input type="hidden" name="timezone" value="{{ member_tz }}">
-        <p class="sg-schedule__label">Schedule a new session (8 max · your timezone: {{ member_tz }})</p>
+        <p class="sg-schedule__label">
+          Schedule a new session (8 max &middot; on your own clock,
+          <a href="{{ url_for('main.settings') }}">{{ member_tz }}</a>)
+        </p>
         {% if c.slug.startswith('custom-') %}
         <label class="sg-schedule__topic">
           Topic name

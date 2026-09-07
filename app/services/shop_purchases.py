@@ -308,3 +308,70 @@ def restore_to_library(user: User, purchase_id: int) -> bool:
         return False
     row.status = "linked"
     return True
+
+
+def shelves_for(user_ids) -> dict[int, list[ShopPurchase]]:
+    """What each of these members owns, newest first, in one query.
+
+    Both what is on their shelf and what they have put away themselves: from
+    Studio the difference is worth seeing, and both are still theirs.
+    """
+    ids = [int(i) for i in (user_ids or []) if i]
+    if not ids:
+        return {}
+    rows = (ShopPurchase.query
+            .filter(ShopPurchase.user_id.in_(ids),
+                    ShopPurchase.status.in_(("linked", "removed")))
+            .order_by(ShopPurchase.purchased_at.desc(), ShopPurchase.id.desc())
+            .all())
+    out: dict[int, list[ShopPurchase]] = {i: [] for i in ids}
+    for row in rows:
+        out.setdefault(row.user_id, []).append(row)
+    return out
+
+
+def revoke_purchase(purchase: ShopPurchase) -> dict:
+    """Take something off a member's shelf for good, and say so.
+
+    Not the member's own "put it away", which leaves the row marked and
+    restorable — this is the owner deciding they should never have had it, so
+    the row goes, the reading progress that hung off it goes, and any free
+    membership the purchase was carrying is recalculated without it. The
+    member is told plainly, because otherwise something they bought simply
+    disappears from My Space overnight. The caller commits.
+    """
+    from ..models import CourseProgress
+    from .social_graph import notify
+
+    if purchase is None:
+        return {"ok": False}
+    purchase_id = purchase.id
+    name = (purchase.product_name or "this purchase").strip()
+    user_id = purchase.user_id
+    perk = False
+    try:
+        from .perks import purchase_has_perk
+        perk = bool(user_id) and purchase_has_perk(purchase)
+    except Exception:
+        log.exception("purchase %s: could not check for a membership perk",
+                      purchase_id)
+
+    (CourseProgress.query
+     .filter_by(shop_purchase_id=purchase_id)
+     .delete(synchronize_session=False))
+    db.session.delete(purchase)
+    db.session.flush()
+
+    user = db.session.get(User, user_id) if user_id else None
+    if user is not None:
+        notify(user.id, kind="course",
+               body=f"Your access to \u201c{name}\u201d has been removed.",
+               url="/account")
+        if perk:
+            # The free months came with what they just lost, so the tier has
+            # to be worked out again rather than left where it was.
+            from .memberships import reconcile_user
+            reconcile_user(user, downgrade=True)
+    log.info("studio: purchase %s (%s) revoked from user %s",
+             purchase_id, name, user_id)
+    return {"ok": True, "name": name, "user_id": user_id, "perk": perk}

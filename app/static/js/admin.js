@@ -937,6 +937,18 @@
     sync();
   })();
 
+  /* ---- when a product's free membership starts ----
+     A perk that begins at the counter has no date to pick, so the calendar
+     only appears once the owner says otherwise. */
+  (function () {
+    var buy = document.querySelector("[data-perk-buy]");
+    var when = document.querySelector("[data-perk-start]");
+    if (!buy || !when) return;
+    function sync() { when.hidden = buy.checked; }
+    buy.addEventListener("change", sync);
+    sync();
+  })();
+
   /* ---- extracts written for one particular file ----
      These hang off a saved file rather than a module, so they also appear
      among the loose files outside the module list. Wired from the document
@@ -1140,6 +1152,28 @@
       if (sel.form) sel.form.submit();
     });
   });
+
+  /* ---- members: a name opens onto what that person owns ----
+     The name is a real link to the same page with that member open, so it
+     still works with nothing running; here it just saves the round trip. */
+  (function () {
+    if (!document.querySelector("[data-member-open]")) return;
+    document.addEventListener("click", function (e) {
+      var link = e.target.closest ? e.target.closest("[data-member-open]") : null;
+      if (!link) return;
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.button) return;
+      var panel = document.getElementById(link.getAttribute("aria-controls"));
+      if (!panel) return;
+      e.preventDefault();
+      var opening = panel.hasAttribute("hidden");
+      if (opening) {
+        panel.removeAttribute("hidden");
+      } else {
+        panel.setAttribute("hidden", "");
+      }
+      link.setAttribute("aria-expanded", opening ? "true" : "false");
+    });
+  })();
 
   /* ---- collapsible long tables (show a few rows, expand on demand) ---- */
   document.querySelectorAll("table[data-collapsible]").forEach(function (table) {
@@ -1366,95 +1400,6 @@
     });
   })();
 })();
-
-  (function () {
-    document.querySelectorAll("[data-tz-picker]").forEach(function (root) {
-      var hidden = root.querySelector('input[type="hidden"][name="timezone"]');
-      var search = root.querySelector(".tz-picker__search");
-      var list = root.querySelector(".tz-picker__list");
-      var chosen = root.querySelector("[data-tz-chosen] strong");
-      var empty = root.querySelector("[data-tz-empty]");
-      if (!hidden || !search || !list) return;
-
-      var opts = Array.prototype.slice.call(root.querySelectorAll(".tz-picker__opt"));
-      var groups = Array.prototype.slice.call(root.querySelectorAll("[data-tz-group]"));
-
-      function openList() {
-        list.hidden = false;
-        search.setAttribute("aria-expanded", "true");
-        root.classList.add("is-open");
-      }
-
-      function closeList() {
-        list.hidden = true;
-        search.setAttribute("aria-expanded", "false");
-        root.classList.remove("is-open");
-      }
-
-      function filter(q) {
-        var needle = (q || "").trim().toLowerCase();
-        var any = false;
-        opts.forEach(function (btn) {
-          var hay = btn.getAttribute("data-search") || "";
-          var show = !needle || hay.indexOf(needle) !== -1;
-          btn.hidden = !show;
-          if (show) any = true;
-        });
-        groups.forEach(function (g) {
-          var visible = g.querySelectorAll(".tz-picker__opt:not([hidden])");
-          g.hidden = visible.length === 0;
-        });
-        if (empty) empty.hidden = any;
-      }
-
-      function selectOpt(btn) {
-        if (!btn) return;
-        opts.forEach(function (b) {
-          b.classList.remove("is-selected");
-          b.setAttribute("aria-selected", "false");
-        });
-        btn.classList.add("is-selected");
-        btn.setAttribute("aria-selected", "true");
-        hidden.value = btn.getAttribute("data-value") || "";
-        if (chosen) chosen.textContent = btn.getAttribute("data-label") || hidden.value;
-        search.value = "";
-        filter("");
-        closeList();
-      }
-
-      search.addEventListener("focus", function () {
-        openList();
-        filter(search.value);
-      });
-      search.addEventListener("input", function () {
-        openList();
-        filter(search.value);
-      });
-      search.addEventListener("keydown", function (e) {
-        if (e.key === "Escape") {
-          closeList();
-          search.blur();
-        } else if (e.key === "Enter") {
-          e.preventDefault();
-          var first = root.querySelector(".tz-picker__opt:not([hidden])");
-          if (first) selectOpt(first);
-        }
-      });
-
-      list.addEventListener("mousedown", function (e) {
-        // Keep focus while clicking options (prevents blur-before-click).
-        e.preventDefault();
-      });
-      list.addEventListener("click", function (e) {
-        var btn = e.target && e.target.closest ? e.target.closest(".tz-picker__opt") : null;
-        if (btn) selectOpt(btn);
-      });
-
-      document.addEventListener("click", function (e) {
-        if (!root.contains(e.target)) closeList();
-      });
-    });
-  })();
 
 /* ---- content tip: preview the member's reading page while writing ---- */
 (function () {

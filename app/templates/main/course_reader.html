@@ -12,7 +12,6 @@
          data-asset-kind="{{ asset.kind }}"
          data-file-url="{{ url_for('main.course_file', purchase_id=purchase.id, asset_id=asset.id) }}"
          data-progress-url="{{ url_for('main.course_progress', purchase_id=purchase.id, module=active_module or None) }}"
-         {% if download_url %}data-download-url="{{ download_url }}"{% endif %}
          {% if asset.kind == 'h5p' %}
          data-h5p-path="/account/courses/{{ purchase.id }}/h5p/{{ asset.id }}"
          {% endif %}
@@ -50,9 +49,6 @@
               </svg>
             </summary>
             <div class="reader__menu" role="menu">
-              {% if download_url %}
-              <a role="menuitem" href="{{ download_url }}"{% if purchase.download_url %} target="_blank" rel="noopener"{% endif %}>Download</a>
-              {% endif %}
               <button type="button" role="menuitem" id="reader-print">Print</button>
               <button type="button" role="menuitem" id="reader-share">Share</button>
               <button type="button" role="menuitem" data-feedback-open data-feedback-pref="error">Report an issue</button>
@@ -81,8 +77,8 @@
         {% if next_locked %}
         <p class="reader-modules__note">
           Module {{ next_locked.number }} unlocks
-          {{ next_locked.unlock_at|when('%b %d, %Y at %I:%M %p') }} your time
-          ({{ next_locked.days_away }} day{{ '' if next_locked.days_away == 1 else 's' }} away).
+          {{ next_locked.unlock_at|when('%b %d, %Y at %I:%M %p') }} your time.
+          {{ countdown(next_locked.unlock_at, zero='Open now — refresh to read it') }}
         </p>
         {% elif reads_whole %}
         <p class="reader-modules__note">
@@ -221,6 +217,7 @@
         This course is released a piece at a time. Module {{ next_locked.number }} opens
         {{ next_locked.unlock_at|when('%b %d, %Y at %I:%M %p') }} your time
         — it will be waiting here for you.
+        {{ countdown(next_locked.unlock_at, zero='It is open now', refresh=true) }}
       </p>
       {% else %}
       <h2>Content coming soon</h2>
@@ -229,8 +226,10 @@
         check your Stripe receipt email, or come back once the guide is ready to read here.
       </p>
       {% endif %}
-      {% if download_url %}
-      <a class="btn btn--primary" href="{{ download_url }}"{% if purchase.download_url %} target="_blank" rel="noopener"{% endif %}>Open download</a>
+      {# Only ever a purchase from before the reader: there is nothing here
+         to open it with, so the old way in is all they have. #}
+      {% if offsite_url %}
+      <a class="btn btn--primary" href="{{ offsite_url }}"{% if purchase.download_url %} target="_blank" rel="noopener"{% endif %}>Open download</a>
       {% endif %}
     </div>
     {% else %}
@@ -274,8 +273,8 @@
             <p class="field-help" id="reader-pdf-status">Loading pages…</p>
           </div>
           <p class="field-help course-reader__pdf-note">
-            Reading only here. If this one has boxes to fill in, download it and
-            use them, or print it and write on the paper.
+            Reading only here. If this one has boxes to fill in,
+            print it and write on the paper.
           </p>
 
           {% elif asset.kind == 'h5p' %}
@@ -285,15 +284,19 @@
 
           {% elif asset.kind == 'image' %}
           <img class="course-reader__image" src="{{ url_for('main.course_file', purchase_id=purchase.id, asset_id=asset.id) }}"
-               alt="{{ asset.display_title() }}">
+               alt="{{ asset.display_title() }}" data-no-contextmenu>
 
+          {# Same as the Content Hub: the player plays it, and doesn't offer to
+             keep it. #}
           {% elif asset.kind == 'video' %}
           <video class="course-reader__video" controls playsinline
+                 controlslist="nodownload" data-no-contextmenu
                  src="{{ url_for('main.course_file', purchase_id=purchase.id, asset_id=asset.id) }}"></video>
 
           {% elif asset.kind == 'audio' %}
           <div class="course-reader__audio">
-            <audio controls src="{{ url_for('main.course_file', purchase_id=purchase.id, asset_id=asset.id) }}"></audio>
+            <audio controls controlslist="nodownload" data-no-contextmenu
+                   src="{{ url_for('main.course_file', purchase_id=purchase.id, asset_id=asset.id) }}"></audio>
           </div>
 
           {% elif asset.is_text() %}
@@ -306,11 +309,19 @@
           <div class="reader-doc" id="reader-text">Loading…</div>
 
           {% else %}
+          {# Nothing here can draw this one — usually a document whose
+             conversion didn't take. Rather than leave somebody stuck with a
+             file they paid for, it opens in a tab of its own. #}
           <div class="course-reader__empty">
-            <p>This file type opens best as a download.</p>
-            {% if download_url %}
-            <a class="btn btn--primary" href="{{ download_url }}">Download {{ asset.filename }}</a>
-            {% endif %}
+            <p>The reader can&rsquo;t show this kind of file, so it opens outside it.</p>
+            <a class="btn btn--primary" target="_blank" rel="noopener"
+               href="{{ url_for('main.course_file', purchase_id=purchase.id, asset_id=asset.id) }}">
+              Open it in a new tab
+            </a>
+            <p class="field-help">
+              If it ought to be readable here, tell us with
+              <strong>Report an issue</strong> and we&rsquo;ll put it right.
+            </p>
           </div>
           {% endif %}
           </div>

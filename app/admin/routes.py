@@ -172,7 +172,7 @@ def dashboard():
             set_setting("stripe_last_sync_at",
                         datetime.utcnow().isoformat(timespec="seconds"))
         pay.maybe_sweep_cancel_flags()
-    from ..main.routes import CHALLENGE_ENROLL_URL
+    from ..services import challenge as challenge_service
     from ..services import storage_health
     try:
         storage = storage_health.check()
@@ -182,7 +182,7 @@ def dashboard():
         storage = {"wiped": False}
     return render_template(
         "admin/dashboard.html",
-        challenge_enroll_url=CHALLENGE_ENROLL_URL,
+        challenge_enroll_url=challenge_service.enroll_url(current_user),
         storage=storage,
         today_quote=quotes_service.quote_for(today),
         tomorrow_quote=quotes_service.quote_for(today + timedelta(days=1)),
@@ -200,6 +200,7 @@ def dashboard():
         support_occupancy=stats.support_occupancy(),
         founder_days=stats.founder_days_remaining(),
         stripe_configured=pay.configured(),
+        challenge_on_sale=challenge_service.course() is not None,
     )
 
 
@@ -268,6 +269,45 @@ def import_checkout_session():
         db.session.rollback()
         log.exception("import checkout session failed: %s", sid)
         flash(f"Import failed: {exc}", "error")
+    return redirect(url_for("admin.dashboard"))
+
+
+@bp.route("/send-challenge-welcome", methods=["POST"])
+@admin_required
+def send_challenge_welcome():
+    """Send the challenge welcome to somebody the purchase path missed."""
+    from ..services import challenge
+
+    email = (request.form.get("email") or "").strip()
+    if "@" not in email:
+        flash("Type the address they bought with.", "error")
+        return redirect(url_for("admin.dashboard"))
+
+    order = challenge.last_purchase(email)
+    course = challenge.course()
+    if order is None and course is None:
+        flash("No challenge course here to welcome anybody to — tick "
+              "\u201cBuying this joins the challenge\u201d on the course first.",
+              "error")
+        return redirect(url_for("admin.dashboard"))
+    if challenge.welcome_already_sent(order):
+        when = order.welcome_sent_at.strftime("%b %d, %Y")
+        flash(f"{email} already had the challenge welcome on {when}.", "info")
+        return redirect(url_for("admin.dashboard"))
+
+    product = (order.product if order is not None and order.product_id
+               else course)
+    sent = challenge.send_welcome(email, product=product, order=order,
+                                  name=product.title if product else "")
+    if not sent:
+        flash("Could not send it — check the Brevo key and template 30.",
+              "error")
+    elif order is None:
+        flash(f"Sent the challenge welcome to {email}. No purchase on record "
+              "for that address, so nothing was marked as sent \u2014 import "
+              "the checkout session if it should be here.", "success")
+    else:
+        flash(f"Sent the challenge welcome to {email}.", "success")
     return redirect(url_for("admin.dashboard"))
 
 
@@ -382,6 +422,17 @@ def _move_module_content(product: Product, module_moves: dict[int, int],
               "module you removed.", "info")
 
 
+def _save_challenge_mark(product: Product, form) -> None:
+    """Remember whether buying this product is joining the challenge.
+
+    Kept out of :func:`_apply_product_fields` because a brand new product has
+    no id until it is saved, and the mark is that id.
+    """
+    from ..services.catalog import set_challenge_product
+
+    set_challenge_product(product, bool(form.get("challenge_welcome")))
+
+
 def _apply_product_fields(product: Product, form) -> dict[int, int]:
     """Map studio form fields onto a Product (caller commits).
 
@@ -390,7 +441,11 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
     """
     from ..services.catalog import slugify_title, unique_product_slug
     # Dates on this form are typed on the owner's own calendar and stored UTC.
-    from ..services.timefmt import parse_owner_parts
+    # One calendar for the whole form: the clock her settings keep, which is
+    # also the one the dates were drawn in when the page rendered.
+    from ..services.timefmt import account_timezone, parse_owner_parts
+
+    owner_tz = account_timezone(current_user)
 
     title = (form.get("title") or "").strip()[:160]
     if title:
@@ -467,7 +522,7 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
         release = parse_owner_parts(
             (form.get(f"mod{i}_release_date") or "").strip(),
             (form.get(f"mod{i}_release_time") or "").strip() or "09:00",
-            getattr(current_user, "timezone", None),
+            owner_tz,
         ) if (form.get(f"mod{i}_release_date") or "").strip() else None
         curriculum_rows.append({
             "title": t[:160],
@@ -500,12 +555,11 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
         product.drip_interval_days = 7
     mode = (form.get("drip_mode") or "").strip().lower()
     product.drip_mode = mode if mode in DRIP_MODES else "interval"
-    tz_name = getattr(current_user, "timezone", None)
     starts_date = (form.get("drip_starts_date") or "").strip()
     if starts_date:
         product.drip_starts_at = parse_owner_parts(
             starts_date,
-            (form.get("drip_starts_time") or "").strip() or "09:00", tz_name)
+            (form.get("drip_starts_time") or "").strip() or "09:00", owner_tz)
         if product.drip_starts_at is None:
             flash("That release date didn't look right, so the modules will "
                   "open from each buyer's own start instead.", "info")
@@ -516,7 +570,7 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
     if shelf_date:
         product.off_shelf_at = parse_owner_parts(
             shelf_date,
-            (form.get("off_shelf_time") or "").strip() or "23:59", tz_name)
+            (form.get("off_shelf_time") or "").strip() or "23:59", owner_tz)
         if product.off_shelf_at is None:
             flash("That last-day-on-sale date didn't look right, so this is "
                   "still on sale.", "info")
@@ -530,9 +584,43 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
         perk_months = max(0, min(60, int((form.get("perk_months") or "0").strip() or 0)))
     except ValueError:
         perk_months = 0
-    if product.perk_membership_tier and perk_months < 1:
+
+    # A perk runs either for a length or to a day. The day is the one the owner
+    # picked deliberately, so it wins, and the months stay written down for
+    # whenever the date is taken off again.
+    perk_start = (form.get("perk_starts_date") or "").strip()
+    if form.get("perk_start_on_buy") or not perk_start:
+        product.perk_starts_at = None
+    else:
+        product.perk_starts_at = parse_owner_parts(
+            perk_start,
+            (form.get("perk_starts_time") or "").strip() or "09:00", owner_tz)
+        if product.perk_starts_at is None:
+            flash("That membership start date didn't look right, so it starts "
+                  "when they buy.", "info")
+
+    perk_end = (form.get("perk_ends_date") or "").strip()
+    if perk_end:
+        product.perk_ends_at = parse_owner_parts(
+            perk_end,
+            (form.get("perk_ends_time") or "").strip() or "23:59", owner_tz)
+        if product.perk_ends_at is None:
+            flash("That membership end date didn't look right, so the months "
+                  "above are what buyers get.", "info")
+    else:
+        product.perk_ends_at = None
+
+    if (product.perk_ends_at is not None and product.perk_starts_at is not None
+            and product.perk_ends_at <= product.perk_starts_at):
+        product.perk_ends_at = None
+        flash("The membership can't end before it starts, so that end date "
+              "was left off.", "info")
+    if product.perk_membership_tier and perk_months < 1 and product.perk_ends_at is None:
         perk_months = 1
     product.perk_membership_months = perk_months if product.perk_membership_tier else 0
+    if not product.perk_membership_tier:
+        product.perk_starts_at = None
+        product.perk_ends_at = None
 
     product.stripe_price_id = (form.get("stripe") or "").strip() or None
     price = _parse_price_cents(form.get("price"))
@@ -552,7 +640,7 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
     if reverts_date:
         product.price_reverts_at = parse_owner_parts(
             reverts_date,
-            (form.get("price_reverts_time") or "").strip() or "23:59", tz_name)
+            (form.get("price_reverts_time") or "").strip() or "23:59", owner_tz)
         if product.price_reverts_at is None:
             flash("That date for the price going back up didn't look right, so "
                   "the page won't mention one.", "info")
@@ -574,7 +662,7 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
         product.promo_ends_at = parse_owner_parts(
             ends_date,
             (form.get("promo_ends_time") or "").strip() or "23:59",
-            getattr(current_user, "timezone", None),
+            owner_tz,
         ) if ends_date else None
         if ends_date and product.promo_ends_at is None:
             flash("That promo end date didn't look right, so the sale was left "
@@ -867,6 +955,7 @@ def product_new():
             )
         told = _announce_product(product)
         db.session.commit()
+        _save_challenge_mark(product, request.form)
         flash(f"“{product.title}” created." + _told_suffix(told), "success")
         _warn_test_not_live(product)
         return redirect(url_for("admin.product_edit", product_id=product.id))
@@ -878,6 +967,7 @@ def product_new():
         "admin/product_form.html",
         product=blank,
         is_new=True,
+        is_challenge=False,
         modules=[_blank_module(1), _blank_module(2)],
         max_modules=MAX_MODULES,
         drip_modes=DRIP_MODES,
@@ -932,6 +1022,7 @@ def product_edit(product_id):
             flash("Product saved.", "success")
         _warn_test_not_live(product)
         db.session.commit()
+        _save_challenge_mark(product, request.form)
         return redirect(url_for("admin.product_edit", product_id=product.id))
 
     # Anything uploaded before office files were drawn into pages is still a
@@ -951,10 +1042,12 @@ def product_edit(product_id):
     modules = product.modules()
     while len(modules) < 2:
         modules.append(_blank_module(len(modules) + 1))
+    from ..services.catalog import is_challenge as _is_challenge_product
     return render_template(
         "admin/product_form.html",
         product=product,
         is_new=False,
+        is_challenge=_is_challenge_product(product),
         modules=modules,
         max_modules=MAX_MODULES,
         drip_modes=DRIP_MODES,
@@ -1689,24 +1782,33 @@ def spotlight():
 
     if request.method == "POST":
         if request.form.get("pick_creator"):
-            pick = spot.pick_top_commenter()
+            pick = spot.pick_standout()
             if pick is None:
                 ready, missing = spot.eligible_split()
+                sitting_out = spot.stood_down_leaders(ready=ready)
                 if not ready and missing:
                     note = ("No one's pickable yet — Creator members need an "
                             "Instagram link on their Bloom Anyway profile.")
                 elif not ready:
                     note = "No Creator members to pick from yet."
+                elif sitting_out:
+                    names = ", ".join(row["name"] for row in sitting_out[:3])
+                    note = (f"Only {names} has turned up this month, and the "
+                            "card has been theirs since last month — fill it "
+                            "in by hand if you want them again."
+                            if len(sitting_out) == 1 else
+                            f"Everybody who turned up this month ({names}) has "
+                            "had the card since last month — fill it in by "
+                            "hand if you want a repeat.")
                 else:
-                    note = ("Nobody eligible has commented this month yet, so "
+                    note = ("Nobody eligible has turned up this month yet, so "
                             "there's no one to hand the card to.")
                 flash(note, "info")
                 return redirect(url_for("admin.spotlight"))
-            count = pick["comments"]
             flash(
-                f"{pick['name']} led the comments this month with {count} "
-                f"{'comment' if count == 1 else 'comments'}. Check the details "
-                "below and hit Save spotlight to put them on the home page.",
+                f"{pick['name']} had the fullest month — {', '.join(pick['why'])}. "
+                "Check the details below and hit Save spotlight to put them on "
+                "the home page.",
                 "success",
             )
             return redirect(url_for("admin.spotlight", draft=pick["user_id"]))
@@ -1777,6 +1879,9 @@ def spotlight():
             set_setting(key, val)
         spot.mark_slot_saved("creator", filled=bool(values["creator_name"]),
                              end=creator_end)
+        if values["creator_name"]:
+            spot.remember_creator(request.form.get("creator_user_id"),
+                                  values["creator_instagram"])
         spot.mark_slot_saved("reel", filled=bool(values["reel_url"]),
                              end=reel_end)
         flash("Home spotlight saved.", "success")
@@ -1809,9 +1914,11 @@ def spotlight():
         values=values,
         eligible=ready,
         no_instagram=missing,
-        # The list is ranked, so the leader is the front of it — when there is
-        # anything to lead with.
-        top=(ready[0] if ready and ready[0]["comments"] else None),
+        # Whoever the button would pick: the ranked list, minus anybody whose
+        # turn it has just been. Read off the list already in hand — a month
+        # is five queries a member, and this page is slow enough.
+        top=spot.pick_standout(ready=ready),
+        sitting_out=spot.stood_down_leaders(ready=ready),
         month_start=spot.month_of_record(),
         draft=draft,
         slots=spot.spotlight_slots(),
@@ -2296,12 +2403,49 @@ def members():
     people = query.order_by(User.created_at.desc()).limit(200).all()
     counts = dict(db.session.query(User.membership, func.count(User.id))
                   .filter(User.deleted_at.is_(None)).group_by(User.membership).all())
+    try:
+        opened = int(request.args.get("open") or 0)
+    except ValueError:
+        opened = 0
     return render_template("admin/members.html", people=people, counts=counts,
                            memberships=MEMBERSHIPS,
                            membership_labels=MEMBERSHIP_LABELS, q=q,
                            membership_filter=membership,
+                           shelves=_member_shelves(people), opened=opened,
                            demo_count=demo_accounts.count(),
                            demo_min_password=demo_accounts.MIN_PASSWORD)
+
+
+def _member_shelves(people) -> dict:
+    """What each listed member owns, ready to draw: one query for the lot.
+
+    Titles come from the catalogue where a purchase can be matched to it, so
+    the owner reads the same name they typed in Studio rather than whatever
+    the checkout recorded at the time.
+    """
+    from ..services.course_reader import catalog_products_for
+    from ..services.shop_purchases import shelves_for
+
+    rows = shelves_for([p.id for p in people])
+    flat = [row for owned in rows.values() for row in owned]
+    catalog = catalog_products_for(flat)
+    out: dict[int, list[dict]] = {}
+    for user_id, owned in rows.items():
+        shelf = []
+        for row in owned:
+            product = catalog.get(row.id)
+            shelf.append({
+                "id": row.id,
+                "title": (product.title if product else None)
+                         or row.product_name or "Untitled",
+                "slug": product.slug if product else None,
+                "bought": row.purchased_at,
+                "put_away": row.status == "removed",
+                "perk": product.perk_summary() if (product and product.has_perk())
+                        else "",
+            })
+        out[user_id] = shelf
+    return out
 
 
 @bp.route("/members/demo", methods=["POST"])
@@ -2467,6 +2611,36 @@ def set_membership(user_id):
         membership=request.form.get("membership_filter") or None,
     )
     return redirect(next_url)
+
+
+@bp.route("/members/<int:user_id>/owns/<int:purchase_id>/remove",
+          methods=["POST"])
+@admin_required
+def member_purchase_remove(user_id, purchase_id):
+    """Take one thing off a member's shelf for good, and tell them so.
+
+    Not the same as the member putting it away themselves: this deletes the
+    purchase, so it stops showing in My Space and stops opening in the reader.
+    """
+    from ..models import ShopPurchase
+    from ..services.shop_purchases import revoke_purchase
+
+    member = db.session.get(User, user_id) or abort(404)
+    back = url_for("admin.members",
+                   q=request.form.get("q") or None,
+                   membership=request.form.get("membership_filter") or None,
+                   open=member.id) + f"#member-{member.id}"
+    purchase = db.session.get(ShopPurchase, purchase_id)
+    if purchase is None or purchase.user_id != member.id:
+        flash("That purchase isn't on this member's shelf any more.", "info")
+        return redirect(back)
+    result = revoke_purchase(purchase)
+    db.session.commit()
+    note = (" Their free membership from it was recalculated too."
+            if result.get("perk") else "")
+    flash(f"Removed “{result['name']}” from {member.public_name()}'s My Space. "
+          f"They've been told.{note}", "success")
+    return redirect(back)
 
 
 @bp.route("/members/<int:user_id>/remove", methods=["POST"])
@@ -3561,18 +3735,11 @@ def support_groups():
     stats = sg_svc.circle_stats()
     open_rows = sg_svc.open_meetings()
     past = sg_svc.recent_meetings()
-    owner_tz = (current_user.timezone or "UTC").strip() or "UTC"
-    from ..services.timefmt import timezone_groups, timezone_label
-    tz_groups = timezone_groups(selected=owner_tz)
+    from ..services.timefmt import account_timezone, timezone_label
+    # One clock for the owner, the one in her settings, so this page never has
+    # to ask which zone she means.
+    owner_tz = account_timezone(current_user)
     selected_tz_label = timezone_label(owner_tz)
-    for group in tz_groups:
-        for opt in group["options"]:
-            if opt.get("selected"):
-                selected_tz_label = opt["label"]
-                break
-        else:
-            continue
-        break
     # Both founders take 1:1s through the same questionnaire, so the panels
     # cover whoever has one rather than Saman alone.
     coaches = [(key, intake_svc.coach_label(key))
@@ -3581,10 +3748,15 @@ def support_groups():
     intake_meeting_ids = {i.meeting_id for i in intakes if i.meeting_id}
     # Intake-linked 1:1s live only in the intakes panel (not duplicated below).
     open_rows = [m for m in open_rows if m.id not in intake_meeting_ids]
+    # Past seats have been settled off "selected" by then, so a lookback that
+    # only asked for live ones showed every finished session as empty.
     seat_map = sg_svc.seats_for_meetings(
         open_rows + past
-        + [i.meeting for i in intakes if i.meeting_id and i.meeting]
+        + [i.meeting for i in intakes if i.meeting_id and i.meeting],
+        include_past=True,
     )
+    turnout = {m.id: sg_svc.turnout(m, seats=seat_map.get(m.id, []))
+               for m in past}
     intake_rows = []
     for intake in intakes:
         answers = intake_svc.answer_rows(intake)
@@ -3603,16 +3775,16 @@ def support_groups():
     # so editing and setting up for the first time are the same screen.
     picked_coach = (request.args.get("coach") or "").strip().lower()
     picked_coach = intake_svc.normalize_coach(picked_coach) or coaches[0][0]
-    week_grid = {day: sorted(hours)
-                 for day, hours in intake_svc.week_grid(picked_coach).items()}
-    week_tz = intake_svc.week_timezone(picked_coach, owner_tz)
+    week_grid = {day: sorted(hours) for day, hours
+                 in intake_svc.week_grid(picked_coach, owner_tz).items()}
     week_counts = {day: len(hours) for day, hours in week_grid.items()}
     saved_weeks = [
         {
             "coach": key,
             "coach_label": label,
-            "hours": sum(len(h) for h in intake_svc.week_grid(key).values()),
-            "tz_label": timezone_label(intake_svc.week_timezone(key, owner_tz)),
+            "hours": sum(len(h) for h
+                         in intake_svc.week_grid(key, owner_tz).values()),
+            "tz_label": selected_tz_label,
         }
         for key, label in coaches
     ]
@@ -3622,19 +3794,17 @@ def support_groups():
         open_meetings=open_rows,
         past_meetings=past,
         seat_map=seat_map,
+        turnout=turnout,
         owner_tz=owner_tz,
         coaches=coaches,
         picked_coach=picked_coach,
         week_grid=week_grid,
         week_counts=week_counts,
-        week_tz=week_tz,
         day_hours=intake_svc.DAY_HOURS,
         saved_weeks=saved_weeks,
         intake_rows=intake_rows,
         weekday_labels=intake_svc.WEEKDAY_LABELS,
         minutes_to_hhmm=intake_svc.minutes_to_hhmm,
-        tz_groups=tz_groups,
-        selected_tz_label=selected_tz_label,
     )
 
 
@@ -3642,6 +3812,7 @@ def support_groups():
 @admin_required
 def support_groups_availability():
     from ..services import coaching_intake as intake_svc
+    from ..services.timefmt import account_timezone
 
     coach = intake_svc.normalize_coach(request.form.get("coach") or "")
     if not coach:
@@ -3658,7 +3829,7 @@ def support_groups_availability():
             if 0 <= day <= 6 and 0 <= hour <= 23:
                 picks[day].append(hour)
 
-    tz = (request.form.get("timezone") or current_user.timezone or "UTC").strip()
+    tz = account_timezone(current_user)
     saved, err = intake_svc.set_week_availability(coach, picks, tz_name=tz)
     if err:
         flash(err, "error")
@@ -3677,9 +3848,10 @@ def support_groups_availability():
 @admin_required
 def support_groups_form():
     from ..services import support_groups as sg_svc
+    from ..services.timefmt import account_timezone
 
     kind = (request.form.get("kind") or "").strip().lower()
-    tz = (request.form.get("timezone") or current_user.timezone or "UTC").strip()
+    tz = account_timezone(current_user)
     meeting, err = sg_svc.schedule_studio_session(
         current_user,
         kind=kind,
@@ -3710,9 +3882,11 @@ def support_groups_schedule(meeting_id):
     if meeting.status not in ("draft", "scheduled"):
         flash("That meeting can no longer be scheduled.", "error")
         return redirect(url_for("admin.support_groups"))
-    tz = (request.form.get("timezone") or current_user.timezone or "UTC").strip()
     # Prefer separate date + time fields; fall back to legacy datetime-local.
-    from ..services.timefmt import parse_owner_local, parse_owner_parts
+    from ..services.timefmt import (account_timezone, parse_owner_local,
+                                    parse_owner_parts)
+
+    tz = account_timezone(current_user)
 
     when = parse_owner_parts(
         request.form.get("meeting_date") or "",

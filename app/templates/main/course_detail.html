@@ -51,7 +51,10 @@
               <strong>{{ product.promo_saving_display() }} off right now.</strong>
               Enter <code>{{ product.promo_code_display() }}</code> at checkout.
               {% if product.promo_ends_display() %}
-              <span class="pd-promo__ends">Ends {{ product.promo_ends_display() }}.</span>
+              <span class="pd-promo__ends">
+                Ends {{ product.promo_ends_display() }}.
+                {{ countdown(product.promo_ends_at, zero='The sale just ended', refresh=true) }}
+              </span>
               {% endif %}
             </span>
           </p>
@@ -63,17 +66,21 @@
           {% endif %}
           {# Both of these are days already set in Studio, and both change what
              this costs or whether it can be bought at all, so they are said
-             plainly here rather than arriving as a surprise. #}
+             plainly here rather than arriving as a surprise. The day answers
+             "when"; the clock beside it answers "how long have I got", which
+             is the question actually being asked in front of a price. #}
           {% if product.price_reverts_display() %}
           <p class="pd-hero__deadline">
             Reverting to {{ product.compare_at_display() }} on
             {{ product.price_reverts_display() }}.
+            {{ countdown(product.price_reverts_at, zero='The price just went back up', refresh=true) }}
           </p>
           {% endif %}
           {% if product.off_shelf_at and not product.is_off_shelf() %}
           <p class="pd-hero__deadline">
             Off the shelves on {{ product.off_shelf_display() }}. Buy it before
             then and it stays yours for good.
+            {{ countdown(product.off_shelf_at, zero='Off the shelves now', refresh=true) }}
           </p>
           {% endif %}
           {% if product.has_perk() %}
@@ -99,6 +106,17 @@
             </span>
           </p>
           {% else %}
+          {# Said in front of the money, not left for the policy page to break
+             the news afterwards. Only guides: a course keeps the 14-day note
+             on /refunds, and someone who already owns this doesn't need it. #}
+          {% if product.is_guide() %}
+          <p class="pd-hero__terms">
+            <strong>Guides are non-refundable.</strong> This one opens the
+            moment you pay, so there’s nothing to send back. Have a proper
+            look at what’s inside first &mdash;
+            <a href="{{ url_for('main.refunds') }}">refund policy</a>.
+          </p>
+          {% endif %}
           <a class="btn btn--primary pd-hero__cta" href="{{ url_for('main.checkout_product', slug=product.slug) }}">Buy now</a>
           <p class="pd-hero__note">Secure checkout. You’ll find it in My space after purchase.</p>
           {% endif %}
@@ -193,21 +211,29 @@
         {% if curriculum %}
         <section class="pd-section pd-section--wide" aria-labelledby="pd-curriculum-heading">
           <h2 id="pd-curriculum-heading">What’s inside</h2>
-          {% if product.is_dripped() %}
+          {% set steps = product.release_steps() if product.is_dripped() else [] %}
+          {% if steps %}
           <p class="pd-curriculum__note">
-            Released one module at a time: the first opens as soon as you buy, then a new
-            one every {{ product.drip_days() }} day{{ '' if product.drip_days() == 1 else 's' }}.
+            Released one module at a time:
+            {%- if steps[0].when %} the first opens on {{ steps[0].when|when('%B %d') }}
+            {%- else %} the first opens as soon as you buy{% endif -%}
+            {%- if product.drip_mode_key() == 'interval' %}, then a new one every
+            {{ product.drip_days() }} day{{ '' if product.drip_days() == 1 else 's' }}.
+            {%- else %}, then the rest as listed below.{% endif %}
+            {% if steps[0].when %}{{ countdown(steps[0].when, zero='Module one is open now', refresh=true) }}{% endif %}
           </p>
           {% endif %}
           {% set summaries = product.module_summaries() %}
           <ol class="pd-curriculum">
             {% for row in curriculum %}
+            {% set step = steps[loop.index0] if loop.index0 < steps|length else none %}
             <li>
               <strong>{{ row.title }}</strong>
-              {% if product.is_dripped() %}
+              {% if step %}
               <span class="pd-curriculum__when">
-                {%- if loop.first %}Available right away
-                {%- else %}Day {{ loop.index0 * product.drip_days() + 1 }}{% endif -%}
+                {%- if step.when %}{{ step.when|when('%b %d') }}
+                {%- elif step.day == 1 %}Available right away
+                {%- else %}Day {{ step.day }}{% endif -%}
               </span>
               {% endif %}
               {% set inside = summaries[loop.index0] if loop.index0 < summaries|length else '' %}

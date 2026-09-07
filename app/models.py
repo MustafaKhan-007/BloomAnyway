@@ -149,6 +149,14 @@ class User(UserMixin, db.Model):
     # payment can't undo it.
     membership_manual_at = db.Column(db.DateTime)
 
+    # When their reel was first put on the home page. Entries are cleared out
+    # every Monday, so being featured is only remembered if it's kept here.
+    reel_featured_at = db.Column(db.DateTime)
+    # The last time they were Creator of the Month. The card itself is only
+    # a name and a photo in the settings table, so without this there is no
+    # way to know the same person had it last month.
+    creator_month_at = db.Column(db.DateTime)
+
     # showing-up streak ("I showed up today")
     last_checkin_date = db.Column(db.Date)
     current_streak = db.Column(db.Integer, nullable=False, default=0)
@@ -489,6 +497,12 @@ class Product(db.Model):
     # ``perk_membership_months`` months.
     perk_membership_tier = db.Column(db.String(20))
     perk_membership_months = db.Column(db.Integer, nullable=False, default=0)
+    #: A perk can run to a date instead of for a length. ``perk_ends_at`` stops
+    #: it for everybody at once, whenever they bought; ``perk_starts_at`` holds
+    #: it back until the day it opens. Empty start means it begins at the
+    #: counter, which is how every perk worked before there were dates.
+    perk_starts_at = db.Column(db.DateTime)
+    perk_ends_at = db.Column(db.DateTime)
 
     # hidden recommendation tags (never shown to customers)
     tags_json = db.Column(db.Text)
@@ -787,10 +801,16 @@ class Product(db.Model):
             facts.append(("Inside", inside))
 
         if self.is_dripped():
+            # A release date that hasn't come yet is the first thing to say:
+            # "right away" is a promise the course wouldn't keep.
+            opens = self.first_release_display()
+            first = f"First module on {opens}" if opens else "First module right away"
             if self.drip_mode_key() == "interval":
                 days = self.drip_days()
                 unit = "day" if days == 1 else f"{days} days"
-                facts.append(("Pace", f"First module right away, then one every {unit}"))
+                facts.append(("Pace", f"{first}, then one every {unit}"))
+            elif opens:
+                facts.append(("Pace", f"{first}, then one at a time on a set schedule"))
             else:
                 facts.append(("Pace", "One module at a time, on a set schedule"))
         elif rows:
@@ -802,7 +822,12 @@ class Product(db.Model):
             facts.append(("Also included", self.perk_summary()))
         # A line or two isn't worth a column of its own: a single guide with
         # nothing but its file would only narrow the write-up beside it.
-        return facts if len(facts) > 2 else []
+        enough = len(facts) > 2
+        if enough and self.is_guide():
+            # Counted after that test, so saying it can't be what brings a
+            # thin card into being.
+            facts.append(("Refunds", "Non-refundable — it opens the moment you pay"))
+        return facts if enough else []
 
     def is_dripped(self) -> bool:
         """Drip-feed only kicks in once there is more than one module."""
@@ -839,6 +864,20 @@ class Product(db.Model):
         from .services.timefmt import format_local
         return format_local(self.drip_starts_at, "%b %d, %Y")
 
+    def release_steps(self) -> list[dict]:
+        """When each module opens, for somebody deciding whether to buy."""
+        from .services.drip import public_steps
+        return public_steps(self)
+
+    def first_release_display(self) -> str:
+        """The day module one opens, when that is still ahead of everybody."""
+        steps = self.release_steps()
+        when = steps[0]["when"] if steps else None
+        if when is None:
+            return ""
+        from .services.timefmt import format_local
+        return format_local(when, "%b %d, %Y")
+
     def buyable_by(self, user) -> bool:
         """Only live products sell, and test ones only sell to owners."""
         return (self.status == "published" and self.visible_to(user)
@@ -856,16 +895,60 @@ class Product(db.Model):
         return max(0, min(60, months))
 
     def has_perk(self) -> bool:
-        return bool(self.perk_tier()) and self.perk_months() > 0
+        """Whether buying this hands out free membership — for a length or to a day."""
+        return bool(self.perk_tier()) and (self.perk_months() > 0
+                                           or self.perk_ends_at is not None)
 
-    def perk_summary(self) -> str:
-        """e.g. "3 months of Creator membership, free" (empty when unset)."""
+    def perk_window(self, bought_at: datetime | None = None):
+        """When the free membership runs for somebody who bought at ``bought_at``.
+
+        Nothing set means it starts at the counter and lasts its months. A
+        start date holds it until the day it opens, and buying after that day
+        starts it there and then. An end date stops everybody together,
+        however long each of them has had it.
+        """
+        if not self.has_perk():
+            return (None, None)
+        from .services.perks import add_months
+
+        bought = bought_at or utcnow()
+        start = bought
+        if self.perk_starts_at is not None and self.perk_starts_at > bought:
+            start = self.perk_starts_at
+        if self.perk_ends_at is not None:
+            return (start, self.perk_ends_at)
+        return (start, add_months(start, self.perk_months()))
+
+    def perk_ended(self, now: datetime | None = None) -> bool:
+        """Whether a perk with an end date has already been and gone."""
+        return bool(self.perk_ends_at is not None
+                    and self.perk_ends_at <= (now or utcnow()))
+
+    def perk_offer(self) -> str:
+        """The free membership, as it reads on a page: "3 months of Creator"."""
         if not self.has_perk():
             return ""
-        months = self.perk_months()
+        from .services.timefmt import format_local
+
         label = MEMBERSHIP_LABELS.get(self.perk_tier(), self.perk_tier())
-        unit = "month" if months == 1 else "months"
-        return f"{months} {unit} of {label} membership, free"
+        opens = (format_local(self.perk_starts_at, "%b %d, %Y")
+                 if self.perk_starts_at is not None else "")
+        if self.perk_ends_at is None:
+            months = self.perk_months()
+            length = f"{months} month{'' if months == 1 else 's'} of {label} membership"
+            return f"{length} from {opens}" if opens else length
+        closes = format_local(self.perk_ends_at, "%b %d, %Y")
+        if opens:
+            return f"{label} membership from {opens} to {closes}"
+        return f"{label} membership until {closes}"
+
+    def perk_summary(self) -> str:
+        """The offer with the price on it: "3 months of Creator membership, free"."""
+        offer = self.perk_offer()
+        if not offer:
+            return ""
+        before, sep, after = offer.partition(" membership")
+        return f"{before}{sep}, free{after}"
 
     def receipt_blurb(self) -> str:
         """The line about this product for its receipt email.
@@ -1010,6 +1093,15 @@ class Product(db.Model):
 
     def type_label(self):
         return "Course" if self.type == "course" else "Notebook Guide"
+
+    def is_guide(self) -> bool:
+        """A guide rather than a course: a file, open the moment it is paid for.
+
+        This is what the non-refundable line hangs off, so it errs the buyer's
+        way. Anything with a course in it — a bundle that carries one, a guide
+        marked as both — is not a guide here, and the course wording applies.
+        """
+        return "course" not in self.types()
 
     def publish_blockers(self):
         """List of human-readable requirements missing before publishing."""
@@ -1648,8 +1740,10 @@ class Order(db.Model):
     total_cents = db.Column(db.Integer, nullable=False, default=0)
     currency = db.Column(db.String(3), nullable=False, default="USD")
     status = db.Column(db.String(20), nullable=False, default="paid")
-    # Set when a membership welcome email is claimed/sent for this order.
-    # Used to stop duplicate welcomes across checkout + invoice events.
+    # Set when this order's welcome email is claimed/sent — the membership one,
+    # or the challenge one for an order that joined it. Used to stop duplicate
+    # welcomes across checkout + invoice events, and to tell the owner when a
+    # welcome has already gone out. An order is one or the other, never both.
     welcome_sent_at = db.Column(db.DateTime)
     # Stripe subscription this payment belongs to; renewals share it. Survives
     # account deletion (which scrubs buyer_email), so it is the only way to tell
@@ -2232,7 +2326,10 @@ class ContentReport(db.Model):
 
 # --- support / coaching groups (Daily.co peer rooms) -------------------------
 
-SUPPORT_APP_STATUSES = ("pending", "selected", "cancelled", "attended")
+#: ``attended`` and ``no_show`` are settled when a session finishes, from
+#: whether that seat ever opened the room.
+SUPPORT_APP_STATUSES = ("pending", "selected", "cancelled", "attended",
+                        "no_show")
 SUPPORT_MEETING_STATUSES = ("draft", "scheduled", "completed", "cancelled")
 SUPPORT_MEETING_KINDS = ("peer", "facilitator", "one_on_one")
 SUPPORT_CIRCLE_TRACKS = ("healing", "building")
@@ -2358,6 +2455,10 @@ class SupportGroupApplication(db.Model):
     message = db.Column(db.Text, nullable=False, default="")
     status = db.Column(db.String(20), nullable=False, default="pending", index=True)
     created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+    #: The first time this seat actually opened the room. Turning up is turning
+    #: up: a minute counts the same as the whole hour, and an empty column
+    #: means they booked and never came.
+    joined_at = db.Column(db.DateTime)
 
     author = db.relationship("User")
     circle = db.relationship("SupportGroupCircle", back_populates="applications")
