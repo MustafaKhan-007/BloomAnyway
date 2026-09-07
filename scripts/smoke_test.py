@@ -9436,6 +9436,29 @@ try:
        "the receipt has the file with it" in _back
        and "waiting in My space" in _back)
 
+    # A receipt can still be missed by a full inbox or a bad afternoon at
+    # Brevo, and a guest has no library to fall back on.
+    _guest_post.clear()
+    _redo = admin.post("/admin/resend-receipt", data={"email": _guest},
+                       follow_redirects=True).get_data(as_text=True)
+    ok("Studio sends a missed receipt again, account or no account",
+       "Sent the receipt for The Guest Pages" in _redo
+       and [m["files"] for m in _guest_post if m["to"] == _guest]
+       == [["guest.pdf"]], f"sent {_guest_post}")
+    _guest_post.clear()
+    ok("And says so when nothing was ever bought under that address",
+       "No purchase on record under" in admin.post(
+           "/admin/resend-receipt", data={"email": "nobodyatall@example.com"},
+           follow_redirects=True).get_data(as_text=True)
+       and not _guest_post)
+    ok("A typo where the address should be sends nothing",
+       "Type the address they paid with" in admin.post(
+           "/admin/resend-receipt", data={"email": "nope"},
+           follow_redirects=True).get_data(as_text=True)
+       and not _guest_post)
+    ok("And it sits with the other missed-purchase tools in Studio",
+       "Receipt missing?" in admin.get("/admin/").get_data(as_text=True))
+
     # The challenge is the one that comes with a second email, and joining it
     # without an account is the ordinary way in from the landing page.
     _guest_post.clear()
