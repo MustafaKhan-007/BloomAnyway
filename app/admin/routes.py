@@ -2403,12 +2403,49 @@ def members():
     people = query.order_by(User.created_at.desc()).limit(200).all()
     counts = dict(db.session.query(User.membership, func.count(User.id))
                   .filter(User.deleted_at.is_(None)).group_by(User.membership).all())
+    try:
+        opened = int(request.args.get("open") or 0)
+    except ValueError:
+        opened = 0
     return render_template("admin/members.html", people=people, counts=counts,
                            memberships=MEMBERSHIPS,
                            membership_labels=MEMBERSHIP_LABELS, q=q,
                            membership_filter=membership,
+                           shelves=_member_shelves(people), opened=opened,
                            demo_count=demo_accounts.count(),
                            demo_min_password=demo_accounts.MIN_PASSWORD)
+
+
+def _member_shelves(people) -> dict:
+    """What each listed member owns, ready to draw: one query for the lot.
+
+    Titles come from the catalogue where a purchase can be matched to it, so
+    the owner reads the same name they typed in Studio rather than whatever
+    the checkout recorded at the time.
+    """
+    from ..services.course_reader import catalog_products_for
+    from ..services.shop_purchases import shelves_for
+
+    rows = shelves_for([p.id for p in people])
+    flat = [row for owned in rows.values() for row in owned]
+    catalog = catalog_products_for(flat)
+    out: dict[int, list[dict]] = {}
+    for user_id, owned in rows.items():
+        shelf = []
+        for row in owned:
+            product = catalog.get(row.id)
+            shelf.append({
+                "id": row.id,
+                "title": (product.title if product else None)
+                         or row.product_name or "Untitled",
+                "slug": product.slug if product else None,
+                "bought": row.purchased_at,
+                "put_away": row.status == "removed",
+                "perk": product.perk_summary() if (product and product.has_perk())
+                        else "",
+            })
+        out[user_id] = shelf
+    return out
 
 
 @bp.route("/members/demo", methods=["POST"])
@@ -2574,6 +2611,36 @@ def set_membership(user_id):
         membership=request.form.get("membership_filter") or None,
     )
     return redirect(next_url)
+
+
+@bp.route("/members/<int:user_id>/owns/<int:purchase_id>/remove",
+          methods=["POST"])
+@admin_required
+def member_purchase_remove(user_id, purchase_id):
+    """Take one thing off a member's shelf for good, and tell them so.
+
+    Not the same as the member putting it away themselves: this deletes the
+    purchase, so it stops showing in My Space and stops opening in the reader.
+    """
+    from ..models import ShopPurchase
+    from ..services.shop_purchases import revoke_purchase
+
+    member = db.session.get(User, user_id) or abort(404)
+    back = url_for("admin.members",
+                   q=request.form.get("q") or None,
+                   membership=request.form.get("membership_filter") or None,
+                   open=member.id) + f"#member-{member.id}"
+    purchase = db.session.get(ShopPurchase, purchase_id)
+    if purchase is None or purchase.user_id != member.id:
+        flash("That purchase isn't on this member's shelf any more.", "info")
+        return redirect(back)
+    result = revoke_purchase(purchase)
+    db.session.commit()
+    note = (" Their free membership from it was recalculated too."
+            if result.get("perk") else "")
+    flash(f"Removed “{result['name']}” from {member.public_name()}'s My Space. "
+          f"They've been told.{note}", "success")
+    return redirect(back)
 
 
 @bp.route("/members/<int:user_id>/remove", methods=["POST"])

@@ -2722,6 +2722,51 @@ a.studio-member-filter.is-active {
 a.studio-member-filter.is-active span { color: #fff; }
 .link-fields--locked { opacity: 0.9; }
 
+/* ---------- a member, opened onto what they own ---------- */
+.member-open {
+  display: inline-flex; align-items: center; gap: 7px;
+  color: inherit; text-decoration: none; font-weight: 700;
+}
+.member-open:hover { color: var(--plum); }
+.member-open__mark {
+  width: 0; height: 0; flex: none;
+  border-left: 6px solid currentColor;
+  border-top: 4.5px solid transparent;
+  border-bottom: 4.5px solid transparent;
+  opacity: 0.55;
+  transition: transform 140ms ease;
+}
+.member-open[aria-expanded="true"] .member-open__mark {
+  transform: rotate(90deg) translateX(1px);
+}
+.member-open__count {
+  display: block; margin-top: 2px;
+  font-size: 11.5px; color: var(--ink-soft);
+}
+.member-owns > td {
+  background: rgba(61, 20, 49, 0.035);
+  border-top: 0;
+  padding: 12px 14px 14px;
+}
+.member-owns__head {
+  margin: 0 0 8px; font-size: 12px; font-weight: 800;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft);
+}
+.member-owns__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.member-owns__item {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 14px; flex-wrap: wrap;
+  padding: 9px 12px; border-radius: 11px;
+  background: #fff; border: 1px solid rgba(61, 20, 49, 0.1);
+}
+.member-owns__what { display: block; min-width: 0; }
+.member-owns__what strong { display: block; font-size: 14px; }
+.member-owns__what small {
+  display: block; margin-top: 2px;
+  font-size: 12px; line-height: 1.5; color: var(--ink-soft);
+}
+.member-owns__note { margin: 9px 0 0; max-width: 70ch; }
+
 /* ---------- Membership plans & comparison ---------- */
 .membership-hero { text-align: center; padding-bottom: 8px; }
 .membership-hero h1 { margin: 6px 0 10px; }
@@ -5473,6 +5518,16 @@ a.at-handle:hover { text-decoration: underline; }
 .page-remaster .eyebrow { color: #c79a41; letter-spacing: 0.12em; }
 
 /* Contact page: the direct support address, under the form. */
+/* What this box is for, set apart from the invitation above it so it reads as
+   a signpost rather than more of the welcome. */
+.contact-scope {
+  margin: 12px 0 0;
+  padding: 11px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(181, 138, 63, 0.4);
+  background: rgba(239, 167, 51, 0.1);
+  font-size: 14.5px; line-height: 1.6;
+}
 .contact-direct {
   margin-top: 36px;
   padding: 20px 22px;

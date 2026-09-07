@@ -2339,6 +2339,16 @@ r = client.post("/contact", data={"name": "x", "email": "x@y.com", "message": "h
                 follow_redirects=False)
 ok("Contact honeypot silently redirects", r.status_code == 302)
 
+# The form reaches the two people who run the site, so it says so before the
+# box rather than after — nobody should pour out a stuck place into an inbox
+# that was only ever going to answer about a password.
+_cbody = client.get("/contact").get_data(as_text=True)
+ok("The contact page says it is for the website itself",
+   "Anything to do with the website" in _cbody
+   and "That is all this form is for" in _cbody)
+ok("And points everything else where it will actually be answered",
+   'href="/forums/"' in _cbody and "/support-groups" in _cbody, "no way onward")
+
 # --- contact form: every owner hears about it, and it lands in the Inbox ----
 from app.models import ContactMessage as _CM
 from app.services import mailer as _mailer
@@ -8805,6 +8815,138 @@ ok("Studio's inbox stamps its rows on the owner's clock, not the server's",
    and 'data-when="%b %d, %H:%M"' in _sbody, "inbox still prints raw UTC")
 _sbody = admin.get("/admin/members").get_data(as_text=True)
 ok("So does the member list", 'data-when="%b %d, %Y"' in _sbody)
+
+# --- studio: what a member owns, and taking one of them back off them -------
+# Answering "what has she actually bought?" meant going through Stripe. The
+# member list answers it now, and can take something back — properly, not the
+# put-it-away a member does to their own shelf, because the reason for doing
+# it from Studio is that they shouldn't have it at all.
+from app.models import CourseProgress as _Progress
+from app.models import Notification as _Note3
+from app.models import ShopPurchase as _Shop
+
+with app.app_context():
+    _shelf_user = User(email="shelfy@example.com", display_name="Shelfy Reader",
+                       email_verified_at=utcnow())
+    _shelf_user.set_password(USER_PW)
+    db.session.add(_shelf_user)
+    db.session.commit()
+    _shelf_id = _shelf_user.id
+    _catalogued = Product.query.filter_by(slug="drip-course").first()
+    _bought = _Shop(lemon_squeezy_order_id="SHELF-1",
+                    customer_email="shelfy@example.com", user_id=_shelf_id,
+                    product_name=_catalogued.title,
+                    variant_id=_catalogued.stripe_price_id, status="linked")
+    _older = _Shop(lemon_squeezy_order_id="SHELF-2",
+                   customer_email="shelfy@example.com", user_id=_shelf_id,
+                   product_name="An Old Workbook", status="linked",
+                   purchased_at=utcnow() - timedelta(days=200))
+    db.session.add_all([_bought, _older])
+    db.session.commit()
+    _bought_id, _older_id = _bought.id, _older.id
+    _bought_title = _catalogued.title
+    db.session.add(_Progress(user_id=_shelf_id, shop_purchase_id=_bought_id,
+                             current_page=4, percent=30))
+    db.session.commit()
+
+_sbody = admin.get("/admin/members?q=shelfy").get_data(as_text=True)
+ok("A member's row says how much they have bought", "2 products" in _sbody)
+ok("Opening the name lists each thing, catalogue title and all",
+   "What Shelfy Reader owns" in _sbody and _bought_title in _sbody
+   and "An Old Workbook" in _sbody, "no shelf under the member")
+ok("The shelf starts folded away, so the list still reads as a list",
+   "data-member-panel hidden" in _sbody)
+_sbody = admin.get(f"/admin/members?q=shelfy&open={_shelf_id}").get_data(as_text=True)
+ok("And a member asked for by name comes back open, with nothing running",
+   f'id="owns-{_shelf_id}" data-member-panel>' in _sbody
+   and 'aria-expanded="true"' in _sbody)
+
+r = admin.post(f"/admin/members/{_shelf_id}/owns/{_older_id}/remove",
+               follow_redirects=True)
+_after = r.get_data(as_text=True)
+ok("Studio takes one thing off a member's shelf",
+   "Removed \u201cAn Old Workbook\u201d from Shelfy Reader" in _after
+   and "been told" in _after, flashes(r))
+with app.app_context():
+    ok("The purchase is gone, not marked — nothing is left to restore",
+       db.session.get(_Shop, _older_id) is None)
+    _note = (_Note3.query.filter_by(user_id=_shelf_id, kind="course")
+             .order_by(_Note3.id.desc()).first())
+    ok("And the member is told, in as many words",
+       _note is not None
+       and _note.body == "Your access to \u201cAn Old Workbook\u201d has been removed.",
+       _note.body if _note else "no notification")
+
+shelf_client = app.test_client()
+shelf_client.post("/login", data={"email": "shelfy@example.com", "password": USER_PW})
+_mine = shelf_client.get("/account?tab=saved").get_data(as_text=True)
+ok("It has left their My Space rather than sitting there marked",
+   f"/account/courses/{_older_id}" not in _mine
+   and f"/account/courses/{_bought_id}" in _mine,
+   "the shelf still has a card for it")
+ok("Though the note telling them why is waiting in their bell",
+   "An Old Workbook" in _mine)
+
+r = admin.post(f"/admin/members/{_shelf_id}/owns/{_bought_id}/remove",
+               follow_redirects=True)
+with app.app_context():
+    ok("Reading progress that hung off it goes too, instead of blocking it",
+       db.session.get(_Shop, _bought_id) is None
+       and _Progress.query.filter_by(shop_purchase_id=_bought_id).first() is None)
+r = shelf_client.get(f"/account/courses/{_bought_id}")
+ok("And the reader will not open it any more", r.status_code == 404)
+_sbody = admin.get(f"/admin/members?q=shelfy&open={_shelf_id}").get_data(as_text=True)
+ok("Studio says the shelf is empty rather than showing a stale list",
+   "Nothing bought yet" in _sbody and "nothing bought" in _sbody)
+
+# A purchase that belongs to somebody else can't be reached through a member
+# whose page happens to be open.
+with app.app_context():
+    _theirs = _Shop(lemon_squeezy_order_id="SHELF-3",
+                    customer_email="plainmember@example.com",
+                    user_id=User.query.filter_by(
+                        email="plainmember@example.com").first().id,
+                    product_name="Not Yours", status="linked")
+    db.session.add(_theirs)
+    db.session.commit()
+    _theirs_id = _theirs.id
+r = admin.post(f"/admin/members/{_shelf_id}/owns/{_theirs_id}/remove",
+               follow_redirects=True)
+with app.app_context():
+    ok("Somebody else's purchase can't be removed through this member",
+       "on this member" in r.get_data(as_text=True),
+       flashes(r))
+    ok("And it is still theirs afterwards",
+       db.session.get(_Shop, _theirs_id) is not None)
+
+# Free membership months came with the purchase, so they go with it as well.
+with app.app_context():
+    _season = Product.query.filter_by(slug="season-pass").first()
+    _perked = _Shop(lemon_squeezy_order_id="SHELF-4",
+                    customer_email="shelfy@example.com", user_id=_shelf_id,
+                    product_name=_season.title,
+                    variant_id=_season.stripe_price_id, status="linked")
+    db.session.add(_perked)
+    db.session.commit()
+    _perked_id = _perked.id
+    from app.services.memberships import reconcile_user as _rec
+    _rec(db.session.get(User, _shelf_id))
+    db.session.commit()
+    ok("A product carrying free months puts the member on that tier",
+       db.session.get(User, _shelf_id).membership == "creator",
+       db.session.get(User, _shelf_id).membership)
+_sbody = admin.get(f"/admin/members?q=shelfy&open={_shelf_id}").get_data(as_text=True)
+ok("Studio warns that the membership goes with it",
+   "which goes with it" in _sbody and "Creator membership" in _sbody)
+r = admin.post(f"/admin/members/{_shelf_id}/owns/{_perked_id}/remove",
+               follow_redirects=True)
+ok("Removing it says the membership was worked out again",
+   "free membership from it was recalculated" in r.get_data(as_text=True),
+   flashes(r))
+with app.app_context():
+    ok("And they drop back to what they actually pay for",
+       db.session.get(User, _shelf_id).membership == "none",
+       db.session.get(User, _shelf_id).membership)
 
 # --- the stylesheet is still readable text ---------------------------------
 # Twice now an edit has been saved with UTF-8 read back as Latin-1, which turns
