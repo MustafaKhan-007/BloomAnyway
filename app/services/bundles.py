@@ -57,6 +57,31 @@ def granted_from(purchase: ShopPurchase | None):
             .all())
 
 
+def parents_for(purchases) -> dict[int, ShopPurchase]:
+    """Which bundle purchase opened each of these, where one did.
+
+    Keyed by the purchase's own id, so a shelf can say where something came
+    from without asking a question per row.
+    """
+    rows = list(purchases or [])
+    wanted: dict[str, list[int]] = {}
+    for row in rows:
+        order_id = (row.lemon_squeezy_order_id or "")
+        if CHILD_MARK not in order_id:
+            continue
+        wanted.setdefault(order_id.rsplit(CHILD_MARK, 1)[0], []).append(row.id)
+    if not wanted:
+        return {}
+    found = (ShopPurchase.query
+             .filter(ShopPurchase.lemon_squeezy_order_id.in_(list(wanted)))
+             .all())
+    out: dict[int, ShopPurchase] = {}
+    for parent in found:
+        for purchase_id in wanted.get(parent.lemon_squeezy_order_id, []):
+            out[purchase_id] = parent
+    return out
+
+
 def grant_contents(purchase: ShopPurchase | None) -> list[ShopPurchase]:
     """Put each product inside a bundle purchase onto the buyer's shelf.
 

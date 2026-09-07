@@ -1002,6 +1002,18 @@ def account():
     if collapse_duplicate_purchases(current_user):
         db.session.commit()
     shop_list = library_purchases_for(current_user, dedupe=True)
+    # A bundle is a receipt, not a thing to read. Once what it opened is on
+    # the shelf under its own name, the bundle's own card is a dead tile
+    # saying it has no file — so it stands aside and each product says which
+    # bundle it came in.
+    from ..services import bundles as bundle_svc
+    opened_by = bundle_svc.parents_for(shop_list)
+    covered = {p.lemon_squeezy_order_id for p in opened_by.values()}
+    if covered:
+        shop_list = [p for p in shop_list
+                     if p.lemon_squeezy_order_id not in covered]
+    came_in = {pid: parent.product_name
+               for pid, parent in opened_by.items()}
     progress_by_purchase = reader_svc.progress_map_for(
         current_user.id, [p.id for p in shop_list])
     readable = {}
@@ -1018,6 +1030,7 @@ def account():
         course_progress=progress_by_purchase,
         course_readable=readable,
         purchase_catalog=purchase_catalog,
+        came_in_bundle=came_in,
         premium=current_user.has_feature("journey_export"),
         plan_perks=(
             MembershipPlan.query.filter_by(

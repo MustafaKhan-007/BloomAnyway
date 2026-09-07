@@ -9261,11 +9261,15 @@ def _shelf():
 
 
 _lib = _shelf()
-ok("My space shows the products, not just the receipt",
+ok("My space shows the products, not the receipt for them",
    "The Boundaries Pages" in _lib and "Saying It Out Loud" in _lib)
-ok("And the bundle card says what it opened rather than asking for a file",
-   "This bundle opened 2 products" in _lib
-   and "upload the reading file" not in _lib, "the bundle card reads as broken")
+ok("The bundle itself stands aside rather than sitting there with no file",
+   '<h3 class="lib-card__title">The Whole Shelf</h3>' not in _lib
+   and "upload the reading file" not in _lib,
+   "the bundle still has a card of its own")
+ok("And each one says which bundle it came in",
+   _lib.count("Included in The Whole Shelf") == 2,
+   f"{_lib.count('Included in The Whole Shelf')} cards say where they came from")
 r = bundle_client.get(f"/account/courses/{_two_purchase_id}")
 ok("The course inside opens in the reader on its own",
    r.status_code == 200 and "Saying It Out Loud" in r.get_data(as_text=True))
