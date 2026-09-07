@@ -1,7 +1,13 @@
 """Canonical legal page bodies (seeded / refreshed when version changes)."""
 
 #: Bump to push Terms / Refunds / Privacy to live Page rows on next seed.
-LEGAL_COPY_VERSION = "2026-08-26"
+LEGAL_COPY_VERSION = "2026-09-07"
+
+#: The one-line version, for the places a buyer is looking at a price rather
+#: than a policy — the product page says it in its own words, and this goes on
+#: the Stripe page itself, where the money actually leaves.
+GUIDE_NO_REFUND = ("Guides are non-refundable — a guide opens the moment you "
+                   "pay and is yours to keep.")
 
 PRIVACY = """# Privacy Policy
 
@@ -100,6 +106,8 @@ You keep ownership of what you post. You grant Bloom Anyway a non-exclusive lice
 ## Digital products & shop
 Courses and guides sold on the [Courses & Guides](/courses) page are licensed for **personal use** unless a product page says otherwise. Redistribution or resale is not allowed. Delivery, taxes, and payment disputes for those purchases are handled with [Stripe](https://stripe.com) as merchant of record.
 
+A guide is delivered as soon as your payment clears — it opens in My space straight away — and guides are **non-refundable**. Courses, memberships, and paid sessions each have their own rules in [Refunds](/refunds).
+
 ## Acceptable use
 Do not attempt to break, scrape abusively, overload, or reverse-engineer the service; do not bypass membership gates, rate limits, or security checks (including signup verification); do not disrupt support sessions or share private session links publicly.
 
@@ -122,14 +130,19 @@ Questions? Use the [Contact](/contact) page.
 
 REFUNDS = """# Refund Policy
 
-**Last updated:** August 21, 2026
+**Last updated:** September 7, 2026
 
 We want you to feel treated fairly. Stripe is the merchant of record for Bloom Anyway checkouts.
 
-## Digital products (courses & guides)
-If a course or guide purchase isn't right for you, reply to your Stripe receipt within **14 days** of purchase and tell us what went wrong. We'll work with you (and Stripe's process) to make it right where the product page or applicable law requires a refund.
+## Guides
+**Guides are non-refundable.** A guide is delivered the moment your payment clears — it opens in My space straight away and stays yours to keep — so there is nothing to give back, and we don't refund a change of mind once it has been opened. The product page, the price, and what's inside are all there before you buy; please read them, and ask us first if anything is unclear.
 
-Access to that product in My space may be revoked when a refund is issued.
+That is not the same as leaving you stuck. Write to us and we will sort out a duplicate charge, a charge for the wrong product, or a file that won't open and can't be fixed. Nothing on this page takes away a refund right the law gives you and we can't sign away.
+
+## Courses
+If a course purchase isn't right for you, reply to your Stripe receipt within **14 days** of purchase and tell us what went wrong. We'll work with you (and Stripe's process) to make it right where the product page or applicable law requires a refund.
+
+Access to a product in My space may be revoked when a refund is issued.
 
 ## Memberships
 - Memberships renew through Stripe on the interval you chose (monthly or annual) until you cancel.

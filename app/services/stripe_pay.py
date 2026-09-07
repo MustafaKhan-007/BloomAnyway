@@ -81,6 +81,7 @@ def create_checkout_session(
     metadata: dict | None = None,
     quantity: int = 1,
     trial_days: int = 0,
+    submit_note: str = "",
 ) -> str:
     """Create a Stripe Checkout Session and return the hosted URL.
 
@@ -90,6 +91,10 @@ def create_checkout_session(
     ``trial_days`` holds off the first charge that long. Stripe only takes it
     on a subscription, and only between 1 and 730, so anything else is left
     off rather than sent and refused.
+
+    ``submit_note`` is printed above the pay button on Stripe's own page — the
+    last thing read before the money goes, which is where a term like "this
+    one can't be refunded" belongs as well as on ours.
     """
     _configure_stripe()
     price_id = (product_id or "").strip()
@@ -109,6 +114,10 @@ def create_checkout_session(
         "metadata": meta,
         "allow_promotion_codes": True,
     }
+    note = " ".join((submit_note or "").split())
+    if note:
+        # Stripe takes 1200 characters here and refuses the lot if given more.
+        params["custom_text"] = {"submit": {"message": note[:1200]}}
     if customer_email:
         params["customer_email"] = customer_email.strip().lower()
     if customer_name:

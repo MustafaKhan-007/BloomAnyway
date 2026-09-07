@@ -106,6 +106,17 @@
             </span>
           </p>
           {% else %}
+          {# Said in front of the money, not left for the policy page to break
+             the news afterwards. Only guides: a course keeps the 14-day note
+             on /refunds, and someone who already owns this doesn't need it. #}
+          {% if product.is_guide() %}
+          <p class="pd-hero__terms">
+            <strong>Guides are non-refundable.</strong> This one opens the
+            moment you pay and stays yours to keep, so there is nothing to
+            send back. Have a proper look at what’s inside first &mdash;
+            <a href="{{ url_for('main.refunds') }}">refund policy</a>.
+          </p>
+          {% endif %}
           <a class="btn btn--primary pd-hero__cta" href="{{ url_for('main.checkout_product', slug=product.slug) }}">Buy now</a>
           <p class="pd-hero__note">Secure checkout. You’ll find it in My space after purchase.</p>
           {% endif %}

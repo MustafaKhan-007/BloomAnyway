@@ -31,6 +31,7 @@ from ..services.badges import CATEGORIES, category_progress, earned_badges
 from ..services.catalog import remove_demo_catalog
 from ..services import stripe_pay as pay
 from ..services.journey import build_journey_pdf
+from ..services.legal_copy import GUIDE_NO_REFUND
 from ..services.mailer import send_contact_notification
 from ..services.perks import perk_display
 from ..services.timefmt import account_timezone
@@ -320,6 +321,9 @@ def checkout_product(slug):
             customer_email=email,
             customer_name=name,
             metadata={"slug": product.slug, "kind": "product"},
+            # The product page says this too, but the pay button is on
+            # Stripe's page, and that is the last thing anyone reads.
+            submit_note=GUIDE_NO_REFUND if product.is_guide() else "",
         )
     except pay.StripeError as exc:
         flash(str(exc), "error")
