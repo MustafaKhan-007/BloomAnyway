@@ -9446,6 +9446,18 @@ a.at-handle:hover { text-decoration: underline; }
   border: 1px solid rgba(90, 49, 88, 0.16);
   font-size: 13px; font-weight: 600; color: var(--plum-deep);
 }
+/* What buying it commits them to, sat with the price rather than a page
+   away. Quiet enough not to shout down the button under it, plain enough
+   that nobody can say they were never told. */
+.pd-hero__terms {
+  flex: 1 1 100%; margin: 0;
+  padding: 8px 11px; border-radius: 10px;
+  background: rgba(61, 20, 49, 0.05);
+  border: 1px solid rgba(61, 20, 49, 0.12);
+  font-size: 12.5px; line-height: 1.55; color: var(--ink-soft);
+}
+.pd-hero__terms strong { color: var(--plum-deep); }
+.pd-hero__terms a { color: var(--plum-deep); }
 /* A day this stops being what it is today: the price going back up, or the
    last day it can be bought at all. */
 /* The sentence says what changes, and the clock sits under it on its own

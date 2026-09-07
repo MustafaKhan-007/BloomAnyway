@@ -1372,6 +1372,69 @@ with app.app_context():
     ok("Clearing the date puts it back to an ordinary price",
        _p.price_reverts_at is None and not _p.shows_compare_at())
 
+# --- a guide is bought knowing it can't be handed back ------------------------
+# A guide opens the second it is paid for, so the term has to be read before
+# the money moves, not found afterwards on a policy page nobody opened.
+r = admin.post("/admin/products/new", data={
+    "title": "The Boundaries Workbook", "track": "healing", "type": "workbook",
+    "promise": "Twenty pages you can write in.", "price": "12.00",
+    "stripe": "price_boundaries", "live": "1",
+}, follow_redirects=True)
+with app.app_context():
+    _guide = Product.query.filter_by(slug="the-boundaries-workbook").first()
+    ok("A workbook counts as a guide",
+       _guide is not None and _guide.status == "published" and _guide.is_guide(),
+       f"got {_guide.status if _guide else None}")
+    ok("Anything with a course in it doesn't",
+       not db.session.get(Product, _multi_id).is_guide())
+    ok("Nor a bundle that carries one",
+       not Product(type="bundle", types_json='["bundle", "course"]').is_guide())
+_gd = client.get("/courses/the-boundaries-workbook").get_data(as_text=True)
+_terms = _gd.split('class="pd-hero__terms"', 1)[-1].split("</p>", 1)[0]
+ok("The guide's page says it can't be refunded, up against the price",
+   "pd-hero__terms" in _gd and "Guides are non-refundable" in _terms,
+   _gd[-400:])
+ok("With the reason, and the policy a click away",
+   "opens the" in _terms and "/refunds" in _terms, _terms)
+ok("And it sits above the button, not after it",
+   _gd.index("pd-hero__terms") < _gd.index("Buy now"))
+_cd = client.get("/courses/rebuild-your-week").get_data(as_text=True)
+ok("A course keeps the fourteen days and says nothing of the sort",
+   "Buy now" in _cd and "non-refundable" not in _cd)
+with app.app_context():
+    from app.services import legal_copy as _legal
+    ok("The policy page leads its guides section with it",
+       "**Guides are non-refundable.**" in _legal.REFUNDS
+       and "## Guides" in _legal.REFUNDS and "## Courses" in _legal.REFUNDS)
+    ok("Courses keep their fourteen days under their own heading",
+       "**14 days**" in _legal.REFUNDS.split("## Courses", 1)[-1]
+       and "14 days" not in _legal.REFUNDS.split("## Guides", 1)[-1]
+                                           .split("## Courses", 1)[0])
+    ok("Without signing away what the law gives anyone",
+       "takes away a refund right the law gives you" in _legal.REFUNDS)
+    ok("The terms say the same where they describe the shop",
+       "guides are **non-refundable**" in _legal.TERMS)
+    ok("And the version bumped, so the live pages get rewritten",
+       _legal.LEGAL_COPY_VERSION > "2026-08-26")
+# The pay button itself is on Stripe's page, so the line has to travel there.
+_sent = []
+_real_create = pay.stripe.checkout.Session.create
+pay.stripe.checkout.Session.create = lambda **kw: (
+    _sent.append(kw) or type("S", (), {"url": "https://checkout.test/x"})())
+try:
+    r = client.get("/checkout/product/the-boundaries-workbook")
+    ok("Buying a guide hands Stripe the line for above its pay button",
+       r.status_code == 302 and _sent
+       and _sent[-1].get("custom_text", {}).get("submit", {}).get("message")
+       == _legal.GUIDE_NO_REFUND,
+       f"got {_sent[-1].get('custom_text') if _sent else None}")
+    r = client.get("/checkout/product/rebuild-your-week")
+    ok("A course's checkout goes over without one",
+       r.status_code == 302 and "custom_text" not in _sent[-1],
+       f"got {_sent[-1].get('custom_text')}")
+finally:
+    pay.stripe.checkout.Session.create = _real_create
+
 # Anything still posting one type keeps working, and so does a product that
 # has only ever had one.
 r = admin.post("/admin/products/new", data={
@@ -7043,6 +7106,15 @@ with app.app_context():
     ok("And repeats the membership that comes with it",
        "3 months of Creator membership, free" in _facts.get("Also included", ""),
        f"got {_facts.get('Also included')!r}")
+    _gp = Product.query.filter_by(slug="glance-course").first()
+    ok("A course's facts card says nothing about refunds",
+       "Refunds" not in dict(_gp.glance_facts()))
+    _gp.set_types(["workbook"])
+    ok("A guide's answers it there too, where a buyer is scanning",
+       dict(_gp.glance_facts()).get("Refunds", "").startswith("Non-refundable"),
+       f"got {dict(_gp.glance_facts()).get('Refunds')!r}")
+    _gp.set_types(["course"])
+    db.session.commit()
     _bare = Product(slug="bare-glance", title="Bare Glance", type="guide",
                     status="published", promise="x", price_cents=500,
                     stripe_price_id="price_bare")

@@ -822,7 +822,12 @@ class Product(db.Model):
             facts.append(("Also included", self.perk_summary()))
         # A line or two isn't worth a column of its own: a single guide with
         # nothing but its file would only narrow the write-up beside it.
-        return facts if len(facts) > 2 else []
+        enough = len(facts) > 2
+        if enough and self.is_guide():
+            # Counted after that test, so saying it can't be what brings a
+            # thin card into being.
+            facts.append(("Refunds", "Non-refundable — it opens the moment you pay"))
+        return facts if enough else []
 
     def is_dripped(self) -> bool:
         """Drip-feed only kicks in once there is more than one module."""
@@ -1088,6 +1093,15 @@ class Product(db.Model):
 
     def type_label(self):
         return "Course" if self.type == "course" else "Notebook Guide"
+
+    def is_guide(self) -> bool:
+        """A guide rather than a course: a file, open the moment it is paid for.
+
+        This is what the non-refundable line hangs off, so it errs the buyer's
+        way. Anything with a course in it — a bundle that carries one, a guide
+        marked as both — is not a guide here, and the course wording applies.
+        """
+        return "course" not in self.types()
 
     def publish_blockers(self):
         """List of human-readable requirements missing before publishing."""
