@@ -1153,6 +1153,28 @@
     });
   });
 
+  /* ---- members: a name opens onto what that person owns ----
+     The name is a real link to the same page with that member open, so it
+     still works with nothing running; here it just saves the round trip. */
+  (function () {
+    if (!document.querySelector("[data-member-open]")) return;
+    document.addEventListener("click", function (e) {
+      var link = e.target.closest ? e.target.closest("[data-member-open]") : null;
+      if (!link) return;
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.button) return;
+      var panel = document.getElementById(link.getAttribute("aria-controls"));
+      if (!panel) return;
+      e.preventDefault();
+      var opening = panel.hasAttribute("hidden");
+      if (opening) {
+        panel.removeAttribute("hidden");
+      } else {
+        panel.setAttribute("hidden", "");
+      }
+      link.setAttribute("aria-expanded", opening ? "true" : "false");
+    });
+  })();
+
   /* ---- collapsible long tables (show a few rows, expand on demand) ---- */
   document.querySelectorAll("table[data-collapsible]").forEach(function (table) {
     var limit = parseInt(table.getAttribute("data-collapsible"), 10) || 10;

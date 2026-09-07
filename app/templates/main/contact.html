@@ -6,7 +6,20 @@
   <div class="container" style="max-width: 560px;">
     <p class="eyebrow">Write to us</p>
     <h1>Say hello</h1>
-    <p>A question, a story, a stuck place &mdash; all welcome here.</p>
+    <p>
+      Anything to do with the website &mdash; your account, a payment, a course
+      that won&rsquo;t open, something that looks broken &mdash; comes straight
+      to us here.
+    </p>
+    {# Said before the box rather than after it, so nobody writes out something
+       personal into an inbox that isn't the place for it. #}
+    <p class="contact-scope">
+      That is all this form is for. A story, a stuck place, or anything you
+      want a person&rsquo;s answer to lands better in the
+      <a href="{{ url_for('forums.index') }}">community</a> or a
+      <a href="{{ url_for('main.support_groups_page') }}">support group</a>,
+      where there is more than one of us to hear it.
+    </p>
     <form method="post" action="{{ url_for('main.contact') }}" style="margin-top: 32px;">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="honeypot" aria-hidden="true">
