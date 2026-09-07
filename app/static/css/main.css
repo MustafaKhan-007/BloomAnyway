@@ -8981,15 +8981,18 @@ a.at-handle:hover { text-decoration: underline; }
   margin: 0 0 6px; text-align: center; font-size: clamp(28px, 4vw, 36px); color: #3d1431;
 }
 .cg-bundles__lede {
-  margin: 0 0 22px; text-align: center; color: var(--ink-soft); font-size: 15px;
+  /* Paragraphs are capped at 68ch site-wide, so this one needs the auto
+     margins or its centred text sits left of the heading above it. */
+  margin: 0 auto 22px; text-align: center; color: var(--ink-soft); font-size: 15px;
 }
+/* One bundle on its own sits in the middle rather than hanging off the left;
+   several share the row in even columns, and a last row that doesn't fill
+   centres too. */
 .cg-bundles__grid {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
-}
-@media (max-width: 800px) {
-  .cg-bundles__grid { grid-template-columns: 1fr; }
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 20px;
 }
 .cg-bundle {
+  flex: 1 1 320px; min-width: 0; max-width: 560px;
   border-radius: 16px; padding: 26px 24px; color: #fff;
   box-shadow: 0 8px 28px rgba(43, 38, 34, 0.12);
 }

@@ -9225,6 +9225,14 @@ _cg = _catalogue("/courses")
 ok("The catalogue's bundle slot lists what is in it, not the write-up",
    "The Whole Shelf" in _cg
    and "The Boundaries Pages · Saying It Out Loud" in _cg, "no contents on the card")
+_bgrid = re.search(r"\.cg-bundles__grid \{([^}]*)\}", _css, re.S).group(1)
+ok("One bundle on its own sits in the middle of the row",
+   "justify-content: center" in _bgrid and "flex-wrap: wrap" in _bgrid,
+   _bgrid.strip())
+ok("And several share the row in even columns",
+   re.search(r"\.cg-bundle \{[^}]*flex: 1 1 320px", _css, re.S) is not None)
+ok("The line under the heading is centred with the heading",
+   re.search(r"\.cg-bundles__lede \{[^}]*margin: 0 auto", _css, re.S) is not None)
 ok("Bundles come first, above the products they are made of",
    0 < _cg.find('class="cg-bundles"') < _cg.find('class="cg-lanes"'),
    f"bundles@{_cg.find('class=\"cg-bundles\"')} lanes@{_cg.find('class=\"cg-lanes\"')}")
