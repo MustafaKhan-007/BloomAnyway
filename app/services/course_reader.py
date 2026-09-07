@@ -115,6 +115,16 @@ def open_item(module: dict | None, wanted: int | None) -> ProductAsset | None:
     return contents[0]
 
 
+def reads_on_site(purchase: ShopPurchase) -> bool:
+    """Whether this purchase has pages of its own to open in the reader.
+
+    The answer to "may this be handed over as a file": no, wherever there is
+    something here to read instead.
+    """
+    product = catalog_product_for_purchase(purchase)
+    return bool(product is not None and product.top_level_assets())
+
+
 def owned_purchase(user, purchase_id: int) -> ShopPurchase | None:
     purchase = db.session.get(ShopPurchase, purchase_id)
     if (purchase is None
