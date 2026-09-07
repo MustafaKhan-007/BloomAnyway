@@ -9649,6 +9649,9 @@ a.pd-bundle__title:hover { text-decoration: underline; }
     position: static; max-width: 320px; margin: 0 auto 8px;
     width: 100%;
   }
+  /* A bundle has no cover, and stacked on a phone that would put a price
+     above the title — asking to buy before saying what this is. */
+  .pd-layout--nocover .pd-layout__aside { order: 2; margin: 8px auto 0; }
   .pd-body-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 760px) {

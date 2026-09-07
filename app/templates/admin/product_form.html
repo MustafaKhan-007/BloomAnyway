@@ -728,7 +728,10 @@
       </div>
     </details>
 
-    <details class="admin-panel studio-card studio-section" open>
+    {# A bundle is a receipt for other products, and each of those has its own
+       cover on its own card. Nothing shows a bundle's, so it isn't asked for. #}
+    <details class="admin-panel studio-card studio-section" open data-cover-section
+             {{ 'hidden' if 'bundle' in product.types() else '' }}>
       <summary class="studio-section__head">
         <h2>Cover &amp; teasers</h2>
         <p class="field-help studio-section__lede">Cover appears on cards. Teasers show on the product page gallery.</p>

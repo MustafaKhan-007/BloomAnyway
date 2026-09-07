@@ -9156,6 +9156,10 @@ def _picker_tag(page):
     return page.split("bundle-pick-row", 1)[-1].split(">", 1)[0]
 
 
+def _cover_tag(page):
+    return page.split("data-cover-section", 1)[-1].split(">", 1)[0]
+
+
 ok("The picker comes back with those two ticked and nothing else",
    _bundle_tick(_efrm, _one_id) == (True, True)
    and _bundle_tick(_efrm, _two_id) == (True, True)
@@ -9165,9 +9169,32 @@ ok("It doesn't offer the bundle itself to put inside itself",
    not _bundle_tick(_efrm, _bundle_id)[0])
 ok("And it is open, since this is already a bundle",
    "hidden" not in _picker_tag(_efrm), _picker_tag(_efrm))
+_ofrm = admin.get(f"/admin/products/{_one_id}/edit").get_data(as_text=True)
 ok("On anything else it waits until BUNDLE is ticked",
-   "hidden" in _picker_tag(
-       admin.get(f"/admin/products/{_one_id}/edit").get_data(as_text=True)))
+   "hidden" in _picker_tag(_ofrm))
+# The products inside a bundle each have a cover on their own card, and
+# nothing anywhere shows the bundle's, so Studio stops asking for one.
+ok("A bundle isn't asked for a cover at all",
+   "hidden" in _cover_tag(_efrm), _cover_tag(_efrm))
+ok("While everything else still is",
+   "hidden" not in _cover_tag(_ofrm), _cover_tag(_ofrm))
+ok("And the sections number themselves, so nothing is left at a gap",
+   "1. Basics" not in _efrm and "<h2>Basics</h2>" in _efrm
+   and "counter(studio-step)" in _css)
+_bcover = BytesIO()
+_PILCover.new("RGB", (300, 400), (90, 49, 88)).save(_bcover, format="JPEG")
+_bcover.seek(0)
+r = admin.post(
+    f"/admin/products/{_bundle_id}/edit",
+    data={"title": "The Whole Shelf", "track": "healing", "types": ["bundle"],
+          "slug": "the-whole-shelf", "promise": "All of it, together.",
+          "price": "29.00", "stripe": "price_whole_shelf", "live": "1",
+          "cover": (_bcover, "cover.jpg")},
+    content_type="multipart/form-data", follow_redirects=True)
+with app.app_context():
+    ok("And a cover sent for one anyway isn't kept",
+       db.session.get(Product, _bundle_id).cover_url is None,
+       f"got {db.session.get(Product, _bundle_id).cover_url}")
 with app.app_context():
     _b = db.session.get(Product, _bundle_id)
     _b.set_bundle([_bundle_id, _one_id, _one_id, 0, "x"])
@@ -9187,6 +9214,13 @@ ok("Each one links to its own page",
    "/courses/the-boundaries-pages" in _pd and "/courses/saying-it-out-loud" in _pd)
 ok("The facts card counts them as what is inside",
    "2 products, each one whole" in _pd)
+ok("And the page carries no cover tile over the top of all that",
+   "pd-hero__cover" not in _pd
+   and "pd-hero__cover" in client.get(
+       "/courses/the-boundaries-pages").get_data(as_text=True))
+ok("Stacked on a phone the title leads and the price waits below",
+   "pd-layout--nocover" in _pd
+   and ".pd-layout--nocover .pd-layout__aside { order: 2" in _css)
 _cg = _catalogue("/courses")
 ok("The catalogue's bundle slot lists what is in it, not the write-up",
    "The Whole Shelf" in _cg
