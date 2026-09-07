@@ -916,7 +916,8 @@ def product_new():
         db.session.flush()
         _save_module_files(product, request.form, request.files, module_numbers)
         cover = request.files.get("cover")
-        if cover and getattr(cover, "filename", None):
+        if (cover and getattr(cover, "filename", None)
+                and not product.has_type("bundle")):
             try:
                 product.cover_url = save_cover(product.id, cover)
             except CoverError as exc:
@@ -1035,7 +1036,9 @@ def product_edit(product_id):
         _save_module_files(product, request.form, request.files, module_numbers)
         _save_asset_lessons(product, request.form)
         cover = request.files.get("cover")
-        if cover and getattr(cover, "filename", None):
+        # Nothing shows a bundle's cover, so nothing is kept for one either.
+        if (cover and getattr(cover, "filename", None)
+                and not product.has_type("bundle")):
             try:
                 product.cover_url = save_cover(product.id, cover)
             except CoverError as exc:

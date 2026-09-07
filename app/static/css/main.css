@@ -8981,15 +8981,18 @@ a.at-handle:hover { text-decoration: underline; }
   margin: 0 0 6px; text-align: center; font-size: clamp(28px, 4vw, 36px); color: #3d1431;
 }
 .cg-bundles__lede {
-  margin: 0 0 22px; text-align: center; color: var(--ink-soft); font-size: 15px;
+  /* Paragraphs are capped at 68ch site-wide, so this one needs the auto
+     margins or its centred text sits left of the heading above it. */
+  margin: 0 auto 22px; text-align: center; color: var(--ink-soft); font-size: 15px;
 }
+/* One bundle on its own sits in the middle rather than hanging off the left;
+   several share the row in even columns, and a last row that doesn't fill
+   centres too. */
 .cg-bundles__grid {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
-}
-@media (max-width: 800px) {
-  .cg-bundles__grid { grid-template-columns: 1fr; }
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 20px;
 }
 .cg-bundle {
+  flex: 1 1 320px; min-width: 0; max-width: 560px;
   border-radius: 16px; padding: 26px 24px; color: #fff;
   box-shadow: 0 8px 28px rgba(43, 38, 34, 0.12);
 }
@@ -9649,6 +9652,9 @@ a.pd-bundle__title:hover { text-decoration: underline; }
     position: static; max-width: 320px; margin: 0 auto 8px;
     width: 100%;
   }
+  /* A bundle has no cover, and stacked on a phone that would put a price
+     above the title — asking to buy before saying what this is. */
+  .pd-layout--nocover .pd-layout__aside { order: 2; margin: 8px auto 0; }
   .pd-body-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 760px) {
@@ -9742,6 +9748,14 @@ a.pd-bundle__title:hover { text-decoration: underline; }
   margin-bottom: 0;
 }
 .studio-section > .studio-section__head:hover h2 { color: var(--plum); }
+/* The product form counts its own sections, so one that doesn't apply to this
+   kind of product — a cover on a bundle — can be left out without leaving a
+   hole in the numbering, whether it goes at page load or on a tick. */
+.studio-product-form { counter-reset: studio-step; }
+.studio-product-form .studio-section > .studio-section__head h2::before {
+  counter-increment: studio-step;
+  content: counter(studio-step) ". ";
+}
 /* A module or lesson keeps its name on show and folds the rest away. */
 .studio-fold { display: contents; }
 .studio-modules__head {

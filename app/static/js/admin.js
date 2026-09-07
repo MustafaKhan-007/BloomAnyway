@@ -1179,18 +1179,18 @@
      Ticking the kind is what makes the picker relevant, so it appears then
      rather than sitting open on every product. The ticks inside it are left
      in the form when it is hidden: unticking BUNDLE to look at something and
-     ticking it back must not empty the bundle out. */
+     ticking it back must not empty the bundle out.
+     A cover goes the other way: the products inside carry their own, and a
+     bundle's is never shown anywhere, so that section steps aside. */
   (function () {
     var row = document.querySelector("[data-bundle-pick]");
-    if (!row) return;
+    var cover = document.querySelector("[data-cover-section]");
+    if (!row && !cover) return;
     var tick = document.querySelector('input[name="types"][value="bundle"]');
     if (!tick) return;
     tick.addEventListener("change", function () {
-      if (tick.checked) {
-        row.removeAttribute("hidden");
-      } else {
-        row.setAttribute("hidden", "");
-      }
+      if (row) row.hidden = !tick.checked;
+      if (cover) cover.hidden = tick.checked;
     });
   })();
 

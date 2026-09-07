@@ -35,11 +35,16 @@
       <a href="{{ url_for('main.courses', lane=lane if lane in ('healing','building') else none) }}">&larr; Back to Courses &amp; Guides</a>
     </p>
 
-    <div class="pd-layout">
+    <div class="pd-layout{{ ' pd-layout--nocover' if product.has_type('bundle') }}">
       <aside class="pd-layout__aside">
+        {# A bundle has no cover of its own: what it holds is shown further
+           down, each product with its own name and price, and a flower tile
+           over the top of that only says the title twice. #}
+        {% if not product.has_type('bundle') %}
         <div class="pd-hero__cover">
           {{ bloom_cover(product.title, product.kind_short(), cover, product.cover_url or none) }}
         </div>
+        {% endif %}
         <div class="pd-hero__buy">
           {% if product.has_promo() %}
           <div class="pd-hero__price">
