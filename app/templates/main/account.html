@@ -553,9 +553,16 @@
               </a>
               {% endif %}
               {% if not can_read %}
+              {% set held = catalog.bundle_products() if catalog else [] %}
               <p class="field-help lib-card__wait">
                 {% if not catalog %}
                 This course has been taken down.
+                {% elif held %}
+                {# A bundle is the receipt, not the reading: everything it
+                   bought is on this shelf under its own name. #}
+                This bundle opened {{ held|length }} product{{ '' if held|length == 1 else 's' }}
+                for you — {{ held|map(attribute='title')|join(', ') }}. Each one
+                is on this shelf on its own.
                 {% else %}
                 Linked to your account — upload the reading file in Studio → Courses &amp; Guides to open it here.
                 {% endif %}
