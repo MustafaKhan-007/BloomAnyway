@@ -6694,7 +6694,7 @@ with app.app_context():
         module_index=1, sort_order=97)
     db.session.add(_junk)
     db.session.commit()
-    ok("One that won't draw keeps its file and stays a download",
+    ok("One that won't draw keeps the file it came as",
        not _assets_svc.redraw(_junk) and _junk.kind == "other"
        and _junk.filename == "not-really.pptx")
     db.session.delete(_junk)
@@ -6781,6 +6781,82 @@ with app.app_context():
         if (_a.filename or "").startswith("posting-deck"):
             _assets_svc.delete_file(_a)
             db.session.delete(_a)
+    db.session.commit()
+
+# --- a course is read here, not handed over ----------------------------------
+# Everything a buyer opens is streamed to be shown, never to be kept: the
+# reader has nothing that says Download, the file route only ever answers
+# "inline", and the players don't offer to save what they are playing.
+_rbody = drip_client.get(f"/account/courses/{drip_purchase_id}").get_data(as_text=True)
+ok("Nothing in the reader offers to hand the file over",
+   ">Download<" not in _rbody and "Open download" not in _rbody
+   and "download=1" not in _rbody and "data-download-url" not in _rbody,
+   "a download is still on offer")
+r = drip_client.get(
+    f"/account/courses/{drip_purchase_id}/file/{mod1_asset_id}")
+ok("The file itself is served to be shown",
+   r.status_code == 200
+   and r.headers.get("Content-Disposition", "").startswith("inline"),
+   r.headers.get("Content-Disposition"))
+r = drip_client.get(
+    f"/account/courses/{drip_purchase_id}/file/{mod1_asset_id}?download=1")
+ok("And asking it nicely for an attachment gets a page to read anyway",
+   r.status_code == 200
+   and r.headers.get("Content-Disposition", "").startswith("inline")
+   and "attachment" not in (r.headers.get("Content-Disposition") or ""),
+   r.headers.get("Content-Disposition"))
+
+with app.app_context():
+    _clip = ProductAsset(
+        product_id=drip_prod_id, filename="lesson.mp4", kind="video",
+        mime="video/mp4", size=8, data=b"\x00\x00\x00\x18ftypmp42",
+        module_index=1, sort_order=95)
+    db.session.add(_clip)
+    db.session.commit()
+    _clip_id = _clip.id
+_vbody = drip_client.get(
+    f"/account/courses/{drip_purchase_id}?module=1&item={_clip_id}").get_data(as_text=True)
+ok("A lesson video plays without offering to keep it",
+   'controlslist="nodownload"' in _vbody and "data-no-contextmenu" in _vbody,
+   "the player still has a save button in it")
+
+# A file nothing here can draw is the one case with no page to show. It opens
+# in a tab of its own rather than being handed over, and nobody is left
+# holding something they bought and cannot reach.
+with app.app_context():
+    _odd = ProductAsset(
+        product_id=drip_prod_id, filename="mystery.bin", kind="other",
+        mime="application/octet-stream", size=4, data=b"junk",
+        module_index=1, sort_order=94)
+    db.session.add(_odd)
+    db.session.commit()
+    _odd_id = _odd.id
+_xbody = drip_client.get(
+    f"/account/courses/{drip_purchase_id}?module=1&item={_odd_id}").get_data(as_text=True)
+ok("What the reader can't draw is opened, not downloaded",
+   "Open it in a new tab" in _xbody
+   and "opens best as a download" not in _xbody
+   and f"/file/{_odd_id}?download" not in _xbody, "still a download button")
+with app.app_context():
+    for _gone in (_clip_id, _odd_id):
+        _row = db.session.get(ProductAsset, _gone)
+        if _row is not None:
+            db.session.delete(_row)
+    db.session.commit()
+
+# The old shop link predates the reader. It still answers for a purchase with
+# nothing here to read, and stands down for one that has pages of its own.
+with app.app_context():
+    from app.services import course_reader as _reader_svc
+    _dripbuy = db.session.get(ShopPurchase, drip_purchase_id)
+    _dripbuy.file_key = "shop-guide.pdf"
+    db.session.commit()
+    ok("A purchase with pages here counts as readable on the site",
+       _reader_svc.reads_on_site(_dripbuy))
+r = drip_client.get(f"/account/shop/{drip_purchase_id}/download")
+ok("So the old download link stops answering for it", r.status_code == 404)
+with app.app_context():
+    db.session.get(ShopPurchase, drip_purchase_id).file_key = None
     db.session.commit()
 
 # Modules and lessons can be reordered and removed. What a row holds is pinned

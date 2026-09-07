@@ -1075,12 +1075,23 @@ def shop_restore(purchase_id):
 @bp.route("/account/shop/<int:purchase_id>/download")
 @login_required
 def shop_download(purchase_id):
-    """Serve a self-hosted shop file only to the purchaser who owns it."""
+    """Hand over a file only where the site has no way to show it.
+
+    This predates the reader, and is all a purchase from back then has. Once
+    the same thing can be read here, it is read here: a course is not handed
+    out as a file, so the old link stops answering for it.
+    """
+    from ..services import course_reader as reader_svc
+
     purchase = db.session.get(ShopPurchase, purchase_id)
     if (purchase is None
             or purchase.user_id != current_user.id
             or purchase.status != "linked"
             or not purchase.file_key):
+        abort(404)
+    if reader_svc.reads_on_site(purchase):
+        log.info("shop download %s refused: it has pages to read here",
+                 purchase_id)
         abort(404)
     # file_key is a basename only — never allow path traversal
     key = os.path.basename(purchase.file_key.strip())
@@ -1144,14 +1155,16 @@ def course_reader(purchase_id):
     progress = reader_svc.get_progress(current_user.id, purchase.id)
     bookmarks = progress.bookmarks() if progress else []
     resuming = progress is not None and (progress.module_index or 0) == active_module
-    download_url = None
-    if asset:
-        download_url = url_for(
-            "main.course_file", purchase_id=purchase.id, asset_id=asset.id, download=1)
-    elif purchase.download_url:
-        download_url = purchase.download_url
-    elif purchase.file_key:
-        download_url = url_for("main.shop_download", purchase_id=purchase.id)
+    # A course is read here and nowhere else — nothing on this page hands the
+    # file over. The one link left is for a purchase from before the reader
+    # existed, which has no pages of its own to open: taking that away would
+    # leave the buyer with nothing at all rather than with less.
+    offsite_url = None
+    if asset is None:
+        if purchase.download_url:
+            offsite_url = purchase.download_url
+        elif purchase.file_key:
+            offsite_url = url_for("main.shop_download", purchase_id=purchase.id)
     return render_template(
         "main/course_reader.html",
         purchase=purchase,
@@ -1168,7 +1181,7 @@ def course_reader(purchase_id):
                      and product is not None and product.is_dripped()),
         progress=progress,
         bookmarks=bookmarks,
-        download_url=download_url,
+        offsite_url=offsite_url,
         start_page=(progress.current_page if resuming and progress.current_page else 1),
         start_percent=(progress.percent if resuming else 0),
     )
@@ -1202,8 +1215,6 @@ def course_file(purchase_id, asset_id):
     from ..services import assets as asset_svc
 
     raw_name = (asset.filename or "file").replace('"', "")
-    as_download = (request.args.get("download") or "").strip().lower() in ("1", "true", "yes")
-    disposition = "attachment" if as_download else "inline"
     mime = asset.mime or "application/octet-stream"
 
     if asset.body is not None and not asset.disk_name:
@@ -1221,7 +1232,10 @@ def course_file(purchase_id, asset_id):
     else:  # uploaded before files moved to the disk
         resp = Response(bytes(asset.data or b""), mimetype=mime)
         resp.headers["Accept-Ranges"] = "none"
-    resp.headers["Content-Disposition"] = f'{disposition}; filename="{raw_name}"'
+    # Always inline. This used to answer ?download=1 with an attachment, which
+    # was the Download in the reader's menu; a course is for reading on the
+    # site, so the header says show it, whoever asks and however they ask.
+    resp.headers["Content-Disposition"] = f'inline; filename="{raw_name}"'
     # A ranged read answers with a slice of the file, not the file. Telling the
     # browser to keep that slice for five minutes let it serve the fragment back
     # for a later whole-file request, which a PDF reader sees as a truncated,
