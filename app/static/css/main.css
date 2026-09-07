@@ -1108,6 +1108,20 @@ img.avatar.avatar--photo {
 .note-bell__item.is-unread > span { color: var(--plum); }
 .note-bell__item time { font-size: 12px; color: var(--ink-soft); }
 .note-bell__item.is-unread a { color: var(--plum); }
+/* On a phone the bell isn't at the edge of the screen — the menu button is —
+   so a panel hung off its right corner runs off the left side and loses its
+   first inch. Below the width where that starts to bite, it hangs off the nav
+   instead and spans the screen, which also gives the lines room to sit on. */
+@media (max-width: 760px) {
+  .note-bell { position: static; }
+  .site-header .nav { position: relative; }
+  .note-bell__panel {
+    left: 12px; right: 12px; width: auto;
+    top: calc(100% + 6px);
+  }
+  .note-bell__list { max-height: min(58vh, 420px); }
+  .note-bell__item { padding: 11px 4px; }
+}
 
 /* Soft spinning sunflower — petals sway on hinges while it turns */
 .page-loader {
