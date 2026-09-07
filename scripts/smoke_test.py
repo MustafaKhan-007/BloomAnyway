@@ -9098,6 +9098,246 @@ with app.app_context():
        db.session.get(User, _shelf_id).membership == "none",
        db.session.get(User, _shelf_id).membership)
 
+# --- a bundle: one price at the counter, several products on the shelf ------
+# "Bundle" used to be a badge on a product and nothing more. Now it holds a
+# list of other products, and paying for it has to put every one of them in
+# My Space on its own — own reader, own progress, own free months.
+admin.post("/admin/products/new", data=_MultiDict([
+    ("title", "The Boundaries Pages"), ("track", "healing"), ("types", "workbook"),
+    ("promise", "Twenty pages to write in."), ("price", "12.00"),
+    ("stripe", "price_part_one"), ("live", "1"),
+    ("asset", (BytesIO(_pdf), "pages.pdf")),
+]), content_type="multipart/form-data", follow_redirects=True)
+admin.post("/admin/products/new", data=_MultiDict([
+    ("title", "Saying It Out Loud"), ("track", "healing"), ("types", "course"),
+    ("promise", "Four weeks of practice."), ("price", "24.00"),
+    ("stripe", "price_part_two"), ("live", "1"),
+    ("mod1_title", "Week one"), ("mod1_lesson_title", "The first sentence"),
+    ("mod1_lesson1_file", (BytesIO(_pdf), "week-one.pdf")),
+]), content_type="multipart/form-data", follow_redirects=True)
+with app.app_context():
+    _one = Product.query.filter_by(slug="the-boundaries-pages").first()
+    _two = Product.query.filter_by(slug="saying-it-out-loud").first()
+    ok("Two ordinary products to put in one",
+       _one is not None and _two is not None
+       and _one.status == "published" and _two.status == "published")
+    _one_id, _two_id = _one.id, _two.id
+
+r = admin.post("/admin/products/new", data=_MultiDict([
+    ("title", "The Whole Shelf"), ("track", "healing"), ("types", "bundle"),
+    ("promise", "Both of them, together."), ("price", "29.00"),
+    ("stripe", "price_whole_shelf"), ("live", "1"),
+    ("bundle_pick", "1"), ("bundle", str(_one_id)), ("bundle", str(_two_id)),
+]), follow_redirects=True)
+with app.app_context():
+    _bundle = Product.query.filter_by(slug="the-whole-shelf").first()
+    ok("Studio saves which products a bundle hands over",
+       _bundle is not None and _bundle.bundle_ids() == [_one_id, _two_id],
+       f"got {_bundle.bundle_ids() if _bundle else None}")
+    ok("With its own price and its own Stripe price ID",
+       _bundle.price_cents == 2900
+       and _bundle.stripe_price_id == "price_whole_shelf")
+    ok("And knows what the contents come to bought one at a time",
+       _bundle.bundle_value_display() == "$36"
+       and _bundle.bundle_saving_display() == "$7",
+       f"got {_bundle.bundle_value_display()} / {_bundle.bundle_saving_display()}")
+    _bundle_id = _bundle.id
+
+_efrm = admin.get(f"/admin/products/{_bundle_id}/edit").get_data(as_text=True)
+
+
+def _bundle_tick(page, product_id):
+    """The picker's checkbox for one product, and whether it came back ticked."""
+    found = re.search(rf'name="bundle" value="{product_id}"([^>]*)>', page)
+    return bool(found), ("checked" in found.group(1) if found else False)
+
+
+def _picker_tag(page):
+    return page.split("bundle-pick-row", 1)[-1].split(">", 1)[0]
+
+
+ok("The picker comes back with those two ticked and nothing else",
+   _bundle_tick(_efrm, _one_id) == (True, True)
+   and _bundle_tick(_efrm, _two_id) == (True, True)
+   and _bundle_tick(_efrm, _multi_id) == (True, False),
+   f"got {_bundle_tick(_efrm, _one_id)} / {_bundle_tick(_efrm, _two_id)}")
+ok("It doesn't offer the bundle itself to put inside itself",
+   not _bundle_tick(_efrm, _bundle_id)[0])
+ok("And it is open, since this is already a bundle",
+   "hidden" not in _picker_tag(_efrm), _picker_tag(_efrm))
+ok("On anything else it waits until BUNDLE is ticked",
+   "hidden" in _picker_tag(
+       admin.get(f"/admin/products/{_one_id}/edit").get_data(as_text=True)))
+with app.app_context():
+    _b = db.session.get(Product, _bundle_id)
+    _b.set_bundle([_bundle_id, _one_id, _one_id, 0, "x"])
+    ok("A bundle can't hold itself, or the same thing twice",
+       _b.bundle_ids() == [_one_id], f"got {_b.bundle_ids()}")
+    _b.set_bundle([_one_id, _two_id])
+    db.session.commit()
+
+_pd = client.get("/courses/the-whole-shelf").get_data(as_text=True)
+ok("The product page names everything in the bundle",
+   "Everything in this bundle" in _pd and "The Boundaries Pages" in _pd
+   and "Saying It Out Loud" in _pd)
+ok("And says what buying them together saves",
+   "One at a time they come to $36" in _pd and "a saving of $7" in _pd,
+   "no saving line")
+ok("Each one links to its own page",
+   "/courses/the-boundaries-pages" in _pd and "/courses/saying-it-out-loud" in _pd)
+ok("The facts card counts them as what is inside",
+   "2 products, each one whole" in _pd)
+_cg = _catalogue("/courses")
+ok("The catalogue's bundle slot lists what is in it, not the write-up",
+   "The Whole Shelf" in _cg
+   and "The Boundaries Pages · Saying It Out Loud" in _cg, "no contents on the card")
+ok("And a bundle still stays out of the ordinary lane grid",
+   "The Whole Shelf" not in _cg.split('class="cg-bundles"', 1)[0]
+   and "The Boundaries Pages" in _cg.split('class="cg-bundles"', 1)[0],
+   "the bundle is in the grid with the things inside it")
+
+# Paying for it once opens each of them separately.
+with app.app_context():
+    _bb = User(email="bundler@example.com", display_name="Bundle Buyer",
+               email_verified_at=utcnow())
+    _bb.set_password(USER_PW)
+    db.session.add(_bb)
+    db.session.commit()
+    _bb_id = _bb.id
+_shelf_pay = _payment_payload("9500", "bundler@example.com", "price_whole_shelf",
+                             amount=2900, product_name="The Whole Shelf")
+client.post("/webhooks/stripe", data=_shelf_pay, headers=_stripe_headers(_shelf_pay))
+with app.app_context():
+    _rows = (_Shop.query.filter_by(user_id=_bb_id)
+             .order_by(_Shop.id).all())
+    ok("One payment, and everything inside is theirs",
+       [r.product_name for r in _rows]
+       == ["The Whole Shelf", "The Boundaries Pages", "Saying It Out Loud"],
+       f"got {[r.product_name for r in _rows]}")
+    ok("Each one linked, and matched to its own catalogue row",
+       all(r.status == "linked" for r in _rows)
+       and _rows[1].variant_id == "price_part_one"
+       and _rows[2].variant_id == "price_part_two")
+    ok("Carrying the day the bundle was paid for, so a drip counts from there",
+       all(r.purchased_at == _rows[0].purchased_at for r in _rows))
+    _bundle_purchase_id = _rows[0].id
+    _two_purchase_id = _rows[2].id
+
+# The webhook arriving twice is the normal case, not the exception.
+client.post("/webhooks/stripe", data=_shelf_pay, headers=_stripe_headers(_shelf_pay))
+with app.app_context():
+    ok("A replayed payment doesn't hand it all over again",
+       _Shop.query.filter_by(user_id=_bb_id).count() == 3,
+       f"got {_Shop.query.filter_by(user_id=_bb_id).count()} rows")
+
+bundle_client = app.test_client()
+bundle_client.post("/login", data={"email": "bundler@example.com",
+                                   "password": USER_PW})
+def _shelf():
+    """The library itself. The bell in the header names products too."""
+    page = bundle_client.get("/account?tab=saved").get_data(as_text=True)
+    return page.split("</header>", 1)[-1]
+
+
+_lib = _shelf()
+ok("My space shows the products, not just the receipt",
+   "The Boundaries Pages" in _lib and "Saying It Out Loud" in _lib)
+ok("And the bundle card says what it opened rather than asking for a file",
+   "This bundle opened 2 products" in _lib
+   and "upload the reading file" not in _lib, "the bundle card reads as broken")
+r = bundle_client.get(f"/account/courses/{_two_purchase_id}")
+ok("The course inside opens in the reader on its own",
+   r.status_code == 200 and "Saying It Out Loud" in r.get_data(as_text=True))
+
+# Adding to a bundle that has already sold catches its buyers up.
+admin.post("/admin/products/new", data={
+    "title": "The Quiet Month", "track": "healing", "type": "guide",
+    "promise": "Thirty days of not explaining yourself.", "price": "18.00",
+    "stripe": "price_quiet_month", "live": "1",
+    "perk_tier": "creator", "perk_months": "1",
+}, follow_redirects=True)
+with app.app_context():
+    _three_id = Product.query.filter_by(slug="the-quiet-month").first().id
+r = admin.post(f"/admin/products/{_bundle_id}/edit", data=_MultiDict([
+    ("title", "The Whole Shelf"), ("track", "healing"), ("types", "bundle"),
+    ("slug", "the-whole-shelf"),
+    ("promise", "Both of them, together."), ("price", "29.00"),
+    ("stripe", "price_whole_shelf"), ("live", "1"),
+    ("bundle_pick", "1"), ("bundle", str(_one_id)), ("bundle", str(_two_id)),
+    ("bundle", str(_three_id)),
+]), follow_redirects=True)
+ok("Studio says how many people it caught up",
+   "Opened 1 more product for people who had already bought this bundle"
+   in r.get_data(as_text=True), flashes(r))
+with app.app_context():
+    _names = [r.product_name for r in
+              _Shop.query.filter_by(user_id=_bb_id).order_by(_Shop.id).all()]
+    ok("Somebody who bought it last week gets what was added today",
+       "The Quiet Month" in _names, f"got {_names}")
+    ok("Including the free months that product carries",
+       db.session.get(User, _bb_id).membership == "creator",
+       db.session.get(User, _bb_id).membership)
+r = admin.post(f"/admin/products/{_bundle_id}/edit", data=_MultiDict([
+    ("title", "The Whole Shelf"), ("track", "healing"), ("types", "bundle"),
+    ("slug", "the-whole-shelf"), ("promise", "Both of them, together."),
+    ("price", "29.00"), ("stripe", "price_whole_shelf"), ("live", "1"),
+    ("bundle_pick", "1"), ("bundle", str(_one_id)), ("bundle", str(_two_id)),
+    ("bundle", str(_three_id)),
+]), follow_redirects=True)
+ok("Saving the same bundle again hands nothing over twice",
+   "who had already bought this bundle" not in r.get_data(as_text=True),
+   flashes(r))
+with app.app_context():
+    ok("So it stays at one row each",
+       _Shop.query.filter_by(user_id=_bb_id).count() == 4,
+       f"got {_Shop.query.filter_by(user_id=_bb_id).count()}")
+
+# One payment, so one refund: what it opened goes back with it.
+_shelf_refund = _payment_payload("9500", "bundler@example.com",
+                                 "price_whole_shelf", event="refund.succeeded",
+                                 amount=2900, product_name="The Whole Shelf")
+client.post("/webhooks/stripe", data=_shelf_refund,
+            headers=_stripe_headers(_shelf_refund))
+with app.app_context():
+    _rows = _Shop.query.filter_by(user_id=_bb_id).all()
+    ok("Refunding the bundle takes back everything it opened",
+       all(r.status == "refunded" for r in _rows),
+       f"got {[(r.product_name, r.status) for r in _rows]}")
+    ok("And the free months inside it go too",
+       db.session.get(User, _bb_id).membership == "none",
+       db.session.get(User, _bb_id).membership)
+_lib = _shelf()
+ok("So none of it is left on their shelf",
+   "Saying It Out Loud" not in _lib and "The Quiet Month" not in _lib
+   and "The Boundaries Pages" not in _lib
+   and "lib-card" not in _lib, "something survived the refund")
+
+# Studio taking a bundle off a member takes the contents with it.
+with app.app_context():
+    _other = User(email="secondbundle@example.com", display_name="Second Buyer",
+                  email_verified_at=utcnow())
+    _other.set_password(USER_PW)
+    db.session.add(_other)
+    db.session.commit()
+    _other_id = _other.id
+_pay2 = _payment_payload("9501", "secondbundle@example.com", "price_whole_shelf",
+                        amount=2900, product_name="The Whole Shelf")
+client.post("/webhooks/stripe", data=_pay2, headers=_stripe_headers(_pay2))
+with app.app_context():
+    _rows = _Shop.query.filter_by(user_id=_other_id).order_by(_Shop.id).all()
+    ok("The next buyer gets the bundle as it stands now", len(_rows) == 4,
+       f"got {[r.product_name for r in _rows]}")
+    _their_bundle_id = _rows[0].id
+r = admin.post(f"/admin/members/{_other_id}/owns/{_their_bundle_id}/remove",
+               follow_redirects=True)
+ok("Studio says the contents went with the bundle",
+   "The 3 products that bundle opened went with it" in r.get_data(as_text=True),
+   flashes(r))
+with app.app_context():
+    ok("And nothing of it is left behind",
+       _Shop.query.filter_by(user_id=_other_id).count() == 0,
+       f"got {_Shop.query.filter_by(user_id=_other_id).count()} rows")
+
 # --- the stylesheet is still readable text ---------------------------------
 # Twice now an edit has been saved with UTF-8 read back as Latin-1, which turns
 # a "–" in a `content:` rule into "â" and two boxes on the page. It is invisible
