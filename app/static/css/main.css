@@ -9742,6 +9742,14 @@ a.pd-bundle__title:hover { text-decoration: underline; }
   margin-bottom: 0;
 }
 .studio-section > .studio-section__head:hover h2 { color: var(--plum); }
+/* The product form counts its own sections, so one that doesn't apply to this
+   kind of product — a cover on a bundle — can be left out without leaving a
+   hole in the numbering, whether it goes at page load or on a tick. */
+.studio-product-form { counter-reset: studio-step; }
+.studio-product-form .studio-section > .studio-section__head h2::before {
+  counter-increment: studio-step;
+  content: counter(studio-step) ". ";
+}
 /* A module or lesson keeps its name on show and folds the rest away. */
 .studio-fold { display: contents; }
 .studio-modules__head {
