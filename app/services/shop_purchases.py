@@ -149,6 +149,13 @@ def upsert_shop_purchase(
         else:
             row.status = "refunded"
         sync_membership_perk(row, downgrade=True)
+        # One payment, so one refund: everything a bundle handed over goes
+        # back with it rather than staying on the shelf unpaid for.
+        from . import bundles
+        for child in bundles.granted_from(row):
+            if child.status != "refunded":
+                child.status = "refunded"
+                sync_membership_perk(child, downgrade=True)
         return row
 
     # Idempotency: keep an existing non-refunded row, but still try to link
@@ -167,6 +174,7 @@ def upsert_shop_purchase(
                 row.user_id = user.id
                 row.status = "linked"
                 sync_membership_perk(row)
+        _open_bundle(row)
         return row
 
     user = (User.query
@@ -186,7 +194,20 @@ def upsert_shop_purchase(
     db.session.add(row)
     if user:
         sync_membership_perk(row)
+    _open_bundle(row)
     return row
+
+
+def _open_bundle(row: ShopPurchase) -> None:
+    """If this bought a bundle, put what was inside it on the shelf too."""
+    from . import bundles
+    try:
+        bundles.grant_contents(row)
+    except Exception:
+        # A bundle that can't be unpacked must not lose the payment that has
+        # already gone through; the owner can re-save the bundle to backfill.
+        log.exception("bundle: could not open purchase %s",
+                      getattr(row, "lemon_squeezy_order_id", None))
 
 
 def link_pending_purchases(user: User) -> int:
@@ -201,6 +222,9 @@ def link_pending_purchases(user: User) -> int:
     for row in pending:
         row.user_id = user.id
         row.status = "linked"
+    for row in pending:
+        # A bundle bought as a guest opens onto their shelf now there is one.
+        _open_bundle(row)
     for row in pending:
         # A guest checkout can carry a free membership perk with it.
         if sync_membership_perk(row):
@@ -341,6 +365,7 @@ def revoke_purchase(purchase: ShopPurchase) -> dict:
     disappears from My Space overnight. The caller commits.
     """
     from ..models import CourseProgress
+    from . import bundles
     from .social_graph import notify
 
     if purchase is None:
@@ -356,10 +381,24 @@ def revoke_purchase(purchase: ShopPurchase) -> dict:
         log.exception("purchase %s: could not check for a membership perk",
                       purchase_id)
 
-    (CourseProgress.query
-     .filter_by(shop_purchase_id=purchase_id)
-     .delete(synchronize_session=False))
-    db.session.delete(purchase)
+    # Taking back a bundle takes back what it opened. Leaving those behind
+    # would keep the whole bundle on their shelf under other names.
+    doomed = [purchase]
+    for child in bundles.granted_from(purchase):
+        doomed.append(child)
+        if not perk and user_id:
+            try:
+                from .perks import purchase_has_perk
+                perk = purchase_has_perk(child)
+            except Exception:
+                log.exception("purchase %s: could not check a bundle perk",
+                              child.id)
+    inside = len(doomed) - 1
+    for row in doomed:
+        (CourseProgress.query
+         .filter_by(shop_purchase_id=row.id)
+         .delete(synchronize_session=False))
+        db.session.delete(row)
     db.session.flush()
 
     user = db.session.get(User, user_id) if user_id else None
@@ -372,6 +411,7 @@ def revoke_purchase(purchase: ShopPurchase) -> dict:
             # to be worked out again rather than left where it was.
             from .memberships import reconcile_user
             reconcile_user(user, downgrade=True)
-    log.info("studio: purchase %s (%s) revoked from user %s",
-             purchase_id, name, user_id)
-    return {"ok": True, "name": name, "user_id": user_id, "perk": perk}
+    log.info("studio: purchase %s (%s) revoked from user %s, with %s inside",
+             purchase_id, name, user_id, inside)
+    return {"ok": True, "name": name, "user_id": user_id, "perk": perk,
+            "inside": inside}

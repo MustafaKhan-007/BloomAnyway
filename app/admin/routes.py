@@ -462,6 +462,10 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
         product.set_types(kinds)
     elif not (product.type or "").strip():
         product.type = "guide"
+    # What is in the bundle. Only read from a form that carried the picker, so
+    # nothing that posts a few fields can quietly empty a bundle out.
+    if form.get("bundle_pick"):
+        product.set_bundle(form.getlist("bundle"))
     product.category_label = (form.get("category_label") or "").strip()[:80] or None
     product.badge = (form.get("badge") or "").strip()[:30] or None
     product.promise = (form.get("promise") or "").strip()[:120] or None
@@ -972,8 +976,43 @@ def product_new():
         max_modules=MAX_MODULES,
         drip_modes=DRIP_MODES,
         product_kinds=PRODUCT_KINDS,
+        bundle_choices=_bundle_choices(),
+        bundle_held=[],
         **_upload_limits(),
     )
+
+
+def _catch_up_bundle(product: Product) -> int:
+    """Give a bundle's contents to anyone who bought it before they were added.
+
+    Adding a product to a bundle that has been selling for a month should not
+    leave the people who paid first with the smaller version of it.
+    """
+    from ..services import bundles
+
+    try:
+        opened = bundles.backfill(product)
+    except Exception:
+        log.exception("studio: could not catch up bundle %s", product.id)
+        return 0
+    if opened:
+        flash(f"Opened {opened} more product{'' if opened == 1 else 's'} for "
+              "people who had already bought this bundle.", "success")
+    return opened
+
+
+def _bundle_choices(product: Product | None = None) -> list[Product]:
+    """Everything a bundle could hold: the catalogue, bar itself and bundles.
+
+    Drafts are in the list on purpose — a bundle is usually put together
+    alongside the things going into it, and they go live together.
+    """
+    me = getattr(product, "id", None)
+    rows = (Product.query
+            .filter(Product.status != "archived")
+            .order_by(Product.track, Product.sort_order, Product.title)
+            .all())
+    return [p for p in rows if p.id != me and not p.has_type("bundle")]
 
 
 @bp.route("/products/<int:product_id>/edit", methods=["GET", "POST"])
@@ -1021,6 +1060,7 @@ def product_edit(product_id):
         else:
             flash("Product saved.", "success")
         _warn_test_not_live(product)
+        _catch_up_bundle(product)
         db.session.commit()
         _save_challenge_mark(product, request.form)
         return redirect(url_for("admin.product_edit", product_id=product.id))
@@ -1052,6 +1092,8 @@ def product_edit(product_id):
         max_modules=MAX_MODULES,
         drip_modes=DRIP_MODES,
         product_kinds=PRODUCT_KINDS,
+        bundle_choices=_bundle_choices(product),
+        bundle_held=product.bundle_ids(),
         blockers=product.publish_blockers(),
         **_upload_limits(),
     )
@@ -2638,6 +2680,10 @@ def member_purchase_remove(user_id, purchase_id):
     db.session.commit()
     note = (" Their free membership from it was recalculated too."
             if result.get("perk") else "")
+    inside = result.get("inside") or 0
+    if inside:
+        note = (f" The {inside} product{'' if inside == 1 else 's'} that bundle "
+                "opened went with it.") + note
     flash(f"Removed “{result['name']}” from {member.public_name()}'s My Space. "
           f"They've been told.{note}", "success")
     return redirect(back)
