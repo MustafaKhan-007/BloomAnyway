@@ -102,6 +102,41 @@
     </div>
   </section>
 
+  {% set all_bundles = (bundles.healing or []) + (bundles.building or []) %}
+  {% if all_bundles %}
+  <section class="cg-bundles">
+    <div class="container">
+      <h2>Get everything at once</h2>
+      <p class="cg-bundles__lede">Save when you buy several at a time.</p>
+      <div class="cg-bundles__grid">
+        {% for b in all_bundles %}
+        {% set held = b.bundle_products() %}
+        <article class="cg-bundle cg-bundle--{{ 'healing' if b.track == 'healing' else 'building' }}">
+          <h3>{{ b.title }}</h3>
+          {# What is actually in it, named. The write-up only got a look-in
+             before there was a list to print. #}
+          <p class="cg-bundle__items">
+            {%- if held %}{{ held|map(attribute='title')|join(' · ') }}
+            {%- else %}{{ b.promise or b.description_md or '' }}{% endif -%}
+          </p>
+          <div class="cg-bundle__foot">
+            <p class="cg-bundle__price">
+              <strong>{{ b.price_display() }}</strong>
+              {% if b.shows_compare_at() %}<s>{{ b.compare_at_display() }}</s>{% endif %}
+              {% if b.bundle_saving_display() %}
+              <span class="cg-bundle__save">{{ b.bundle_saving_display() }} off buying them apart</span>
+              {% endif %}
+            </p>
+            <a class="btn cg-bundle__btn{{ ' cg-bundle__btn--gold' if b.track != 'healing' }}"
+               href="{{ url_for('main.course_detail', slug=b.slug) }}">View {{ b.title }} &rarr;</a>
+          </div>
+        </article>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
   <section class="cg-lanes">
     <div class="container cg-lanes__grid{% if lane %} cg-lanes__grid--focus-{{ lane }}{% endif %}">
       {# -------- Healing / Ayesha -------- #}
@@ -206,39 +241,5 @@
     </div>
   </section>
 
-  {% set all_bundles = (bundles.healing or []) + (bundles.building or []) %}
-  {% if all_bundles %}
-  <section class="cg-bundles">
-    <div class="container">
-      <h2>Get everything at once</h2>
-      <p class="cg-bundles__lede">Save when you buy several at a time.</p>
-      <div class="cg-bundles__grid">
-        {% for b in all_bundles %}
-        {% set held = b.bundle_products() %}
-        <article class="cg-bundle cg-bundle--{{ 'healing' if b.track == 'healing' else 'building' }}">
-          <h3>{{ b.title }}</h3>
-          {# What is actually in it, named. The write-up only got a look-in
-             before there was a list to print. #}
-          <p class="cg-bundle__items">
-            {%- if held %}{{ held|map(attribute='title')|join(' · ') }}
-            {%- else %}{{ b.promise or b.description_md or '' }}{% endif -%}
-          </p>
-          <div class="cg-bundle__foot">
-            <p class="cg-bundle__price">
-              <strong>{{ b.price_display() }}</strong>
-              {% if b.shows_compare_at() %}<s>{{ b.compare_at_display() }}</s>{% endif %}
-              {% if b.bundle_saving_display() %}
-              <span class="cg-bundle__save">{{ b.bundle_saving_display() }} off buying them apart</span>
-              {% endif %}
-            </p>
-            <a class="btn cg-bundle__btn{{ ' cg-bundle__btn--gold' if b.track != 'healing' }}"
-               href="{{ url_for('main.course_detail', slug=b.slug) }}">View {{ b.title }} &rarr;</a>
-          </div>
-        </article>
-        {% endfor %}
-      </div>
-    </div>
-  </section>
-  {% endif %}
 </div>
 {% endblock %}

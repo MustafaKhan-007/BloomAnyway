@@ -496,6 +496,12 @@
             <div class="lib-card__top">
               <div class="lib-card__intro">
                 <h3 class="lib-card__title">{{ item.product_name }}</h3>
+                {% set from_bundle = came_in_bundle.get(item.id) if came_in_bundle else none %}
+                {% if from_bundle %}
+                {# One payment bought several of these; the card says which,
+                   so a shelf that grew by three overnight explains itself. #}
+                <p class="lib-card__bundle">Included in {{ from_bundle }}</p>
+                {% endif %}
                 {% if put_away %}
                 <p class="lib-card__away">Removed by you</p>
                 {% endif %}
