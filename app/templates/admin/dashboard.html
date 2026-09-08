@@ -148,6 +148,19 @@
         <button type="submit" class="btn btn--secondary btn--sm">Import session</button>
       </form>
       {% endif %}
+      <form method="post" action="{{ url_for('admin.resend_receipt') }}"
+            style="margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label class="field-help" for="resend-receipt-email" style="margin:0;">Receipt missing?</label>
+        <input id="resend-receipt-email" name="email" type="email"
+               placeholder="they paid with…" autocomplete="off"
+               style="flex: 1 1 220px; min-width: 180px; max-width: 420px;">
+        <button type="submit" class="btn btn--secondary btn--sm">Send it again</button>
+      </form>
+      <p class="field-help" style="margin: 4px 0 0;">
+        Goes out with every purchase, account or no account. This sends their
+        last one again, files and all.
+      </p>
       {% if challenge_on_sale %}
       <form method="post" action="{{ url_for('admin.send_challenge_welcome') }}"
             style="margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">

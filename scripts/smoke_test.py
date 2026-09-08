@@ -7546,11 +7546,14 @@ finally:
 
 _landed = client.get("/courses/drip-course?bought=1",
                      follow_redirects=True).get_data(as_text=True)
-ok("Landing there says the file is coming by email",
-   "the receipt has the file with it" in _landed
+ok("Landing there after buying a course says the receipt is coming",
+   "The receipt is on its way to your email" in _landed
+   and "read here on the site" in _landed
    and "waiting in My space" in _landed)
+ok("And it doesn't promise a file a course never sends",
+   "the receipt has the file with it" not in _landed)
 ok("And the page says nothing of the sort on an ordinary visit",
-   "the receipt has the file with it"
+   "waiting in My space"
    not in client.get("/courses/drip-course").get_data(as_text=True))
 
 # A long message shouldn't make its inbox row taller than the screen.
@@ -9500,6 +9503,159 @@ with app.app_context():
     ok("And nothing of it is left behind",
        _Shop.query.filter_by(user_id=_other_id).count() == 0,
        f"got {_Shop.query.filter_by(user_id=_other_id).count()} rows")
+
+# --- paying without an account still gets the emails ------------------------
+# Most people buy before they ever make an account here, and some never make
+# one. The receipt and the challenge welcome hang off the payment, not off a
+# member, and this is where that is held down: without it, the only thing a
+# guest has for their money is a line on a card statement.
+_guest_post = []
+
+
+def _catch_guest_post(to, subject, text, html_body=None, template_id=None,
+                      params=None, sender=None, attachments=None):
+    _guest_post.append({
+        "to": to, "subject": subject, "template_id": template_id,
+        "params": params or {},
+        "files": [a.get("name") for a in (attachments or [])],
+    })
+    return True
+
+
+_mailer.send_email = _catch_guest_post
+try:
+    from app.models import ProductAsset as _Asset
+    from app.services import catalog as _cat_guest
+
+    with app.app_context():
+        _gp = Product(title="The Guest Pages", slug="the-guest-pages",
+                      type="guide", status="published", track="healing",
+                      currency="USD", price_cents=1500,
+                      stripe_price_id="price_guest_pages",
+                      promise="For anyone who never signed up.")
+        db.session.add(_gp)
+        db.session.flush()
+        db.session.add(_Asset(
+            product_id=_gp.id, title="The Guest Pages", filename="guest.pdf",
+            kind="pdf", mime="application/pdf", size=len(_pdf), data=_pdf))
+        db.session.commit()
+        _gp_id = _gp.id
+
+    _guest = "noaccounthere@example.com"
+    with app.app_context():
+        ok("Nobody by this address has an account, and never has",
+           User.query.filter_by(email=_guest).first() is None)
+    _guest_pay = _payment_payload("9700", _guest, "price_guest_pages",
+                                  amount=1500, product_name="The Guest Pages")
+    r = client.post("/webhooks/stripe", data=_guest_pay,
+                    headers=_stripe_headers(_guest_pay))
+    ok("Stripe's webhook takes a guest's payment", r.status_code == 200)
+    _theirs = [m for m in _guest_post if m["to"] == _guest]
+    ok("And the receipt goes to the address they paid with",
+       [m["subject"] for m in _theirs] == ["Your Bloom Anyway receipt"],
+       f"sent {[m['subject'] for m in _theirs]}")
+    ok("With the guide attached, the same as for anybody with an account",
+       _theirs and _theirs[0]["files"] == ["guest.pdf"],
+       f"attached {_theirs[0]['files'] if _theirs else None}")
+    ok("And it says what they bought",
+       _theirs and _theirs[0]["params"].get("PRODUCT_NAME") == "The Guest Pages",
+       f"params {_theirs[0]['params'] if _theirs else None}")
+    with app.app_context():
+        _row = _Shop.query.filter_by(
+            lemon_squeezy_order_id="9700").first()
+        ok("The purchase waits to be claimed rather than holding up the email",
+           _row is not None and _row.user_id is None
+           and _row.status == "pending_link",
+           f"{_row.status if _row else 'no row'}")
+
+    _back = app.test_client().get("/courses/the-guest-pages?bought=1",
+                                  follow_redirects=True).get_data(as_text=True)
+    ok("And landing back on a guide's page says the file came with it",
+       "the receipt has the file with it" in _back
+       and "waiting in My space" in _back)
+
+    # A receipt can still be missed by a full inbox or a bad afternoon at
+    # Brevo, and a guest has no library to fall back on.
+    _guest_post.clear()
+    _redo = admin.post("/admin/resend-receipt", data={"email": _guest},
+                       follow_redirects=True).get_data(as_text=True)
+    ok("Studio sends a missed receipt again, account or no account",
+       "Sent the receipt for The Guest Pages" in _redo
+       and [m["files"] for m in _guest_post if m["to"] == _guest]
+       == [["guest.pdf"]], f"sent {_guest_post}")
+    _guest_post.clear()
+    ok("And says so when nothing was ever bought under that address",
+       "No purchase on record under" in admin.post(
+           "/admin/resend-receipt", data={"email": "nobodyatall@example.com"},
+           follow_redirects=True).get_data(as_text=True)
+       and not _guest_post)
+    ok("A typo where the address should be sends nothing",
+       "Type the address they paid with" in admin.post(
+           "/admin/resend-receipt", data={"email": "nope"},
+           follow_redirects=True).get_data(as_text=True)
+       and not _guest_post)
+    ok("And it sits with the other missed-purchase tools in Studio",
+       "Receipt missing?" in admin.get("/admin/").get_data(as_text=True))
+
+    # The challenge is the one that comes with a second email, and joining it
+    # without an account is the ordinary way in from the landing page.
+    _guest_post.clear()
+    with app.app_context():
+        _cj = Product(title="2-Month Creator Challenge — Guest Round",
+                      slug="challenge-guest-round", type="course",
+                      status="published", track="building", currency="USD",
+                      price_cents=29900,
+                      stripe_price_id="price_guest_challenge",
+                      promise="Two months, four stages.",
+                      perk_membership_tier="creator",
+                      perk_membership_months=2)
+        db.session.add(_cj)
+        db.session.commit()
+        _cj_id = _cj.id
+        _cat_guest.set_challenge_product(_cj, True)
+        db.session.commit()
+        _chal_price = "price_guest_challenge"
+        _chal_name = _cj.title
+    _joiner = "guestjoiner@example.com"
+    with app.app_context():
+        ok("The person joining the challenge has no account either",
+           User.query.filter_by(email=_joiner).first() is None)
+    _join_pay = _payment_payload("9701", _joiner, _chal_price, amount=29900,
+                                 product_name=_chal_name)
+    client.post("/webhooks/stripe", data=_join_pay,
+                headers=_stripe_headers(_join_pay))
+    _sent = [(m["subject"], m["template_id"]) for m in _guest_post
+             if m["to"] == _joiner]
+    ok("A guest joining the challenge gets the receipt and the welcome, both",
+       "Your Bloom Anyway receipt" in [s for s, _ in _sent]
+       and 30 in [t for _, t in _sent], f"sent {_sent}")
+    ok("And the welcome names what they joined",
+       any(m["template_id"] == 30 and m["params"].get("PRODUCT_NAME")
+           for m in _guest_post if m["to"] == _joiner),
+       [m["params"] for m in _guest_post if m["to"] == _joiner])
+
+    # Making the account afterwards is what links the purchase up; the emails
+    # had already gone.
+    _guest_post.clear()
+    _late = app.test_client()
+    _late.post("/register", data={"email": _guest, "password": USER_PW,
+                                  "password_confirm": USER_PW})
+    _code = [c for c in sent_codes if c[0] == _guest][-1][1]
+    _late.post("/verify-email", data={"email": _guest, "code": _code},
+               follow_redirects=True)
+    with app.app_context():
+        _u = User.query.filter_by(email=_guest).first()
+        _row = _Shop.query.filter_by(lemon_squeezy_order_id="9700").first()
+        ok("Signing up afterwards claims the purchase they already paid for",
+           _u is not None and _row.user_id == _u.id and _row.status == "linked",
+           f"{_row.status} / user {_row.user_id if _row else '-'}")
+    with app.app_context():
+        _cat_guest.set_challenge_product(db.session.get(Product, _cj_id), False)
+        _cat_guest._purge_product(db.session.get(Product, _cj_id))
+        _cat_guest._purge_product(db.session.get(Product, _gp_id))
+        db.session.commit()
+finally:
+    _mailer.send_email = _real_send_email
 
 # --- the stylesheet is still readable text ---------------------------------
 # Twice now an edit has been saved with UTF-8 read back as Latin-1, which turns

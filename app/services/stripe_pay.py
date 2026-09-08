@@ -1190,6 +1190,46 @@ def _handle_orphan_membership_payment(order: Order, sub_id: str | None,
         )
 
 
+def send_receipt_for(order: Order, *, product=None, name: str = "") -> bool:
+    """Send the purchase receipt for an order that is already recorded.
+
+    Fulfillment calls this the first time a payment comes good. It is also
+    what Studio sends by hand when a receipt went missing — a bounced address
+    since corrected, a Brevo key that was down that afternoon — so nothing
+    about it depends on the webhook still being in flight.
+    """
+    from .mailer import send_order_receipt
+
+    to = (getattr(order, "buyer_email", "") or "").strip()
+    if "@" not in to:
+        return False
+    if product is None:
+        product = order.product
+    title = (name or "").strip() or (product.title if product else None) \
+        or "Course purchase"
+    when = order.created_at
+    # The guide itself rides along, so it arrives rather than waiting to be
+    # found. Anything the buyer can't open yet, or is too big to post, stays
+    # in their library instead.
+    try:
+        from .assets import receipt_files
+        came_with = receipt_files(product)
+    except Exception:
+        log.exception("receipt: could not gather files for %s",
+                      order.ls_order_id)
+        came_with = []
+    return send_order_receipt(
+        to,
+        order_id=order.ls_order_id,
+        product_name=title,
+        amount=order.total_display(),
+        order_date=when.strftime("%b %d, %Y") if when else "",
+        attachments=came_with,
+        perk=(product.perk_offer() if product is not None else ""),
+        description=(product.receipt_blurb() if product is not None else ""),
+    )
+
+
 def handle_payment_event(event_type: str, data: dict) -> Order | None:
     """Fulfill or refund from a normalized payment payload."""
     from datetime import timedelta
@@ -1388,30 +1428,7 @@ def handle_payment_event(event_type: str, data: dict) -> Order | None:
     if (send_receipt and order.buyer_email and "@" in order.buyer_email
             and not addon_checkout and plan is None):
         try:
-            from .mailer import send_order_receipt
-            when = order.created_at
-            order_date = when.strftime("%b %d, %Y") if when else ""
-            # The guide itself rides along, so it arrives rather than waiting
-            # to be found. Anything the buyer can't open yet, or is too big to
-            # post, stays in their library instead.
-            try:
-                from .assets import receipt_files
-                came_with = receipt_files(product)
-            except Exception:
-                log.exception("receipt: could not gather files for %s",
-                              order.ls_order_id)
-                came_with = []
-            send_order_receipt(
-                order.buyer_email,
-                order_id=order.ls_order_id,
-                product_name=name,
-                amount=order.total_display(),
-                order_date=order_date,
-                attachments=came_with,
-                perk=(product.perk_offer() if product is not None else ""),
-                description=(product.receipt_blurb()
-                             if product is not None else ""),
-            )
+            send_receipt_for(order, product=product, name=name)
         except Exception:
             log.exception("Order receipt email failed for %s", order.ls_order_id)
 

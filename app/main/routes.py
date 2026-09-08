@@ -274,9 +274,20 @@ def course_detail(slug):
                 db.session.rollback()
                 log.exception("product page: could not finish checkout %s",
                               session_id)
-        flash("Thank you — that's yours. Check your email: the receipt has the "
-              "file with it. Make an account with the same address and it will "
-              "be waiting in My space as well.", "success")
+        # A guide is posted out with the receipt; a course or a bundle is read
+        # here, so saying "the file is attached" would send them looking for
+        # something that was never sent.
+        from ..services.assets import RECEIPT_HELD_BACK
+
+        if any(product.has_type(kind) for kind in RECEIPT_HELD_BACK):
+            flash("Thank you — that's yours. The receipt is on its way to your "
+                  "email. This one is read here on the site: make an account "
+                  "with the same address and it will be waiting in My space.",
+                  "success")
+        else:
+            flash("Thank you — that's yours. Check your email: the receipt has "
+                  "the file with it. Make an account with the same address and "
+                  "it will be waiting in My space as well.", "success")
 
     owned_purchase_id = None
     if current_user.is_authenticated and not is_preview:

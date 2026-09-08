@@ -272,6 +272,53 @@ def import_checkout_session():
     return redirect(url_for("admin.dashboard"))
 
 
+@bp.route("/resend-receipt", methods=["POST"])
+@admin_required
+def resend_receipt():
+    """Send a purchase receipt again to whoever paid for it.
+
+    The receipt goes out once, when the payment comes good, whether or not
+    the buyer has an account here. When one is missed anyway — a full inbox,
+    a wrong address since corrected, Brevo down for the afternoon — this is
+    how it is put right without taking the payment again.
+    """
+    from sqlalchemy import func
+
+    from ..models import Order
+    from ..services import stripe_pay as pay
+
+    email = (request.form.get("email") or "").strip()
+    if "@" not in email:
+        flash("Type the address they paid with.", "error")
+        return redirect(url_for("admin.dashboard"))
+
+    order = (Order.query
+             .filter(func.lower(Order.buyer_email) == email.lower(),
+                     Order.status == "paid",
+                     Order.membership_tier.is_(None))
+             .order_by(Order.created_at.desc())
+             .first())
+    if order is None:
+        flash(f"No purchase on record under {email} — import the checkout "
+              "session first if it should be here.", "error")
+        return redirect(url_for("admin.dashboard"))
+
+    try:
+        sent = pay.send_receipt_for(order)
+    except Exception:
+        log.exception("resend receipt failed for %s", order.ls_order_id)
+        sent = False
+    if not sent:
+        flash("Could not send it — check the Brevo key and template 4.",
+              "error")
+        return redirect(url_for("admin.dashboard"))
+
+    what = (order.product.title if order.product_id and order.product
+            else "their purchase")
+    flash(f"Sent the receipt for {what} to {email} again.", "success")
+    return redirect(url_for("admin.dashboard"))
+
+
 @bp.route("/send-challenge-welcome", methods=["POST"])
 @admin_required
 def send_challenge_welcome():
