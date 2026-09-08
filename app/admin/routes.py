@@ -701,8 +701,14 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
     # A promo needs both halves. Clearing either one takes the banner down,
     # rather than leaving a code with no price or a price with no code.
     promo_code = (form.get("promo_code") or "").strip().upper()[:40]
-    promo_price = _parse_price_cents(form.get("promo_price"))
-    if not promo_code or (form.get("promo_price") or "").strip() == "":
+    promo_typed = (form.get("promo_price") or "").strip()
+    promo_price = _parse_price_cents(promo_typed)
+    if promo_typed and promo_price is None:
+        # A price with a currency sign in it read as no price at all, which
+        # saved a code that ran nothing and never said why.
+        flash(f"“{promo_typed}” didn't read as a price — write it in numbers, "
+              "like 19.00 — so the sale was left as it was.", "info")
+    elif not promo_code or not promo_typed:
         product.promo_code = None
         product.promo_price_cents = None
         product.promo_ends_at = None

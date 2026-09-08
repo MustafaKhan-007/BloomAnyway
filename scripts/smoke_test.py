@@ -1315,6 +1315,27 @@ _sbody = admin.get(f"/admin/products/{_multi_id}/edit").get_data(as_text=True)
 ok("Studio says the sale has ended rather than pretending it's running",
    "This sale has ended" in _sbody)
 
+# A price nobody can read is worse than a refusal: it used to leave the code
+# saved with no price behind it, running nothing and saying nothing.
+admin.post(f"/admin/products/{_multi_id}/edit",
+           data=dict(_promo_fields, promo_price="16.00", promo_code="AUTUMN30",
+                     promo_ends_date="", promo_ends_time="23:59"),
+           follow_redirects=True)
+r = admin.post(f"/admin/products/{_multi_id}/edit",
+               data=dict(_promo_fields, promo_price="$14.00",
+                         promo_code="WINTER10", promo_ends_date="",
+                         promo_ends_time="23:59"),
+               follow_redirects=True)
+ok("A price with a currency sign on it is sent back to be retyped",
+   "didn&#39;t read as a price" in r.get_data(as_text=True)
+   or "didn't read as a price" in r.get_data(as_text=True))
+with app.app_context():
+    _p = db.session.get(Product, _multi_id)
+    ok("And the sale that was running is left exactly as it was",
+       _p.has_promo() and _p.promo_code_display() == "AUTUMN30"
+       and _p.promo_price_cents == 1600,
+       f"got {_p.promo_code!r} {_p.promo_price_cents}")
+
 # Leaving the date blank means it runs until it's taken down.
 admin.post(f"/admin/products/{_multi_id}/edit",
            data=dict(_promo_fields, promo_price="18.00", promo_code="SPRING25",
