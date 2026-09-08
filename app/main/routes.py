@@ -684,7 +684,13 @@ def marketplace():
 
 @bp.route("/marketplace/l/<int:listing_id>")
 def listing_detail(listing_id):
-    ln = db.session.get(MarketplaceListing, listing_id)
+    ln = (
+        MarketplaceListing.query
+        .options(joinedload(MarketplaceListing.author),
+                 joinedload(MarketplaceListing.images))
+        .filter_by(id=listing_id)
+        .first()
+    )
     if ln is None or not ln.active:
         abort(404)
     return render_template("marketplace/detail.html", listing=ln)
@@ -1054,6 +1060,77 @@ def account():
         listing_count=active_listing_count(current_user),
         listing_cap=listing_limit(current_user),
         support_upcoming=sg_svc.upcoming_for_user(current_user, limit=6),
+    )
+
+
+def _sessions_redirect(default_hash=""):
+    """Stay on Manage sessions when that's where the form was submitted."""
+    if (request.form.get("next") or "").strip() == "sessions":
+        return redirect(url_for("main.manage_sessions"))
+    return redirect(url_for("main.support_groups_page") + default_hash)
+
+
+@bp.route("/account/sessions")
+@login_required
+def manage_sessions():
+    """Upcoming seats with cancel / 1:1 date-time update."""
+    from ..services import support_groups as sg_svc
+    upcoming = sg_svc.upcoming_for_user(current_user, limit=40)
+    one_on_ones = [
+        row.meeting for row in upcoming
+        if row.meeting and (row.meeting.kind or "") == "one_on_one"
+    ]
+    return render_template(
+        "main/sessions.html",
+        upcoming=upcoming,
+        one_on_one_minutes=sg_svc.ONE_ON_ONE_DURATION_MINUTES,
+        facilitator_minutes=sg_svc.FACILITATOR_DURATION_MINUTES,
+        one_on_one_refundable={
+            m.id: sg_svc.one_on_one_refundable(m) for m in one_on_ones
+        },
+        refund_hours=sg_svc.ONE_ON_ONE_REFUND_HOURS,
+    )
+
+
+@bp.route("/account/sessions/<int:meeting_id>/reschedule", methods=["GET", "POST"])
+@login_required
+def reschedule_one_on_one(meeting_id):
+    """Show the coach's availability calendar and apply a requested new time."""
+    from ..services import coaching_intake as intake_svc
+    from ..services import support_groups as sg_svc
+    from ..services.timefmt import viewer_timezone
+
+    meeting = sg_svc.user_one_on_one(current_user, meeting_id)
+    if meeting is None:
+        flash("That isn't your session.", "error")
+        return redirect(url_for("main.manage_sessions"))
+    coach = sg_svc.meeting_coach_key(meeting)
+    if not coach:
+        flash("We couldn't tell whose calendar that 1:1 belongs to.", "error")
+        return redirect(url_for("main.manage_sessions"))
+
+    viewer_tz = viewer_timezone()
+    slots = intake_svc.open_slots(coach, viewer_tz=viewer_tz)
+
+    if request.method == "POST":
+        when = intake_svc.parse_slot_utc(request.form.get("slot_utc") or "")
+        err = sg_svc.request_one_on_one_reschedule(current_user, meeting.id, when)
+        if err:
+            flash(err, "error")
+            return redirect(url_for("main.reschedule_one_on_one",
+                                    meeting_id=meeting.id))
+        flash("Your 1:1 is moved to the new time. The studio has been told.",
+              "success")
+        return redirect(url_for("main.manage_sessions"))
+
+    return render_template(
+        "main/session_reschedule.html",
+        meeting=meeting,
+        coach=coach,
+        coach_label=intake_svc.coach_label(coach),
+        slots=slots,
+        viewer_tz=viewer_tz,
+        duration_min=sg_svc.ONE_ON_ONE_DURATION_MINUTES,
     )
 
 
@@ -1845,15 +1922,27 @@ def _can_read_reviews(user) -> bool:
                 and user.has_feature("reel_reviews"))
 
 
+#: How many Content Tips the hub preview shows; the rest live on View all.
+HUB_TIP_PREVIEW = 6
+
+
+def _published_tips():
+    return (Video.query.filter_by(published=True)
+            .order_by(Video.created_at.desc(), Video.sort_order)
+            .all())
+
+
 @bp.route("/watch")
 def videos():
     """Content Hub: reel reviews (Creator+) and the signed-in video library."""
     can_browse = current_user.is_authenticated
     can_play_creator = _can_play_videos(current_user)
     items = []
+    tip_total = 0
     if can_browse:
-        items = (Video.query.filter_by(published=True)
-                 .order_by(Video.sort_order, Video.created_at.desc()).all())
+        items = _published_tips()
+        tip_total = len(items)
+        items = items[:HUB_TIP_PREVIEW]
     reviews = (ReelReview.query.filter_by(published=True)
                .order_by(ReelReview.created_at.desc()).limit(24).all())
     can_reel = _can_read_reviews(current_user)
@@ -1865,13 +1954,25 @@ def videos():
         my_app = reel_svc.application_for(current_user.id, week_key)
         my_reel = rotw_svc.submission_for(current_user.id, week_key)
     return render_template(
-        "main/videos.html", videos=items, can_browse=can_browse,
+        "main/videos.html", videos=items, tip_total=tip_total,
+        can_browse=can_browse,
         can_play=can_play_creator, can_play_video=_can_play_video,
         reviews=reviews, my_application=my_app, week_key=week_key,
         week_reviews=week_reviews, can_reel=can_reel,
         my_reel_submission=my_reel, min_shares=rotw_svc.MIN_SHARES,
         reviews_per_week=reel_svc.REVIEWS_PER_WEEK,
         max_mb=current_app.config.get("REEL_RAW_MAX_MB", 100),
+    )
+
+
+@bp.route("/watch/tips")
+def videos_all():
+    """Every published Content Tip, newest first."""
+    can_browse = current_user.is_authenticated
+    items = _published_tips() if can_browse else []
+    return render_template(
+        "main/videos_all.html", videos=items, can_browse=can_browse,
+        can_play_video=_can_play_video,
     )
 
 
@@ -2601,7 +2702,7 @@ def leave_support_session(meeting_id):
         flash(err, "error")
     else:
         flash("You've left that session.", "success")
-    return redirect(url_for("main.support_groups_page"))
+    return _sessions_redirect()
 
 
 @bp.route("/support-groups/one-on-one/<int:meeting_id>/cancel", methods=["POST"])
@@ -2618,7 +2719,7 @@ def cancel_one_on_one(meeting_id):
     else:
         flash("Your 1:1 is cancelled. It was inside the 24-hour window, so "
               "this one isn't refundable.", "info")
-    return redirect(url_for("main.support_groups_page") + "#coaching")
+    return _sessions_redirect("#coaching")
 
 
 @bp.route("/support-groups/meetings/<int:meeting_id>/room")

@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}All Content Tips — {{ site.site_title }}{% endblock %}
+
+{% block content %}
+<div class="hub-exact">
+  <header class="hub-exact__hero">
+    <div class="container">
+      <p class="hub-exact__eyebrow"><a href="{{ url_for('main.videos') }}#videos">&larr; Content Hub</a></p>
+      <h1>All Content Tips</h1>
+      <p class="hub-exact__lede">
+        Every tip, newest first — written by the founders, some with video.
+      </p>
+    </div>
+  </header>
+
+  <section class="hub-exact__tips" id="videos">
+    <div class="container">
+      <div class="hub-exact__section-head">
+        <div>
+          <h2>Content Tips</h2>
+          <p class="hub-exact__section-sub">written by the founders — updated regularly, some with video</p>
+        </div>
+      </div>
+
+      {% if can_browse %}
+        {% if videos %}
+        <div class="hub-exact__tips-grid">
+          {% for v in videos %}
+          {% set tip_index = loop.index %}
+          {% include "partials/tip_card.html" %}
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+          <p>No Content Tips yet — the first one is on its way. Check back soon.</p>
+        </div>
+        {% endif %}
+      {% else %}
+        <div class="empty-state">
+          <p>Sign in (even on Free) to browse Content Tips.
+            <a href="{{ url_for('auth.login', next=url_for('main.videos_all')) }}">Sign in</a>
+            or <a href="{{ url_for('auth.register', next=url_for('main.videos_all')) }}">create an account</a>.</p>
+        </div>
+      {% endif %}
+    </div>
+  </section>
+</div>
+{% endblock %}

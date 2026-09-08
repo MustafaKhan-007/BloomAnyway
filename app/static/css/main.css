@@ -1032,6 +1032,7 @@ img.avatar.avatar--photo {
   vertical-align: middle;
 }
 .avatar--sm { width: 30px; height: 30px; font-size: 12px; }
+.avatar--md { width: 48px; height: 48px; font-size: 18px; }
 .avatar--lg { width: 64px; height: 64px; font-size: 24px; }
 .avatar--xl { width: 96px; height: 96px; font-size: 34px; }
 .profile-preview { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; }
@@ -3711,6 +3712,12 @@ a.studio-member-filter.is-active span { color: #fff; }
 .trust-line { font-size: 13px; color: var(--ink-soft); margin-top: 10px; }
 .seller-card { display: flex; gap: 14px; align-items: center; margin-top: 26px;
   padding: 16px; background: var(--ivory-deep); border-radius: var(--radius-card); }
+.seller-card__avatar { flex: none; line-height: 0; }
+.seller-card__avatar .avatar { width: 48px; height: 48px; }
+.seller-card__who { min-width: 0; }
+.seller-card__who strong { display: block; }
+.seller-card__handle { margin: 2px 0 0; font-size: 13px; color: var(--ink-soft); }
+.seller-card__more { margin: 8px 0 0; font-size: 13px; font-weight: 700; }
 .seller-card p { margin: 4px 0 0; }
 .kind-picker { display: flex; gap: 12px; border: none; padding: 0; margin: 0 0 18px; }
 .kind-option { flex: 1; position: relative; }
@@ -7008,6 +7015,16 @@ a.at-handle:hover { text-decoration: underline; }
   box-shadow: 0 6px 14px rgba(122, 46, 98, 0.22);
 }
 /* Refund window note on a booked 1:1 */
+.sessions-page__list {
+  margin: 28px 0 0;
+  padding: 18px 20px;
+  background: #fff;
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+.sessions-page__list .sg-upcoming__item { padding: 14px 0; }
+.sessions-page__list .sg-upcoming__item:first-child { padding-top: 0; }
+
 .sg-upcoming__item--ooo { align-items: flex-start; }
 .sg-upcoming__item--ooo > div:first-child { flex: 1 1 320px; min-width: 0; }
 .sg-upcoming__item--ooo .sg-upcoming__actions { flex: 0 0 auto; padding-top: 2px; }

@@ -67,38 +67,17 @@
           <p class="hub-exact__section-sub">written by the founders — updated regularly, some with video</p>
           <p class="sr-only">Content tips library</p>
         </div>
-        <a class="hub-exact__view-all" href="#videos">View all tips &rarr;</a>
+        {% if tip_total > videos|length %}
+        <a class="hub-exact__view-all" href="{{ url_for('main.videos_all') }}">View all tips &rarr;</a>
+        {% endif %}
       </div>
 
       {% if can_browse %}
         {% if videos %}
         <div class="hub-exact__tips-grid">
           {% for v in videos %}
-          {% set playable_for_me = can_play_video(current_user, v) %}
-          {% set tip_tone = loop.index0 % 3 %}
-          <a class="hub-exact__tip {{ 'hub-exact__tip--locked' if not playable_for_me }} hub-exact__tip--tone-{{ tip_tone }}"
-             href="{{ url_for('main.watch', video_id=v.id) }}">
-            <span class="hub-exact__tip-top" aria-hidden="true"></span>
-            <div class="hub-exact__tip-body">
-              <span class="hub-exact__tip-num" aria-hidden="true">{{ '%02d'|format(loop.index) }}</span>
-              <span class="hub-exact__tip-cat">
-                {% if v.free_access %}Free pick{% elif v.healing_access %}Healing tip{% else %}Creator tip{% endif %}
-              </span>
-              <h3>{{ v.title }}</h3>
-              {% if v.summary() %}<p>{{ v.summary() }}</p>{% endif %}
-              <div class="hub-exact__tip-meta">
-                <span>{{ v.created_at|when('%b %d, %Y') }}</span>
-                {% if v.read_minutes() %}<span>{{ v.read_minutes() }} min read</span>{% endif %}
-                {% if v.has_video() %}<span>Video</span>{% endif %}
-                <span class="hub-exact__tip-read">
-                  {% if playable_for_me %}Read &rarr;{% else %}<span class="hub-exact__tip-lock" aria-hidden="true">&#128274;</span> Locked{% endif %}
-                </span>
-              </div>
-              {% if playable_for_me and v.has_video() %}
-              <span class="hub-exact__tip-play" aria-hidden="true">&#9654;</span>
-              {% endif %}
-            </div>
-          </a>
+          {% set tip_index = loop.index %}
+          {% include "partials/tip_card.html" %}
           {% endfor %}
         </div>
         {% else %}

@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Your sessions — {{ site.site_title }}{% endblock %}
+
+{% block content %}
+<section class="section sessions-page">
+  <div class="container" style="max-width: 760px;">
+    <p class="eyebrow"><a href="{{ url_for('main.account') }}">&larr; My space</a></p>
+    <h1>Upcoming sessions</h1>
+    <p class="field-help" style="margin-top: 8px;">
+      Everything you have a seat on. For a founder 1:1 you can request a new
+      date and time from their calendar, or cancel.
+    </p>
+
+    {% if upcoming %}
+    <ul class="sg-upcoming__list sessions-page__list">
+      {% for row in upcoming %}
+      {% set m = row.meeting %}
+      {% set kind = (m.kind or 'peer')|lower %}
+      <li class="sg-upcoming__item sg-upcoming__item--ooo">
+        <div>
+          <strong>{{ session_title(m) }}</strong>
+          <p class="field-help" style="margin:2px 0 0;">
+            {{ m.scheduled_at|when('%a %b %d · %I:%M %p') }}
+            {% if kind == 'one_on_one' %}
+            · {{ one_on_one_minutes }} min · in-site video
+            {% elif kind == 'facilitator' %}
+            · {{ facilitator_minutes }} min
+            {% else %}
+            · peer circle
+            {% endif %}
+          </p>
+          {% if kind == 'one_on_one' %}
+          {% set refundable = one_on_one_refundable.get(m.id) %}
+          <p class="field-help sg-refund{% if not refundable %} sg-refund--closed{% endif %}"
+             style="margin:6px 0 0;">
+            {% if refundable %}
+            Cancel now and you'll be refunded — refunds only apply if you
+            cancel at least {{ refund_hours }} hours before the session.
+            {% else %}
+            Inside the {{ refund_hours }}-hour window, so cancelling this one
+            won't be refunded.
+            {% endif %}
+          </p>
+          {% endif %}
+        </div>
+        <div class="sg-upcoming__actions">
+          <a class="btn btn--primary btn--sm" href="{{ url_for('main.support_session_room', meeting_id=m.id) }}">Join session</a>
+          {% if kind == 'one_on_one' %}
+          <a class="btn btn--secondary btn--sm" href="{{ url_for('main.reschedule_one_on_one', meeting_id=m.id) }}">
+            Request date/time update
+          </a>
+          <form method="post"
+                action="{{ url_for('main.cancel_one_on_one', meeting_id=m.id) }}"
+                onsubmit="return confirm({% if one_on_one_refundable.get(m.id) %}'Cancel this 1:1? You\'re outside the {{ refund_hours }}-hour window, so you\'ll be refunded.'{% else %}'Cancel this 1:1? It\'s within {{ refund_hours }} hours of the session, so it won\'t be refunded.'{% endif %});">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="next" value="sessions">
+            <button class="btn btn--quiet btn--sm" type="submit">Cancel</button>
+          </form>
+          {% else %}
+          <form method="post" action="{{ url_for('main.leave_support_session', meeting_id=m.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="next" value="sessions">
+            <button class="btn btn--quiet btn--sm" type="submit">
+              {% if m.scheduled_by_user_id == current_user.id %}Cancel{% else %}Leave seat{% endif %}
+            </button>
+          </form>
+          {% endif %}
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="empty-state" style="margin-top: 24px;">
+      <p>Nothing on your calendar yet. Peer circles and founder 1:1s live in Support Groups.</p>
+      <p style="margin-top: 12px;">
+        <a class="btn btn--secondary btn--sm" href="{{ url_for('main.support_groups_page') }}">Browse Support Groups</a>
+      </p>
+    </div>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}
