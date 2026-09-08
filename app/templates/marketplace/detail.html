@@ -54,10 +54,24 @@
         <p class="trust-line">You'll be taken to {{ listing.author.public_name() }}'s own website to buy. Bloom Anyway only advertises here.</p>
 
         <div class="seller-card">
-          <a href="{{ url_for('main.profile', user_id=listing.author.id) }}">{{ avatar(listing.author, 'md') }}</a>
-          <div>
+          <a class="seller-card__avatar" href="{{ url_for('main.profile', user_id=listing.author.id) }}">
+            {{ avatar(listing.author, 'md') }}
+          </a>
+          <div class="seller-card__who">
+            {% if listing.author.display_name %}
+            <strong><a class="author-link" href="{{ url_for('main.profile', user_id=listing.author.id) }}">{{ listing.author.display_name }}</a></strong>
+            {% if listing.author.username %}
+            <p class="seller-card__handle">@{{ listing.author.username }}</p>
+            {% endif %}
+            {% elif listing.author.username %}
+            <strong><a class="author-link at-handle" href="{{ url_for('main.profile', user_id=listing.author.id) }}">@{{ listing.author.username }}</a></strong>
+            {% else %}
             <strong><a class="author-link" href="{{ url_for('main.profile', user_id=listing.author.id) }}">{{ listing.author.public_name() }}</a></strong>
+            {% endif %}
             {% if listing.author.bio %}<p class="field-help">{{ listing.author.bio }}</p>{% endif %}
+            <p class="seller-card__more">
+              <a href="{{ url_for('main.profile', user_id=listing.author.id) }}">View profile &rarr;</a>
+            </p>
           </div>
         </div>
 

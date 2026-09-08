@@ -1031,6 +1031,121 @@ def cancel_one_on_one(user: User, meeting_id: int) -> tuple[str | None, bool]:
     return None, refundable
 
 
+def user_one_on_one(user: User, meeting_id: int) -> SupportGroupMeeting | None:
+    """The member's own upcoming 1:1, or ``None``."""
+    meeting = db.session.get(SupportGroupMeeting, meeting_id)
+    if meeting is None or (meeting.kind or "").strip().lower() != "one_on_one":
+        return None
+    if meeting.status != "scheduled":
+        return None
+    if user_selected_on_meeting(user.id, meeting.id) is None:
+        return None
+    return meeting
+
+
+def meeting_coach_key(meeting: SupportGroupMeeting) -> str | None:
+    """``saman`` / ``ayesha`` from the linked intake or the meeting notes."""
+    from .coaching_intake import intake_for_meeting, normalize_coach
+    intake = intake_for_meeting(meeting.id)
+    if intake is not None:
+        key = normalize_coach(intake.coach)
+        if key:
+            return key
+    return normalize_coach(meeting.notes or "")
+
+
+def request_one_on_one_reschedule(
+    user: User, meeting_id: int, slot_utc: datetime | None,
+) -> str | None:
+    """Move a member's 1:1 onto an open coach slot. Returns an error or ``None``."""
+    from .coaching_intake import slot_still_open
+    from .social_graph import notify_owners
+    from .timefmt import format_local
+
+    meeting = user_one_on_one(user, meeting_id)
+    if meeting is None:
+        return "That isn't your session."
+    if meeting.scheduled_at and meeting.scheduled_at <= utcnow():
+        return "That session has already started — reach out to us instead."
+    if slot_utc is None:
+        return "Pick an available date and time."
+    slot_utc = slot_utc.replace(microsecond=0)
+    if slot_utc <= utcnow():
+        return "Pick a time that hasn't passed."
+    coach = meeting_coach_key(meeting)
+    if not coach:
+        return "We couldn't tell whose calendar that 1:1 belongs to."
+    if not slot_still_open(coach, slot_utc):
+        return "That time isn’t available — pick another slot."
+
+    old_when = meeting.scheduled_at
+    meeting.scheduled_at = slot_utc
+    try:
+        from .coaching_intake import intake_for_meeting
+        intake = intake_for_meeting(meeting.id)
+        if intake is not None:
+            intake.scheduled_at = slot_utc
+            if intake.status in ("pending_payment", "paid"):
+                intake.status = "scheduled"
+    except Exception:
+        log.exception("Failed syncing intake time for meeting %s", meeting.id)
+
+    if meeting.zoom_meeting_id:
+        try:
+            updated = daily_svc.update_room(
+                meeting.zoom_meeting_id,
+                scheduled_at=slot_utc,
+                duration_minutes=ONE_ON_ONE_DURATION_MINUTES,
+                max_participants=meeting.capacity or ONE_ON_ONE_CAP,
+                enable_cloud_recording=True,
+            )
+            if updated is not None and updated.room_url:
+                meeting.zoom_url = updated.room_url
+        except Exception:
+            log.exception("Failed updating Daily room for rescheduled 1:1 %s",
+                          meeting.id)
+    db.session.commit()
+
+    from .coaching_intake import coach_label
+    coach_name = coach_label(coach)
+    member_tz = normalize_timezone(getattr(user, "timezone", None)) or "UTC"
+    new_label = format_local(slot_utc, "%a %b %d · %I:%M %p", tz_name=member_tz) or slot_utc.isoformat()
+    old_label = (
+        format_local(old_when, "%a %b %d · %I:%M %p", tz_name=member_tz)
+        if old_when else "the previous time"
+    )
+    notify_owners(
+        kind="support_group_alert",
+        body=(f"{user.public_name()} requested a new time for their 1:1 with "
+              f"{coach_name}: {old_label} → {new_label}.")[:300],
+        url=url_for("admin.support_groups"),
+        actor_id=user.id,
+    )
+    notify(
+        user.id, kind="support_group",
+        body=f"Your 1:1 with {coach_name} is now {new_label}.",
+        url=url_for("main.manage_sessions"),
+    )
+    db.session.commit()
+    try:
+        send_styled_email(
+            user.email,
+            subject=f"Your 1:1 with {coach_name} was updated",
+            preview=f"New time: {new_label}.",
+            header="1:1 coaching",
+            title=f"Your 1:1 with {coach_name} is moved",
+            body=(f"You asked for a new time, and it's booked.\n\n"
+                  f"Was: {old_label}\n"
+                  f"Now: {new_label}\n\n"
+                  "Join from Upcoming sessions in My space when it’s time."),
+            button_text="Open your sessions",
+            button_url=url_for("main.manage_sessions", _external=True),
+        )
+    except Exception:
+        log.exception("1:1 reschedule email failed for user %s", user.id)
+    return None
+
+
 def _notify_joiner(meeting: SupportGroupMeeting, user: User) -> None:
     room = _meeting_room_url(meeting)
     group = _circle_name(meeting)

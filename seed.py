@@ -51,10 +51,10 @@ STARTER_FAQS = [
      "No. Checkout works without one. An account just adds saved quotes, the "
      "community forums, and course picks made for you \u2014 it's free.", 1),
     ("What's your refund policy?",
-     "Guides are non-refundable \u2014 a guide opens the moment you pay and is "
-     "yours to keep. Courses, memberships, and paid sessions each have their "
-     "own rules on the [refund policy](/refunds) page. Either way, if "
-     "something has gone wrong, tell me before you tell your bank.", 2),
+     "Refunds are only applicable for duplicate purchases. Guides are "
+     "non-refundable \u2014 a guide opens the moment you pay and is yours to "
+     "keep. Read the full note on the [refund policy](/refunds) page. Either "
+     "way, if something has gone wrong, tell me before you tell your bank.", 2),
     ("Is this therapy?",
      "No \u2014 and it doesn't pretend to be. These are practical courses and "
      "notebooks. If you're in crisis, please reach out to a professional or a "

@@ -176,8 +176,8 @@ ok("Home shows Their Story with reserved photo space",
 ok("Home shows Product of the Day + top products sections",
    "Digital Product of the Day" in home1
    and "Top products — last 30 days" in home1
-   and ("home-potd" in home1 or "Coming soon" in home1)
-   and ("home-top-grid" in home1 or "Coming soon" in home1))
+   and ("home-potd" in home1 or "This space is waiting for you" in home1)
+   and ("home-top-grid" in home1 or "Be the first on this shelf" in home1))
 r2 = client.get("/")
 ok("Home still renders on refresh", r2.status_code == 200)
 
@@ -866,6 +866,10 @@ ok("Creator settings show Creator of the Month Instagram field",
    r.status_code == 200
    and "Instagram for Creator of the Month" in r.get_data(as_text=True)
    and 'name="creator_instagram"' in r.get_data(as_text=True))
+ok("Creator settings explain what goes into the pick",
+   "days you showed up" in r.get_data(as_text=True)
+   and "posts you started" in r.get_data(as_text=True)
+   and "separate application" in r.get_data(as_text=True))
 client.post("/account/profile", data={
     "display_name": "New Person",
     "creator_instagram": "@newperson",
@@ -1406,8 +1410,9 @@ with app.app_context():
     ok("The policy page leads its guides section with it",
        "**Guides are non-refundable.**" in _legal.REFUNDS
        and "## Guides" in _legal.REFUNDS and "## Courses" in _legal.REFUNDS)
-    ok("Courses keep their fourteen days under their own heading",
-       "**14 days**" in _legal.REFUNDS.split("## Courses", 1)[-1]
+    ok("Refunds are only for duplicate purchases",
+       "only applicable for **duplicate purchases**" in _legal.REFUNDS
+       and "duplicate purchase" in _legal.REFUNDS.split("## Courses", 1)[-1]
        and "14 days" not in _legal.REFUNDS.split("## Guides", 1)[-1]
                                            .split("## Courses", 1)[0])
     ok("Without signing away what the law gives anyone",
@@ -2229,6 +2234,16 @@ dbody = r.get_data(as_text=True)
 ok("Listing detail gallery uses CSP-safe thumb buttons",
    r.status_code == 200 and "data-listing-gallery" in dbody
    and "data-listing-thumb" in dbody and "onclick=" not in dbody)
+ok("Listing detail shows a proper seller profile card",
+   "seller-card" in dbody and "seller-card__avatar" in dbody
+   and "avatar--md" in dbody and "View profile" in dbody)
+_home_live = app.test_client().get("/").get_data(as_text=True)
+ok("Home Product of the Day is live once a Showcase product exists",
+   "home-potd" in _home_live and "My ebook" in _home_live
+   and "This space is waiting for you" not in _home_live)
+ok("Home top products are live once a Showcase product exists",
+   "home-top-grid" in _home_live and "My ebook" in _home_live
+   and "Be the first on this shelf" not in _home_live)
 js = (Path(__file__).resolve().parents[1] / "app" / "static" / "js" / "main.js"
       ).read_text(encoding="utf-8")
 ok("Listing gallery swap lives in main.js (not inline)",
@@ -3085,6 +3100,33 @@ with app.app_context():
 ok("Someone with no account isn't told about a hub they can't read",
    "New in the Content Hub"
    not in app.test_client().get("/").get_data(as_text=True))
+
+# Hub preview: six newest tips; the rest live on View all.
+with app.app_context():
+    _preview_ids = []
+    for _n in range(7):
+        _v = Video(title=f"Preview tip {_n+1}", published=True,
+                   created_at=utcnow() + timedelta(minutes=_n),
+                   body="A short tip.")
+        db.session.add(_v)
+        db.session.flush()
+        _preview_ids.append(_v.id)
+    db.session.commit()
+_hub_preview = client.get("/watch").get_data(as_text=True)
+_hub_titles = [f"Preview tip {_n}" for _n in range(1, 8)]
+ok("The hub preview shows the six most recent tips, not the rest",
+   all(t in _hub_preview for t in _hub_titles[1:])
+   and "Preview tip 1" not in _hub_preview,
+   "oldest of the seven leaked onto the hub")
+ok("View all tips is offered once there are more than six",
+   'href="/watch/tips"' in _hub_preview and "View all tips" in _hub_preview)
+_all_tips = client.get("/watch/tips").get_data(as_text=True)
+ok("View all tips lists every published tip",
+   all(t in _all_tips for t in _hub_titles))
+with app.app_context():
+    for _i in _preview_ids:
+        db.session.delete(db.session.get(Video, _i))
+    db.session.commit()
 r = admin.get("/admin/reel-reviews")
 abody = r.get_data(as_text=True)
 ok("Studio closes the publish UI once today's review is out",
@@ -3660,7 +3702,8 @@ r = client.get("/account")
 acct = r.get_data(as_text=True)
 ok("My space shows upcoming peer sessions",
    "Upcoming Sessions" in acct
-   and "Manage sessions" in acct)
+   and "Manage sessions" in acct
+   and "/account/sessions" in acct)
 ok("Membership matrix lists support groups",
    "Support groups" in app.test_client().get("/membership").get_data(as_text=True))
 
@@ -3814,6 +3857,26 @@ ok("Nobody can cancel someone else's 1:1",
 with app.app_context():
     ok("Someone else's 1:1 stays booked",
        db.session.get(SupportGroupMeeting, _ooo_other).status == "scheduled")
+
+r = client.get("/account/sessions")
+_sess = r.get_data(as_text=True)
+ok("Manage sessions lists upcoming 1:1s with update and cancel",
+   r.status_code == 200
+   and "Upcoming sessions" in _sess
+   and "1:1 with Saman" in _sess
+   and "Request date/time update" in _sess
+   and f"/account/sessions/{_ooo_other}/reschedule" in _sess
+   and f'action="/support-groups/one-on-one/{_ooo_other}/cancel"' in _sess)
+r = stranger_client.get(f"/account/sessions/{_ooo_other}/reschedule",
+                        follow_redirects=True)
+ok("Nobody can open someone else's date/time calendar",
+   "isn&#39;t your session" in r.get_data(as_text=True)
+   or "isn't your session" in r.get_data(as_text=True))
+r = client.get(f"/account/sessions/{_ooo_other}/reschedule")
+ok("The member sees the coach calendar page even before slots exist",
+   r.status_code == 200
+   and "Request a new time" in r.get_data(as_text=True)
+   and "Saman" in r.get_data(as_text=True))
 
 # Cap: max 4 open peer sessions per topic
 with app.app_context():
@@ -4029,6 +4092,39 @@ with app.app_context():
     _slots = intake_svc.open_slots("ayesha", viewer_tz="UTC")
     ok("Her availability turns into bookable slots", len(_slots) > 0)
     _slot_utc = _slots[0]["utc"]
+    _saman_slots = intake_svc.open_slots("saman", viewer_tz="UTC")
+    ok("Saman availability turns into bookable slots", len(_saman_slots) > 0)
+    _saman_slot = _saman_slots[0]["utc"]
+
+_ooo_move = _seat_one_on_one("newperson@example.com", 72)
+with app.app_context():
+    _cur = db.session.get(SupportGroupMeeting, _ooo_move)
+    _cur_iso = _cur.scheduled_at.replace(microsecond=0).isoformat(timespec="seconds")
+    _saman_slot = next(
+        (s["utc"] for s in _saman_slots if s["utc"] != _cur_iso),
+        _saman_slot,
+    )
+r = client.get(f"/account/sessions/{_ooo_move}/reschedule")
+_cal = r.get_data(as_text=True)
+ok("Request date/time update shows the coach availability calendar",
+   r.status_code == 200 and "slot-cal" in _cal and "data-slot-cal" in _cal
+   and "Request this time" in _cal)
+r = client.post(f"/account/sessions/{_ooo_move}/reschedule",
+                data={"slot_utc": _saman_slot}, follow_redirects=True)
+ok("Picking an open slot moves the 1:1",
+   "moved to the new time" in r.get_data(as_text=True))
+with app.app_context():
+    _moved = db.session.get(SupportGroupMeeting, _ooo_move)
+    ok("The 1:1 now sits on the requested slot",
+       _moved is not None
+       and _moved.scheduled_at.replace(microsecond=0).isoformat(timespec="seconds")
+       == _saman_slot)
+    _owner = User.query.filter_by(email="owner@example.com").first()
+    _alert = (Notification.query
+              .filter_by(user_id=_owner.id, kind="support_group_alert")
+              .order_by(Notification.id.desc()).first())
+    ok("Studio is told about the requested time update",
+       _alert is not None and "requested a new time" in (_alert.body or ""))
 
 r = wrap_client.post("/coaching/ayesha/book", data={
     "going_through": "Divorce", "hoping_for": "Practical next steps",
@@ -5019,7 +5115,7 @@ ok("And the page number sits between them",
 
 for path, needle in (("/privacy", "What we collect"),
                      ("/terms", "Full Bloom"),
-                     ("/refunds", "14 days")):
+                     ("/refunds", "duplicate purchases")):
     rr = client.get(path)
     body = rr.get_data(as_text=True)
     ok(f"Legal page {path} renders", rr.status_code == 200)

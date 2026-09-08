@@ -246,11 +246,13 @@
     {% else %}
     <div class="home-soon home-soon--feature reveal">
       <p class="home-soon__badge">★ Featured today</p>
-      <p class="home-soon__title">Coming soon</p>
+      <p class="home-soon__title">This space is waiting for you</p>
       <p class="home-soon__copy">
-        Creator members can submit digital products in Showcase — when listings go live, one will be featured here each day.
+        No digital products are listed yet — if you’ve made something, this is
+        your moment. Advertise it in Showcase and the community can feature it
+        here tomorrow.
       </p>
-      <a class="btn btn--secondary btn--sm" href="{{ url_for('main.showcase') }}" style="margin-top:16px;">Browse Showcase</a>
+      <a class="btn btn--secondary btn--sm" href="{{ url_for('main.showcase') }}" style="margin-top:16px;">Advertise in Showcase</a>
     </div>
     {% endif %}
   </div>
@@ -289,11 +291,12 @@
     </div>
     {% else %}
     <div class="home-soon home-soon--row reveal">
-      <p class="home-soon__title">Coming soon</p>
+      <p class="home-soon__title">Be the first on this shelf</p>
       <p class="home-soon__copy">
-        Top community digital products will appear here as Showcase listings gather attention.
+        Top products will land here as women in the community advertise their
+        work. List yours in Showcase — even a small following is enough to start.
       </p>
-      <a class="btn btn--secondary btn--sm" href="{{ url_for('main.showcase') }}" style="margin-top:16px;">Browse Showcase</a>
+      <a class="btn btn--secondary btn--sm" href="{{ url_for('main.showcase') }}" style="margin-top:16px;">Advertise in Showcase</a>
     </div>
     {% endif %}
   </div>
@@ -305,7 +308,7 @@
       <p class="home-eyebrow"><span></span> In the spotlight <span></span></p>
       <h2 id="spotlight-heading" class="text-center">Faces &amp; moments we love</h2>
       <p class="home-section__lede">
-        Creator Members only — picked by hand, no application needed
+        Creator Members only — no application form. We look at how you showed up this month.
       </p>
     </header>
     <div class="spotlight-grid">
@@ -337,7 +340,7 @@
         <div class="spotlight-creator spotlight-creator--empty">
           <span class="spotlight-creator__photo spotlight-creator__photo--ph" aria-hidden="true">&#127803;</span>
           <h3>Coming soon</h3>
-          <p class="spotlight-creator__bio">Our next Creator of the Month will land here. Every Creator member with an Instagram link on her profile is in the draw.</p>
+          <p class="spotlight-creator__bio">Our next Creator of the Month will land here. We look at days you showed up, posts you started, comments you left, support sessions you sat in, and whether a reel of yours has been featured — plus a public Instagram on your profile.</p>
           <a class="btn btn--primary btn--sm spotlight-creator__cta"
              href="{{ url_for('main.membership', next=url_for('main.index') + '#spotlight-heading') }}">See Creator membership &rarr;</a>
           <p class="spotlight-card__foot">★ Creator Member perk</p>

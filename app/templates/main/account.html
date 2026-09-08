@@ -143,8 +143,8 @@
         <div class="ms-exact__challenge">
           <div>
             <p class="eyebrow">Creator of the Month</p>
-            <h3>30-day reel challenge</h3>
-            <p>Post, enter the weekly draw, and stay visible in the Content Hub.</p>
+            <h3>Show up, don’t apply</h3>
+            <p>We pick from how you were here this month — days you checked in, posts, comments, sessions you sat in, and whether a reel of yours has been featured. A public Instagram on your profile is what makes you pickable.</p>
           </div>
           <a class="btn btn--gold btn--sm" href="{{ url_for('main.videos') }}">Open Content Hub</a>
         </div>
@@ -315,7 +315,7 @@
             </li>
             {% endfor %}
           </ul>
-          <a class="btn btn--secondary btn--sm" href="{{ url_for('main.support_groups_page') }}">Manage sessions</a>
+          <a class="btn btn--secondary btn--sm" href="{{ url_for('main.manage_sessions') }}">Manage sessions</a>
           {% else %}
           <p class="field-help" style="margin:0;">Nothing on your calendar yet. Peer circles live in Support Groups.</p>
           <a class="btn btn--secondary btn--sm" style="margin-top:10px;" href="{{ url_for('main.support_groups_page') }}">Browse Support Groups</a>

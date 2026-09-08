@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Request a new time — {{ site.site_title }}{% endblock %}
+
+{% block content %}
+<section class="section coaching-book">
+  <div class="container" style="max-width: 720px;">
+    <p class="eyebrow"><a href="{{ url_for('main.manage_sessions') }}">&larr; Upcoming sessions</a></p>
+    <h1>Request a new time with {{ coach_label }}</h1>
+    <p class="field-help" style="margin-top: 8px;">
+      Your current session is
+      <strong>{{ meeting.scheduled_at|when('%a %b %d · %I:%M %p') }}</strong>.
+      Pick an open slot on {{ coach_label }}’s calendar and we’ll move you
+      there, then let the studio know.
+    </p>
+
+    {% if not slots %}
+    <div class="flash flash--info" role="status" style="margin-top: 20px;">
+      {{ coach_label }} has no other open times right now — check back soon,
+      or cancel and book again later.
+    </div>
+    {% endif %}
+
+    <form method="post" class="coaching-book__form" style="margin-top: 28px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <fieldset class="coaching-book__section">
+        <legend>Date &amp; time</legend>
+        <div class="field">
+          <label id="slot-cal-label">Pick an open day <span class="req" aria-hidden="true">*</span></label>
+          <input type="hidden" id="slot_utc" name="slot_utc" required value=""
+                 {% if not slots %}disabled{% endif %}>
+          {% if slots %}
+          <div class="slot-cal" data-slot-cal aria-labelledby="slot-cal-label">
+            <script type="application/json" data-slot-cal-json>{{ slots|tojson }}</script>
+            <div class="slot-cal__toolbar">
+              <button type="button" class="slot-cal__nav" data-slot-cal-prev aria-label="Previous month">‹</button>
+              <p class="slot-cal__month" data-slot-cal-month></p>
+              <button type="button" class="slot-cal__nav" data-slot-cal-next aria-label="Next month">›</button>
+            </div>
+            <div class="slot-cal__weekdays" aria-hidden="true">
+              <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+            </div>
+            <div class="slot-cal__grid" data-slot-cal-grid role="grid" aria-label="Available days"></div>
+            <div class="slot-cal__times" data-slot-cal-times hidden>
+              <p class="slot-cal__times-label" data-slot-cal-day-label>Choose a time</p>
+              <div class="slot-cal__time-list" data-slot-cal-time-list role="listbox" aria-label="Available times"></div>
+            </div>
+            <p class="slot-cal__chosen" data-slot-cal-chosen hidden></p>
+          </div>
+          {% else %}
+          <p class="field-help">No open times right now.</p>
+          {% endif %}
+          <p class="field-help">
+            Highlighted days have open slots on your own clock
+            (<strong>{{ viewer_tz }}</strong>, from
+            <a href="{{ url_for('main.settings') }}">your settings</a>).
+            Session length: {{ duration_min }} min.
+          </p>
+        </div>
+      </fieldset>
+
+      <button class="btn btn--primary" type="submit" {% if not slots %}disabled{% endif %}>
+        Request this time
+      </button>
+      <p class="field-help" style="margin-top: 12px;">
+        <a href="{{ url_for('main.manage_sessions') }}">← Back to upcoming sessions</a>
+      </p>
+    </form>
+  </div>
+</section>
+{% endblock %}

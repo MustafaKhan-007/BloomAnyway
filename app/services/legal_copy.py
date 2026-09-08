@@ -1,7 +1,7 @@
 """Canonical legal page bodies (seeded / refreshed when version changes)."""
 
 #: Bump to push Terms / Refunds / Privacy to live Page rows on next seed.
-LEGAL_COPY_VERSION = "2026-09-07"
+LEGAL_COPY_VERSION = "2026-09-08"
 
 #: The one-line version, for the places a buyer is looking at a price rather
 #: than a policy — the product page says it in its own words, and this goes on
@@ -106,7 +106,7 @@ You keep ownership of what you post. You grant Bloom Anyway a non-exclusive lice
 ## Digital products & shop
 Courses and guides sold on the [Courses & Guides](/courses) page are licensed for **personal use** unless a product page says otherwise. Redistribution or resale is not allowed. Delivery, taxes, and payment disputes for those purchases are handled with [Stripe](https://stripe.com) as merchant of record.
 
-A guide is delivered as soon as your payment clears — it opens in My space straight away — and guides are **non-refundable**. Courses, memberships, and paid sessions each have their own rules in [Refunds](/refunds).
+A guide is delivered as soon as your payment clears — it opens in My space straight away — and guides are **non-refundable**. Refunds are only applicable for duplicate purchases; see [Refunds](/refunds).
 
 ## Acceptable use
 Do not attempt to break, scrape abusively, overload, or reverse-engineer the service; do not bypass membership gates, rate limits, or security checks (including signup verification); do not disrupt support sessions or share private session links publicly.
@@ -130,32 +130,30 @@ Questions? Use the [Contact](/contact) page.
 
 REFUNDS = """# Refund Policy
 
-**Last updated:** September 7, 2026
+**Last updated:** September 8, 2026
 
-We want you to feel treated fairly. Stripe is the merchant of record for Bloom Anyway checkouts.
+Refunds are only applicable for **duplicate purchases**. If you were charged twice for the same thing, write to us and we will put the extra charge back. A change of mind, a product you already opened, or a membership you used is not a reason we refund. Stripe is the merchant of record for Bloom Anyway checkouts.
+
+Nothing on this page takes away a refund right the law gives you and we can't sign away.
+
+## Duplicate purchases
+A duplicate purchase is a second charge for the same product, membership, or session — two receipts for one thing. Reply to your Stripe receipt or use [Contact](/contact) with both order emails and we will refund the extra charge.
 
 ## Guides
-**Guides are non-refundable.** A guide is delivered the moment your payment clears — it opens in My space straight away and stays yours to keep — so there is nothing to give back, and we don't refund a change of mind once it has been opened. The product page, the price, and what's inside are all there before you buy; please read them, and ask us first if anything is unclear.
-
-That is not the same as leaving you stuck. Write to us and we will sort out a duplicate charge, a charge for the wrong product, or a file that won't open and can't be fixed. Nothing on this page takes away a refund right the law gives you and we can't sign away.
+**Guides are non-refundable.** A guide is delivered the moment your payment clears — it opens in My space straight away and stays yours to keep — so there is nothing to give back, and we don't refund a change of mind once it has been opened. The product page, the price, and what's inside are all there before you buy; please read them, and ask us first if anything is unclear. The only refund we issue on a guide is a **duplicate purchase**.
 
 ## Courses
-If a course purchase isn't right for you, reply to your Stripe receipt within **14 days** of purchase and tell us what went wrong. We'll work with you (and Stripe's process) to make it right where the product page or applicable law requires a refund.
-
-Access to a product in My space may be revoked when a refund is issued.
+Courses follow the same rule: we refund a **duplicate purchase**, not a change of mind after checkout. Access to a product in My space may be revoked when a refund is issued.
 
 ## Memberships
 - Memberships renew through Stripe on the interval you chose (monthly or annual) until you cancel.
 - **Cancel anytime** to stop future renewals — use the links on your Stripe receipt or Stripe customer portal when available, or contact us if you can't find them. Cancelling does **not** by itself refund time already billed.
 - **Founder / launch rates** (when offered): if you correctly enter the promo code at checkout during the published founder window, the discounted rate is **locked in for the life of that subscription** (it does not revert to the regular list price after the first month or year). Cancelling ends the lock-in; rejoining later uses the then-current price. Founder pricing is not a free trial.
-- **Refunds for memberships** are handled **case by case**. We are most likely to help when:
-  - you were charged in error (duplicate charge, wrong plan), or
-  - you could not access paid features for a meaningful period because of a fault on our side, and you write to us promptly.
-- We generally do **not** refund simply for change of mind after you have used paid community, support sessions, or Hub access — but if something feels unfair, still reach out and explain. We'd rather talk than leave you stuck.
+- **Refunds for memberships** apply only to a **duplicate purchase** (charged twice for the same plan). We do not refund time already billed or a change of mind after you have used paid community, support sessions, or Hub access.
 - Chargebacks filed without contacting us first may result in account review or suspension while we sort out payment status.
 
 ## Support sessions & add-ons
-Peer support seats included with membership are not separately refundable. Paid facilitator or 1:1 bookings follow the cancellation / refund note shown at the time of booking (or reply to that receipt within 14 days if nothing else is stated).
+Peer support seats included with membership are not separately refundable. Paid facilitator or 1:1 bookings are refunded only for a **duplicate purchase**, unless the cancellation note shown at booking says otherwise for that session.
 
 ## How to ask
 1. Find your Stripe receipt email, or  
