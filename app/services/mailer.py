@@ -664,6 +664,10 @@ def send_gift_received(
     """
     product = (product_name or "").strip() or "something"
     sender = (from_name or "").strip() or (from_email or "").strip() or "Someone"
+    at = (from_email or "").strip()
+    # The address as well as the name: it is what most people will know them
+    # by, and a name on its own can arrive meaning nothing.
+    naming = f"{sender} ({at})" if at and at != sender else sender
     said = " ".join((note or "").split())
     included = (perk or "").strip()
     library_url = _public_href("/account?tab=saved")
@@ -677,7 +681,7 @@ def send_gift_received(
         "shelf: " + join_url
     )
     body = (
-        f"{sender} bought you {product}."
+        f"{naming} bought you {product}."
         + (f"\n\nThey wrote: “{said}”" if said else "")
         + (f"\n\nIt comes with {included}." if included else "")
         + "\n\n" + where

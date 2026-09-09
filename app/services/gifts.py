@@ -251,11 +251,19 @@ def _tell_recipient(recipient, to_email, *, title, note, from_name,
         log.exception("gift: could not gather the files for %s", to_email)
     if recipient is not None:
         from .social_graph import notify
-        body = f"{from_name} sent you “{title}” as a gift."
+        # Named and addressed both: a name they don't recognise is a puzzle,
+        # and the address is what most people will know them by.
+        who = from_name
+        if from_email and from_email != from_name:
+            who = f"{from_name} ({from_email})"
+        body = f"{who} sent you “{title}” as a gift."
         if perk:
             body += f" It comes with {perk}."
         if note:
-            body += f" They wrote: “{note}”"
+            # The bell holds 300 characters and the sender has to survive
+            # them; the whole note is in the email either way.
+            short = note if len(note) <= 120 else note[:119].rstrip() + "…"
+            body += f" They wrote: “{short}”"
         try:
             notify(recipient.id, kind="gift", body=body, url="/account")
         except Exception:

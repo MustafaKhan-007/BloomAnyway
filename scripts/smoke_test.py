@@ -9906,6 +9906,8 @@ try:
     ok("The recipient's bell says who it came from and what they wrote",
        len(_bells) == 1 and "Wren Giver" in _bell_says
        and "For the hard week." in _bell_says, f"bell {_bell_says!r}")
+    ok("Naming them by address too, which is what they may be known by",
+       "thegiver@example.com" in _bell_says, f"bell {_bell_says!r}")
     ok("And that the membership months came with it",
        "creator" in _bell_says.lower(), f"bell {_bell_says!r}")
     ok("The buyer's bell says where it went",
@@ -9917,8 +9919,9 @@ try:
     ok("The recipient is emailed that a gift arrived",
        [m["subject"] for m in _to_them] == ["Wren Giver sent you a gift"],
        f"sent {[m['subject'] for m in _to_them]}")
-    ok("With the note in it",
-       _to_them and "For the hard week." in _to_them[0]["text"],
+    ok("With the note in it, and the address it came from",
+       _to_them and "For the hard week." in _to_them[0]["text"]
+       and "thegiver@example.com" in _to_them[0]["text"],
        _to_them[0]["text"] if _to_them else None)
     ok("And the guide itself, since it is theirs to read",
        _to_them and _to_them[0]["files"] == ["gentle.pdf"],
