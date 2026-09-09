@@ -5,6 +5,7 @@ import logging
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
+from flask import url_for
 from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 
@@ -609,6 +610,11 @@ def intake_for_meeting(meeting_id: int) -> CoachingIntake | None:
 
 
 def studio_intakes(coach: str | None = None, limit: int = 40) -> list[CoachingIntake]:
+    # A form filled in and then abandoned at Stripe leaves a row waiting on a
+    # checkout that is never coming. The sweep used to run only when somebody
+    # opened the booking page, so Studio could read "waiting on checkout" for
+    # weeks about a slot nobody is holding.
+    _expire_stale_pending(coach)
     q = (
         CoachingIntake.query
         .options(
@@ -650,6 +656,53 @@ def _studio_host() -> User | None:
     )
 
 
+def _coaching_url() -> str:
+    """The 1:1 band on Support Groups, reachable off a request too."""
+    try:
+        return url_for("main.support_groups_page") + "#coaching"
+    except RuntimeError:
+        return "/support-groups#coaching"
+
+
+def _studio_url() -> str:
+    try:
+        return url_for("admin.support_groups")
+    except RuntimeError:
+        return "/admin/support-groups"
+
+
+def _needs_a_new_time(intake: CoachingIntake, member: User | None, why: str) -> None:
+    """Paid for, but the hour can't stand — say so rather than go quiet.
+
+    The member is told their money landed and a time is coming; Studio is told
+    there is an hour to agree on. Neither is left to notice on their own.
+    """
+    from .social_graph import notify, notify_owners
+
+    label = coach_label(intake.coach)
+    try:
+        if member is not None and not getattr(member, "deleted_at", None):
+            notify(
+                member.id,
+                kind="support_group",
+                body=(f"Your 1:1 with {label} is paid for. The time you picked "
+                      "isn’t free any more, so we’ll write with a new one.")[:300],
+                url=_coaching_url(),
+            )
+        who = member.public_name() if member is not None else "A member"
+        notify_owners(
+            kind="support_group_alert",
+            body=(f"{who} paid for a 1:1 with {label}, but {why} — "
+                  "set a time from Support groups.")[:300],
+            url=_studio_url(),
+        )
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        log.exception("coaching intake %s: could not raise the reschedule notice",
+                      intake.id)
+
+
 def fulfill_intake(intake_id: int, *, buyer_email: str | None = None) -> str | None:
     """After Stripe pays: create Daily 1:1, seat member, mark intake scheduled."""
     intake = db.session.get(CoachingIntake, int(intake_id))
@@ -657,7 +710,13 @@ def fulfill_intake(intake_id: int, *, buyer_email: str | None = None) -> str | N
         return "Intake not found."
     if intake.status == "scheduled" and intake.meeting_id:
         return None
-    if intake.status not in ("pending_payment", "paid"):
+    # "expired" is only ever the two-hour sweep giving up on a checkout nobody
+    # finished. Money landing afterwards — a webhook Stripe retried for a day,
+    # a tab left open and paid from later — says it was finished after all, so
+    # the booking is picked back up rather than left with the charge and no
+    # session. A cancelled one is somebody's decision and stays cancelled.
+    reopened = intake.status == "expired"
+    if intake.status not in ("pending_payment", "paid", "expired"):
         return f"Intake is {intake.status}."
 
     member = db.session.get(User, intake.user_id)
@@ -679,7 +738,17 @@ def fulfill_intake(intake_id: int, *, buyer_email: str | None = None) -> str | N
     if when is None or when <= utcnow():
         intake.status = "paid"
         db.session.commit()
+        _needs_a_new_time(intake, member, "the hour they picked has already passed")
         return "Chosen slot is no longer in the future — mark paid for Studio to reschedule."
+
+    # A slot let go of hours ago can have been sold to somebody else since.
+    # Two people in the same hour is worse than a time to agree on, so the
+    # payment stands and Studio picks a new one.
+    if reopened and when.replace(microsecond=0) in _booked_starts(intake.coach):
+        intake.status = "paid"
+        db.session.commit()
+        _needs_a_new_time(intake, member, "their slot was taken while the payment was in the air")
+        return "That slot went while the payment was in the air — mark paid for Studio to reschedule."
 
     # A second run picks up the session the first one started rather than
     # opening another. Retrying is normal — the room Daily wouldn't make, the

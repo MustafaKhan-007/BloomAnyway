@@ -4480,6 +4480,235 @@ with app.app_context():
     db.session.get(_CI, _unmade_id).status = "cancelled"
     db.session.commit()
 
+# --- money that lands after the sweep has given up ----------------------------
+# A form filled in holds the slot for two hours; after that the sweep lets it
+# go. Stripe retries a webhook for days, though, and a tab left open can be
+# paid from long after. The charge is proof the checkout was finished, so the
+# booking is picked back up rather than left as a payment with no session.
+with app.app_context():
+    _slow = _CI(user_id=_buyer_id, coach="saman", answers_json="{}",
+                scheduled_at=utcnow() + timedelta(days=9, minutes=7),
+                status="pending_payment",
+                created_at=utcnow() - timedelta(hours=5))
+    db.session.add(_slow)
+    db.session.commit()
+    _slow_id = _slow.id
+    intake_svc._expire_stale_pending("saman")
+    ok("A checkout nobody finished stops holding the slot",
+       db.session.get(_CI, _slow_id).status == "expired",
+       db.session.get(_CI, _slow_id).status)
+    _err = intake_svc.fulfill_intake(_slow_id)
+    _slow_row = db.session.get(_CI, _slow_id)
+    ok("But paying late still books the hour it was paid for",
+       _err is None and _slow_row.status == "scheduled" and _slow_row.meeting_id,
+       f"{_err} / {_slow_row.status}")
+
+with app.app_context():
+    _taken_at = (utcnow() + timedelta(days=11)).replace(microsecond=0)
+    _gone = _CI(user_id=_buyer_id, coach="saman", answers_json="{}",
+                scheduled_at=_taken_at, status="pending_payment",
+                created_at=utcnow() - timedelta(hours=5))
+    db.session.add(_gone)
+    db.session.commit()
+    _gone_id = _gone.id
+    intake_svc._expire_stale_pending("saman")
+    _rival = _CI(user_id=_buyer_id, coach="saman", answers_json="{}",
+                 scheduled_at=_taken_at, status="scheduled")
+    db.session.add(_rival)
+    db.session.commit()
+    _alerts_before = Notification.query.filter_by(
+        kind="support_group_alert").count()
+    _err = intake_svc.fulfill_intake(_gone_id)
+    ok("An hour sold on in the meantime isn't double-booked",
+       _err is not None and db.session.get(_CI, _gone_id).status == "paid",
+       f"{_err} / {db.session.get(_CI, _gone_id).status}")
+    _hers = (Notification.query
+             .filter_by(user_id=_buyer_id, kind="support_group")
+             .order_by(Notification.id.desc()).first())
+    ok("She's told the money landed and a new time is coming",
+       _hers is not None and "isn’t free any more" in (_hers.body or ""),
+       _hers.body if _hers else "no notification")
+    _alert = (Notification.query.filter_by(kind="support_group_alert")
+              .order_by(Notification.id.desc()).first())
+    ok("And Studio is told there's a time to agree on",
+       Notification.query.filter_by(kind="support_group_alert").count()
+       > _alerts_before and "set a time" in (_alert.body or ""),
+       _alert.body if _alert else "no alert")
+    db.session.get(_CI, _gone_id).status = "cancelled"
+    db.session.get(_CI, _rival.id).status = "cancelled"
+    db.session.commit()
+
+# Studio used to read "waiting on checkout" for weeks about a slot nobody was
+# holding, because the sweep only ran when somebody opened the booking page.
+with app.app_context():
+    _ghost = _CI(user_id=_buyer_id, coach="saman", answers_json="{}",
+                 scheduled_at=utcnow() + timedelta(days=13),
+                 status="pending_payment",
+                 created_at=utcnow() - timedelta(days=3))
+    db.session.add(_ghost)
+    db.session.commit()
+    _ghost_id = _ghost.id
+    _listed = [i.id for i in intake_svc.studio_intakes()]
+    ok("Studio stops listing a checkout nobody came back to",
+       _ghost_id not in _listed
+       and db.session.get(_CI, _ghost_id).status == "expired",
+       db.session.get(_CI, _ghost_id).status)
+
+# A booking is written down before Stripe so the slot is held and the answers
+# survive the trip. If the trip never happens, it is let go of again.
+with app.app_context():
+    _norun = _CI(user_id=_buyer_id, coach="ayesha", answers_json="{}",
+                 scheduled_at=utcnow() + timedelta(days=15),
+                 status="pending_payment")
+    db.session.add(_norun)
+    db.session.commit()
+    _norun_id = _norun.id
+
+
+def _stripe_says_no(**_kw):
+    raise pay.StripeError("Stripe wouldn’t take that price")
+
+
+_real_addon_checkout = pay.create_checkout_session
+pay.create_checkout_session = _stripe_says_no
+try:
+    r = wrap_client.get(f"/checkout/addon/ayesha?intake={_norun_id}",
+                        follow_redirects=True)
+finally:
+    pay.create_checkout_session = _real_addon_checkout
+ok("A checkout Stripe refuses says so instead of going quiet",
+   "wouldn’t take that price" in flashes(r), flashes(r))
+with app.app_context():
+    ok("And the booking behind it isn't left waiting on a payment",
+       db.session.get(_CI, _norun_id).status == "cancelled",
+       db.session.get(_CI, _norun_id).status)
+
+# Studio used to print the column name at whoever was reading it.
+with app.app_context():
+    _atck = _CI(user_id=_buyer_id, coach="ayesha", answers_json="{}",
+                scheduled_at=utcnow() + timedelta(days=17),
+                status="pending_payment")
+    db.session.add(_atck)
+    db.session.commit()
+    _atck_id = _atck.id
+_sgpage = admin.get("/admin/support-groups").get_data(as_text=True)
+ok("Studio says where a booking has got to, not what the column is called",
+   "at checkout" in _sgpage and "pending_payment" not in _sgpage,
+   "pending_payment still printed" if "pending_payment" in _sgpage
+   else "no 'at checkout' pill")
+ok("And that nothing has been paid on it yet",
+   "nothing paid yet" in _sgpage
+   and "saved before checkout" in _sgpage)
+with app.app_context():
+    db.session.get(_CI, _atck_id).status = "cancelled"
+    db.session.commit()
+
+# --- the founder taking the hour hears about it too ---------------------------
+# The member has always had a reminder the day before. Whoever is sitting on
+# the other side of the call had nothing but the Studio page to remember to
+# look at.
+with app.app_context():
+    from app.services.settings import set_setting as _set_coach
+    _set_coach("ayesha_coach_email", "")
+    _due = db.session.get(SupportGroupMeeting, _ooo_mid)
+    _due.status = "scheduled"
+    _due.scheduled_at = utcnow() + timedelta(hours=20)
+    _due.reminded_at = None
+    db.session.commit()
+    _mail_mark = len(_sent_mail)
+    sg_svc.dispatch_due_reminders()
+    _fresh = _sent_mail[_mail_mark:]
+    _booker = db.session.get(User, _buyer_id).public_name()
+    ok("With no address saved for her, the owners are reminded of the 1:1",
+       any(m["to"] == "owner@example.com"
+           and ("1:1 is tomorrow" in m["subject"]
+                or "1:1 is today" in m["subject"])
+           for m in _fresh),
+       [(m["to"], m["subject"]) for m in _fresh])
+    ok("And the member's own reminder still goes as it did",
+       any(m["to"] == _buyer_email for m in _fresh),
+       [m["to"] for m in _fresh])
+
+with app.app_context():
+    _coach_acct = User(email="ayesha-coach@example.com", display_name="Ayesha",
+                       username="ayeshacoach", timezone="Asia/Karachi",
+                       email_verified_at=utcnow())
+    _coach_acct.set_password(USER_PW)
+    db.session.add(_coach_acct)
+    db.session.commit()
+    _coach_id = _coach_acct.id
+    _set_coach("ayesha_coach_email", "ayesha-coach@example.com")
+    _due = db.session.get(SupportGroupMeeting, _ooo_mid)
+    _due.scheduled_at = utcnow() + timedelta(hours=18)
+    _due.reminded_at = None
+    db.session.commit()
+    _mail_mark = len(_sent_mail)
+    _bell_mark = Notification.query.filter_by(
+        user_id=_coach_id, kind="support_group").count()
+    sg_svc.dispatch_due_reminders()
+    _fresh = _sent_mail[_mail_mark:]
+    _hers = [m for m in _fresh if m["to"] == "ayesha-coach@example.com"]
+    ok("Once Studio has her address, the reminder goes to her",
+       len(_hers) == 1, [(m["to"], m["subject"]) for m in _fresh])
+    ok("Naming who booked it, and the time on her own clock",
+       _booker in _hers[0]["text"] and "Karachi" in _hers[0]["text"],
+       _hers[0]["text"])
+    ok("Where Studio keeps their answers is in it, as a link that works from an inbox",
+       "://" in _hers[0]["text"].split("/admin/support-groups")[0].rsplit(" ", 1)[-1]
+       and "/admin/support-groups" in _hers[0]["text"], _hers[0]["text"])
+    ok("And it's in her bell too",
+       Notification.query.filter_by(user_id=_coach_id, kind="support_group")
+       .count() == _bell_mark + 1)
+    ok("The owners are left out of it now somebody else is taking the call",
+       not any(m["to"] == "owner@example.com" for m in _fresh),
+       [m["to"] for m in _fresh])
+
+# An hour booked this morning for this evening is not tomorrow, and saying so
+# is what makes the reminder worth reading.
+with app.app_context():
+    from app.services.timefmt import to_local as _to_local
+    # Three hours from now is only "later today" on a clock that isn't near
+    # midnight, so put her on one where it plainly is.
+    _daytime_tz = next(
+        tz for tz in ("UTC", "Asia/Karachi", "America/New_York", "Asia/Tokyo",
+                      "Pacific/Auckland", "America/Los_Angeles")
+        if _to_local(utcnow(), tz).hour <= 18
+    )
+    db.session.get(User, _coach_id).timezone = _daytime_tz
+    _due = db.session.get(SupportGroupMeeting, _ooo_mid)
+    _due.scheduled_at = utcnow() + timedelta(hours=3)
+    _due.reminded_at = None
+    db.session.commit()
+    _mail_mark = len(_sent_mail)
+    sg_svc.dispatch_due_reminders()
+    _hers = [m for m in _sent_mail[_mail_mark:]
+             if m["to"] == "ayesha-coach@example.com"]
+    ok("A session later the same day says today, not tomorrow",
+       len(_hers) == 1 and "today" in _hers[0]["subject"].lower()
+       and "tomorrow" not in _hers[0]["subject"].lower(),
+       [m["subject"] for m in _hers])
+    _set_coach("ayesha_coach_email", "")
+
+_coach_settings = admin.get("/admin/settings").get_data(as_text=True)
+ok("Studio asks for each founder's address for these reminders",
+   'name="saman_coach_email"' in _coach_settings
+   and 'name="ayesha_coach_email"' in _coach_settings
+   and "go to every" in _coach_settings)
+with app.app_context():
+    from app.services.settings import all_settings as _all_settings
+    _settings_form = dict(_all_settings())
+_settings_form["saman_coach_email"] = "saman-coach@example.com"
+admin.post("/admin/settings", data=_settings_form, follow_redirects=True)
+with app.app_context():
+    ok("And saving one keeps it",
+       get_setting("saman_coach_email") == "saman-coach@example.com",
+       get_setting("saman_coach_email"))
+    ok("Which is then where that founder's reminders go",
+       sg_svc.coach_reminder_addresses("Saman")
+       == (["saman-coach@example.com"], False),
+       str(sg_svc.coach_reminder_addresses("Saman")))
+    _set_coach("saman_coach_email", "")
+
 # --- the room is the coach's, not the Studio account's ------------------------
 with app.app_context():
     _ooo = db.session.get(SupportGroupMeeting, _ooo_mid)

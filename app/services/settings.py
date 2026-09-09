@@ -51,6 +51,9 @@ DEFAULTS = {
     # last end-date each slot was warned about, so owners get one notice each
     "spotlight_creator_notified": "",
     "spotlight_reel_notified": "",
+    # where each founder's own 1:1 reminder goes — blank falls back to the owners
+    "ayesha_coach_email": "",
+    "saman_coach_email": "",
     # 1:1 coaching + facilitator booking (external calendars)
     "ayesha_booking_url": "",
     "saman_booking_url": "",

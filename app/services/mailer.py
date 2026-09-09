@@ -368,6 +368,11 @@ def _public_href(path: str = "/") -> str:
     return base + path
 
 
+def absolute_url(path: str = "/") -> str:
+    """An address that still works read in somebody's inbox."""
+    return _public_href(path)
+
+
 def send_styled_email(
     to: str,
     *,
@@ -386,6 +391,9 @@ def send_styled_email(
     ``preview`` is kept for callers / plain-text fallback only.
     """
     _ = preview  # reserved for plain-text / future template fields
+    # A path is fine on the site and useless in an inbox.
+    if (button_url or "").startswith("/"):
+        button_url = _public_href(button_url)
     text = (
         f"{title}\n\n{body}\n\n"
         f"{button_text}: {button_url}\n\n"
