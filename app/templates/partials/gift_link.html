@@ -1,0 +1,16 @@
+{# The quiet second way to buy: same money, somebody else's shelf. It sits
+   beside "Buy now" and beside "Open & read" both, because already having a
+   thing is no reason not to send it to somebody. #}
+{% macro gift_link(product) %}
+<a class="pd-hero__gift" href="{{ url_for('main.gift_product', slug=product.slug) }}"
+   title="Buy this as a gift" aria-label="Buy this as a gift">
+  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <path d="M3 11h18v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-9Z"/>
+    <path d="M2 7h20v4H2z"/>
+    <path d="M12 7v14"/>
+    <path d="M12 7S10.5 3 8.5 3a2.5 2.5 0 0 0 0 5H12Z"/>
+    <path d="M12 7s1.5-4 3.5-4a2.5 2.5 0 0 1 0 5H12Z"/>
+  </svg>
+  <span>Gift it</span>
+</a>
+{% endmacro %}

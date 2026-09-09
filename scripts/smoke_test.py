@@ -9998,6 +9998,23 @@ try:
     ok("Gifting somebody what they already have is refused",
        "already have this one" in r.get_data(as_text=True), flashes(r))
 
+    # Having read a thing is often when it occurs to somebody who else should.
+    # The recipient owns this one now, and the door to send it on has to still
+    # be there — the gift goes to another shelf, so owning it changes nothing.
+    _owner_client = app.test_client()
+    _owner_client.post("/login", data={"email": "thegetter@example.com",
+                                       "password": USER_PW})
+    _owned_pd = _owner_client.get(
+        "/courses/a-gentle-beginning").get_data(as_text=True)
+    ok("Somebody who owns it is offered it to read and to send on",
+       "Open &amp; read" in _owned_pd and "pd-hero__gift" in _owned_pd
+       and "/gift/a-gentle-beginning" in _owned_pd,
+       "no gift door on an owner's product page")
+    ok("And told the copy they send goes to the other person's shelf",
+       "send it to somebody else" in _owned_pd)
+    ok("The gift page opens for them the same as anyone",
+       _owner_client.get("/gift/a-gentle-beginning").status_code == 200)
+
     # Paid for and gone nowhere is the one thing that must never be quiet.
     _gift_post.clear()
     with app.app_context():
