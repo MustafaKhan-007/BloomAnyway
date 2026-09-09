@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Send {{ product.title }} — {{ site.site_title }}{% endblock %}
+
+{% block content %}
+<section class="section page-remaster">
+  <div class="container" style="max-width: 620px;">
+    <p class="eyebrow">A gift</p>
+    <h1>Send {{ product.title }}</h1>
+    <p class="gift-lede">
+      You pay for it; it lands on their shelf, not yours. They&rsquo;ll be told
+      it came from you{% if product.has_perk() %}, and
+      {{ product.perk_summary() }} goes with it{% endif %}.
+    </p>
+
+    <form method="post" class="gift-form"
+          action="{{ url_for('main.gift_product', slug=product.slug) }}"
+          data-gift-form
+          {% if current_user.is_authenticated %}
+          data-gift-who="{{ url_for('main.gift_who') }}"{% endif %}>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="to_user" value="{{ form.to_user }}" data-gift-id>
+
+      <div class="field">
+        <label for="gift-to">Who it&rsquo;s for</label>
+        <input type="text" id="gift-to" name="to" autocomplete="off"
+               maxlength="255" required
+               placeholder="their email address, or their name here"
+               value="{{ form.to }}" data-gift-input
+               aria-describedby="gift-to-help"
+               aria-autocomplete="list" aria-controls="gift-who" role="combobox"
+               aria-expanded="false">
+        <p class="field-help" id="gift-to-help">
+          {% if current_user.is_authenticated %}
+          Write out their whole address and we&rsquo;ll show you whose it is.
+          If they&rsquo;re already here, their name or handle finds them too.
+          {% else %}
+          Write out their whole address. Sign in first and we&rsquo;ll show you
+          whose it is before you pay.
+          {% endif %}
+        </p>
+      </div>
+
+      {# Filled in as they type. Anyone chosen sits here in their place. #}
+      <div class="gift-who" id="gift-who" role="listbox" data-gift-list
+           aria-label="Who this could be for" hidden></div>
+      <div class="gift-picked" data-gift-picked {{ '' if picked else 'hidden' }}>
+        <span class="avatar avatar--sm" data-gift-picked-face
+              {% if picked and picked.avatar %}style="background-image:url('{{ picked.avatar }}')"{% endif %}>
+          {%- if picked and not picked.avatar %}{{ picked.initials }}{% endif -%}
+        </span>
+        <span class="gift-picked__who">
+          <strong data-gift-picked-name>{{ picked.name if picked }}</strong>
+          <span class="gift-picked__meta" data-gift-picked-meta>
+            {%- if picked %}{{ picked.handle }}{% if picked.handle and picked.tier %} &middot; {% endif %}{{ picked.tier }}{% endif -%}
+          </span>
+        </span>
+        <button type="button" class="gift-picked__undo" data-gift-clear>Change</button>
+      </div>
+      <p class="gift-who__none" data-gift-none hidden>
+        No account here under that address yet &mdash; that&rsquo;s fine. It
+        waits for them, and opens the moment they make one with it.
+      </p>
+
+      <div class="field">
+        <label for="gift-note">A note to go with it <span class="field-opt">(optional)</span></label>
+        <textarea id="gift-note" name="note" rows="4" maxlength="400"
+                  placeholder="Thought of you when I read this."
+                  data-gift-note>{{ form.note }}</textarea>
+        <p class="field-help">
+          They&rsquo;ll read this in the email that tells them.
+          <span data-gift-left>400</span> left.
+        </p>
+      </div>
+
+      <div class="gift-form__go">
+        <button class="btn btn--primary" type="submit">
+          Continue to payment{% if product.price_display() %} &middot; {{ product.price_display() }}{% endif %}
+        </button>
+        <a class="btn btn--ghost" href="{{ url_for('main.course_detail', slug=product.slug) }}">Back to the page</a>
+      </div>
+      <p class="field-help">
+        Nothing is charged until Stripe&rsquo;s page.
+        {%- if product.is_guide() %} Guides are non-refundable, gifted or not.{% endif %}
+      </p>
+    </form>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/gift.js') }}" defer></script>
+{% endblock %}
