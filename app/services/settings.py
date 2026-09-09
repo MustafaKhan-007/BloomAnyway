@@ -1,5 +1,18 @@
-"""Key-value site settings with a tiny in-process cache."""
+"""Key-value site settings, read fresh for each page.
+
+Two gunicorn workers serve this site, and each one used to keep its own copy
+of these for the life of the process. Saving in Studio changed the copy
+belonging to whichever worker took the POST; the other one went on serving
+what it had read at boot, and no amount of refreshing would shift it —
+"I changed the date and it still says the old one" until the next deploy.
+
+So nothing is held across a request now. The rows are read once per request
+and shared for the length of it, which is one small query for a table of a
+few dozen values. Outside a request — jobs, the CLI, boot — a short-lived
+process copy stands in.
+"""
 import secrets
+import time
 from datetime import date
 
 from ..extensions import db
@@ -53,18 +66,64 @@ DEFAULTS = {
 #: old brand names that should be rewritten to the current default on boot/seed
 _LEGACY_TITLES = frozenset({"first light", "no saddies just baddies"})
 
+#: last known values, for use away from a request and if the database blinks
 _cache: dict[str, str] = {}
-_loaded = False
+_read_at = 0.0
+
+#: how long that stand-in copy is trusted outside a request
+_TTL_SECONDS = 5.0
 
 
-def _load():
-    global _loaded
-    _cache.clear()
+def _read_rows() -> dict[str, str]:
+    rows = {}
     for row in Setting.query.all():
         if row.key.startswith("_"):   # internal (e.g. the secret key) — keep private
             continue
-        _cache[row.key] = row.value
-    _loaded = True
+        rows[row.key] = row.value
+    return rows
+
+
+def _reload() -> dict[str, str]:
+    """Read the table and keep what came back.
+
+    A database that blinks hands back the last thing we read rather than every
+    default at once, which would blank the site's name and support address
+    until it came back.
+    """
+    global _cache, _read_at
+    try:
+        rows = _read_rows()
+    except Exception:
+        return _cache
+    # Put the finished dict in place rather than emptying and refilling the
+    # one being read: four threads share this worker, and one of them must
+    # never catch it halfway.
+    _cache = rows
+    _read_at = time.monotonic()
+    return rows
+
+
+def _current() -> dict[str, str]:
+    """Everything stored, as it stands now.
+
+    Read once per request and kept for the rest of it, so a page can ask fifty
+    times over and pay for one query.
+    """
+    try:
+        from flask import g, has_request_context
+        in_request = has_request_context()
+    except Exception:
+        in_request = False
+
+    if in_request:
+        held = getattr(g, "_site_settings", None)
+        if held is None:
+            held = _reload()
+            g._site_settings = held
+        return held
+    if _cache and (time.monotonic() - _read_at) <= _TTL_SECONDS:
+        return _cache
+    return _reload()
 
 
 def get_or_create_secret_key() -> str:
@@ -81,18 +140,14 @@ def get_or_create_secret_key() -> str:
 
 
 def get_setting(key: str, default: str | None = None) -> str:
-    if not _loaded:
-        _load()
     if default is None:
         default = DEFAULTS.get(key, "")
-    return _cache.get(key, default)
+    return _current().get(key, default)
 
 
 def all_settings() -> dict:
-    if not _loaded:
-        _load()
     merged = dict(DEFAULTS)
-    merged.update(_cache)
+    merged.update(_current())
     return merged
 
 
@@ -104,7 +159,15 @@ def set_setting(key: str, value: str) -> None:
     else:
         row.value = value
     db.session.commit()
+    # The rest of this request reads what was just saved, rather than the copy
+    # taken before it was.
     _cache[key] = value
+    try:
+        from flask import g, has_request_context
+        if has_request_context() and getattr(g, "_site_settings", None) is not None:
+            g._site_settings[key] = value
+    except Exception:
+        pass
 
 
 def active_announcement() -> str:
@@ -244,5 +307,13 @@ def ensure_support_email() -> bool:
 
 
 def invalidate_cache() -> None:
-    global _loaded
-    _loaded = False
+    """Forget everything held, so the next read goes to the table."""
+    global _cache, _read_at
+    _cache = {}
+    _read_at = 0.0
+    try:
+        from flask import g, has_request_context
+        if has_request_context():
+            g.pop("_site_settings", None)
+    except Exception:
+        pass
