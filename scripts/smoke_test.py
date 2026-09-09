@@ -3629,14 +3629,72 @@ ok("Host booking email was sent",
         if "seat is saved" in m["subject"].lower()
         or "booked" in m["subject"].lower()]) >= 1)
 
+# Hosting is one a day. Two on the same day is the thing that's refused —
+# not the second one this fortnight — and the day is theirs, off their own
+# clock, which is why the zone is pinned before any of this is counted.
+with app.app_context():
+    _host = User.query.filter_by(email="stranger@example.com").first()
+    _host.timezone = "UTC"
+    db.session.commit()
+    _host_id = _host.id
+_day_one = (datetime.utcnow() + timedelta(days=9)).strftime("%Y-%m-%d")
+_day_two = (datetime.utcnow() + timedelta(days=10)).strftime("%Y-%m-%d")
 r = stranger_client.post("/support-groups/schedule",
-                         data={"circle_id": heal_cid,
-                               "meeting_date": (_when + timedelta(days=1)).strftime("%Y-%m-%d"),
-                               "meeting_time": _sg_time, "timezone": "UTC"},
+                         data={"circle_id": heal_cid, "meeting_date": _day_one,
+                               "meeting_time": "09:00"},
                          follow_redirects=True)
-ok("Peer schedule cooldown blocks a second session within 2 weeks",
-   "every 14 days" in r.get_data(as_text=True).lower()
-   or "after" in r.get_data(as_text=True).lower())
+ok("A member can host again the same week, not a fortnight later",
+   "Session scheduled" in r.get_data(as_text=True), flashes(r))
+r = stranger_client.post("/support-groups/schedule",
+                         data={"circle_id": heal_cid, "meeting_date": _day_one,
+                               "meeting_time": "20:00"},
+                         follow_redirects=True)
+ok("But not twice in one day",
+   "already hosting a session that day" in r.get_data(as_text=True), flashes(r))
+r = stranger_client.post("/support-groups/schedule",
+                         data={"circle_id": heal_cid, "meeting_date": _day_two,
+                               "meeting_time": "09:00"},
+                         follow_redirects=True)
+ok("The next day is theirs again",
+   "Session scheduled" in r.get_data(as_text=True), flashes(r))
+with app.app_context():
+    _hosted = (SupportGroupMeeting.query
+               .filter_by(scheduled_by_user_id=_host_id, kind="peer",
+                          status="scheduled")
+               .order_by(SupportGroupMeeting.scheduled_at.asc()).all())
+    ok("Which leaves one session standing on each day they asked for",
+       len(_hosted) == 3, f"{len(_hosted)} sessions")
+    _other_day_id = _hosted[-1].id
+
+# And the day is the one on their clock. Eight in the evening in Karachi and
+# two the following morning are two days to them and one day to the server —
+# counted the server's way, a member loses an evening they never used. Another
+# topic, so this isn't measuring the four-a-topic cap by accident.
+with app.app_context():
+    _heal2_cid = (SupportGroupCircle.query
+                  .filter_by(slug="co-parenting").first().id)
+    db.session.get(User, _host_id).timezone = "Asia/Karachi"
+    db.session.commit()
+_kd = (datetime.utcnow() + timedelta(days=12)).strftime("%Y-%m-%d")
+_kd_next = (datetime.utcnow() + timedelta(days=13)).strftime("%Y-%m-%d")
+r = stranger_client.post("/support-groups/schedule",
+                         data={"circle_id": _heal2_cid, "meeting_date": _kd,
+                               "meeting_time": "20:00"}, follow_redirects=True)
+ok("Eight in the evening on their own clock is booked as theirs",
+   "Session scheduled" in r.get_data(as_text=True), flashes(r))
+r = stranger_client.post("/support-groups/schedule",
+                         data={"circle_id": _heal2_cid, "meeting_date": _kd,
+                               "meeting_time": "23:00"}, follow_redirects=True)
+ok("A second one that same evening is one too many",
+   "already hosting a session that day" in r.get_data(as_text=True), flashes(r))
+r = stranger_client.post("/support-groups/schedule",
+                         data={"circle_id": _heal2_cid, "meeting_date": _kd_next,
+                               "meeting_time": "02:00"}, follow_redirects=True)
+ok("Two in the morning is a new day for them, whatever UTC still says",
+   "Session scheduled" in r.get_data(as_text=True), flashes(r))
+with app.app_context():
+    db.session.get(User, _host_id).timezone = "UTC"
+    db.session.commit()
 
 r = client.post(f"/support-groups/meetings/{mid}/join", follow_redirects=True)
 ok("Another member can join an upcoming peer session",
@@ -3648,6 +3706,7 @@ with app.app_context():
         meeting_id=mid, status="selected").count()
     ok("Joined peer session has two seats", seated == 2)
     notes = Notification.query.filter_by(kind="support_group").count()
+    _joiner_id = User.query.filter_by(email="newperson@example.com").first().id
     ok("Peer booking created in-app notifications", notes >= 1)
     sample = Notification.query.filter_by(kind="support_group").first()
     ok("Support-group notifications link to the in-site room",
@@ -3655,6 +3714,18 @@ with app.app_context():
        and sample.href()
        and "/support-groups/meetings/" in (sample.href() or "")
        and "/room" in (sample.href() or ""))
+
+# Sitting in on them isn't rationed. A second seat in the same topic used to
+# be turned away — "leave that one first if you want to switch" — which meant
+# a week with three Divorce Recovery sessions in it was a week you picked one.
+r = client.post(f"/support-groups/meetings/{_other_day_id}/join",
+                follow_redirects=True)
+with app.app_context():
+    _held = (SupportGroupApplication.query
+             .filter_by(user_id=_joiner_id, circle_id=heal_cid,
+                        status="selected").count())
+ok("A member can hold seats in as many sessions of one topic as they like",
+   _held == 2, f"{_held} seats | {flashes(r)}")
 
 r = client.get(f"/support-groups/meetings/{mid}/room", follow_redirects=False)
 ok("Early Join redirects to the waiting room",

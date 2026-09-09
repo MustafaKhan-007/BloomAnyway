@@ -14,7 +14,7 @@ the browser enough to correct them in place.
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from functools import lru_cache
 from urllib.parse import unquote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
@@ -369,3 +369,21 @@ def parse_owner_parts(date_s: str, time_s: str, tz_name: str | None) -> datetime
     if len(t) == 5:
         t = t + ":00"
     return parse_owner_local(f"{d}T{t[:8]}", tz_name)
+
+
+def local_day_bounds(dt: datetime, tz_name: str | None) -> tuple[datetime, datetime]:
+    """The stored-UTC span of the day ``dt`` falls on, on that clock.
+
+    "The same day" is a question about somebody's calendar, not the server's:
+    an eight in the evening in Karachi is the next day's three in the morning
+    in UTC. Both ends come back naive UTC, ready to compare against stored
+    times. The far end is built from the next date rather than by adding a
+    day, so the clocks going forward can't hand back a 23-hour day.
+    """
+    tz = ZoneInfo(normalize_timezone(tz_name) or DEFAULT_TZ)
+    aware = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    day = aware.astimezone(tz).date()
+    start = datetime.combine(day, time.min, tzinfo=tz)
+    end = datetime.combine(day + timedelta(days=1), time.min, tzinfo=tz)
+    return (start.astimezone(timezone.utc).replace(tzinfo=None),
+            end.astimezone(timezone.utc).replace(tzinfo=None))
