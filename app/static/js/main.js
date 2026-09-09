@@ -822,6 +822,7 @@
     if (!dialog) return;
     var kindInput = dialog.querySelector("[data-feedback-kind-input]");
     var starsBox = dialog.querySelector("[data-feedback-stars]");
+    var replyNote = dialog.querySelector("[data-feedback-reply]");
     var tabs = dialog.querySelectorAll("[data-feedback-tab]");
 
     function setKind(kind) {
@@ -832,6 +833,11 @@
       if (starsBox) {
         if (kind === "feedback") starsBox.removeAttribute("hidden");
         else starsBox.setAttribute("hidden", "");
+      }
+      // Stars need no answer; a complaint or a broken page does.
+      if (replyNote) {
+        if (kind === "feedback") replyNote.setAttribute("hidden", "");
+        else replyNote.removeAttribute("hidden");
       }
     }
 
