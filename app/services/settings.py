@@ -170,6 +170,46 @@ def set_setting(key: str, value: str) -> None:
         pass
 
 
+def claim_setting(key: str, value: str) -> bool:
+    """Take a one-off claim on ``key``. True only for whoever gets there first.
+
+    Two workers serve this site, and an hourly job runs in both of them. Asking
+    "has this been sent yet?" and then sending it leaves a gap where both of
+    them get the answer no, and the same notice goes out twice. Writing is the
+    only thing that settles it, so the write has to be the question: the row
+    moves to ``value`` for exactly one caller, and everyone else is told the
+    job was already taken.
+
+    Commits, so claim before adding anything else to the session.
+    """
+    from sqlalchemy import or_
+    from sqlalchemy.exc import IntegrityError
+
+    table = Setting.__table__
+    taken = False
+    try:
+        done = db.session.execute(
+            table.update()
+            .where(table.c.key == key)
+            .where(or_(table.c.value.is_(None), table.c.value != value))
+            .values(value=value)
+        )
+        if done.rowcount:
+            db.session.commit()
+            taken = True
+        elif db.session.get(Setting, key) is not None:
+            db.session.commit()   # nothing of ours to write; let the row go
+        else:
+            db.session.add(Setting(key=key, value=value))
+            db.session.commit()
+            taken = True
+    except IntegrityError:
+        # Somebody wrote the row between our two statements.
+        db.session.rollback()
+    invalidate_cache()
+    return taken
+
+
 def active_announcement() -> str:
     """The announcement text, or "" if unset or past its expiry date."""
     text = get_setting("announcement_text")

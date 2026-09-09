@@ -18,7 +18,7 @@ from sqlalchemy import func
 from ..extensions import db
 from ..models import (CheckIn, ForumComment, ForumPost, SupportGroupApplication,
                       SupportGroupMeeting, User, utcnow)
-from .settings import get_setting, set_setting
+from .settings import claim_setting, get_setting, set_setting
 from .social import instagram_from_links, instagram_profile_url
 from .timefmt import normalize_timezone, viewer_timezone
 
@@ -475,7 +475,10 @@ def sweep_expiry_notices(today: date | None = None) -> int:
         if not (slot["ending_soon"] or slot["expired"]):
             continue
         stamp = slot["ends"].isoformat()
-        if (get_setting(_notified_key(slot["kind"])) or "").strip() == stamp:
+        # Claim the notice before writing it. Both workers reach this line for
+        # the same slot in the same second; only one of them gets to send.
+        key = _notified_key(slot["kind"])
+        if not claim_setting(key, stamp):
             continue
         if slot["expired"]:
             when = "has run out"
@@ -488,15 +491,25 @@ def sweep_expiry_notices(today: date | None = None) -> int:
             tail = f" — {who} has been up all month." if who else ""
         else:
             tail = " — time to pick this week's reel."
-        notify_owners(
-            kind="spotlight_expiry",
-            body=f"{slot['label']} {when}{tail}",
-            url=href,
-        )
-        set_setting(_notified_key(slot["kind"]), stamp)
+        try:
+            notify_owners(
+                kind="spotlight_expiry",
+                body=f"{slot['label']} {when}{tail}",
+                url=href,
+            )
+            db.session.commit()
+        except Exception:
+            # The claim is spent and nobody was told, which would lose the
+            # notice for good. Hand it back for the next sweep.
+            log.exception("spotlight: could not send the %s expiry notice",
+                          slot["kind"])
+            db.session.rollback()
+            try:
+                set_setting(key, "")
+            except Exception:
+                db.session.rollback()
+            continue
         sent += 1
-    if sent:
-        db.session.commit()
     return sent
 
 

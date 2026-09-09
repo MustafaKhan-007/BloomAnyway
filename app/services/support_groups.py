@@ -1739,12 +1739,33 @@ def due_reminders(now: datetime | None = None):
             .all())
 
 
+def _claim_reminder(meeting: SupportGroupMeeting) -> bool:
+    """Take this session's reminder. True only for whoever gets there first.
+
+    Both workers run this sweep, and both of them read the same unreminded
+    session before either has stamped it — which is a second email and a
+    second bell for every seat. Stamping first, in one statement that only
+    matches while the stamp is still empty, is what keeps it to one. A send
+    that then fails loses the reminder rather than repeating it for the
+    people who already had theirs.
+    """
+    table = SupportGroupMeeting.__table__
+    done = db.session.execute(
+        table.update()
+        .where(table.c.id == meeting.id, table.c.reminded_at.is_(None))
+        .values(reminded_at=utcnow())
+    )
+    db.session.commit()
+    return bool(done.rowcount)
+
+
 def dispatch_due_reminders(now: datetime | None = None) -> int:
     meetings = due_reminders(now=now)
     sent = 0
     for meeting in meetings:
+        if not _claim_reminder(meeting):
+            continue
         _notify_seats(meeting, kind="reminder")
-        meeting.reminded_at = utcnow()
         db.session.commit()
         sent += 1
     return sent
