@@ -1430,9 +1430,12 @@ def handle_payment_event(event_type: str, data: dict) -> Order | None:
             download_url=None,
             refunded=False,
         )
-        if gifted and (landed is None
-                       or gifts.clean_email(landed.customer_email)
-                       != gifts.clean_email(shelf_email)):
+        # Only worth checking the first time a payment comes good: a replay
+        # finds the row already there and must not raise the alarm again.
+        if send_receipt and gifted and (
+                landed is None
+                or gifts.clean_email(landed.customer_email)
+                != gifts.clean_email(shelf_email)):
             # Paid for and gone nowhere. Nobody is left thinking it arrived.
             gifts.tell_sender_it_failed(
                 order, name=name, why="the purchase did not reach their shelf")
