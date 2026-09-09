@@ -2508,6 +2508,24 @@ ok("The contact page says it is for the website itself",
    and "That is all this form is for" in _cbody)
 ok("And points everything else where it will actually be answered",
    'href="/forums/"' in _cbody and "/support-groups" in _cbody, "no way onward")
+# Anything sent without an address arrives as a guest and dead-ends there, so
+# the one thing somebody wanting help has to do is said before the box.
+_cflat = re.sub(r"\s+", " ", _cbody)
+ok("The contact page asks for an address they actually read",
+   "complaint, or something broken you need sorting out" in _cflat
+   and "email address you actually read" in _cflat)
+ok("And says plainly what happens without one",
+   "shows up as a guest" in _cflat and "nothing for us to reply to" in _cflat)
+# The little Feedback button is where a guest actually goes unreachable: the
+# address is optional there, and only somebody signed out is asked for one.
+_gbody = app.test_client().get("/contact").get_data(as_text=True)
+_gflat = re.sub(r"\s+", " ", _gbody)
+ok("The feedback box warns a guest with a complaint the same way",
+   "there is no way for us to come back to you" in _gflat
+   and "data-feedback-reply" in _gflat, "no warning on the widget")
+ok("But it is kept off the stars, which need no answer",
+   re.search(r"data-feedback-reply[^>]*\shidden", _gbody) is not None,
+   "the warning starts out showing")
 
 # --- contact form: every owner hears about it, and it lands in the Inbox ----
 from app.models import ContactMessage as _CM
