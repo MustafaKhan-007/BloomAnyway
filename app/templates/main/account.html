@@ -629,7 +629,14 @@
           {% for order in orders %}
           <tr>
             <td>{{ order.created_at|when('%b %d, %Y') }}</td>
-            <td>{% if order.product %}{{ order.product.title }}{% else %}Order {{ order.ls_order_id }}{% endif %}</td>
+            <td>
+              {% if order.product %}{{ order.product.title }}{% else %}Order {{ order.ls_order_id }}{% endif %}
+              {# Paid for, and never theirs. Without this the row reads as
+                 something they own and can't find. #}
+              {% if order.is_gift() %}
+              <span class="ms-order__gift">Sent as a gift to {{ order.gift_to_display() }}</span>
+              {% endif %}
+            </td>
             <td>{{ order.total_display() }}</td>
             <td><span class="status-pill status-pill--{{ order.status }}">{{ order.status }}</span></td>
           </tr>

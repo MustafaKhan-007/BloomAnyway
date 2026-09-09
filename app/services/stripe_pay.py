@@ -892,6 +892,7 @@ def upsert_order_from_payment(
     currency: str,
     status: str,
     gift_to: str | None = None,
+    gift_note: str | None = None,
     membership_tier: str | None = None,
     subscription_id: str | None = None,
 ) -> Order:
@@ -924,7 +925,10 @@ def upsert_order_from_payment(
     if sub_ref and not order.stripe_subscription_id:
         order.stripe_subscription_id = sub_ref[:80]
     if gift_to:
-        order.gift_to_email = gift_to.strip().lower()
+        from . import gifts
+        order.gift_to_email = gifts.clean_email(gift_to)
+        if gift_note:
+            order.gift_note = gifts.clean_note(gift_note)
     order.total_cents = int(total_cents or 0)
     order.currency = (currency or "USD").upper()[:3]
     order.status = status
@@ -1210,10 +1214,13 @@ def send_receipt_for(order: Order, *, product=None, name: str = "") -> bool:
     when = order.created_at
     # The guide itself rides along, so it arrives rather than waiting to be
     # found. Anything the buyer can't open yet, or is too big to post, stays
-    # in their library instead.
+    # in their library instead. A gift is the exception: what was bought
+    # isn't theirs to read, so the file goes with the gift instead and their
+    # receipt is a receipt.
+    from . import gifts
     try:
         from .assets import receipt_files
-        came_with = receipt_files(product)
+        came_with = [] if gifts.is_gift(order) else receipt_files(product)
     except Exception:
         log.exception("receipt: could not gather files for %s",
                       order.ls_order_id)
@@ -1253,6 +1260,7 @@ def handle_payment_event(event_type: str, data: dict) -> Order | None:
     currency = (data.get("currency") or "USD").upper()
     meta = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
     gift_to = (meta or {}).get("gift_to") or (meta or {}).get("giftTo")
+    gift_note = (meta or {}).get("gift_note") or (meta or {}).get("giftNote")
     # Stripe tells us when an invoice continues an existing subscription rather
     # than starting one. Only a first payment can be a new membership.
     renewal = str((meta or {}).get("billing_reason") or "").strip().lower() in (
@@ -1314,6 +1322,7 @@ def handle_payment_event(event_type: str, data: dict) -> Order | None:
         currency=currency,
         status=status,
         gift_to=gift_to,
+        gift_note=gift_note,
         membership_tier=grant_tier,
         subscription_id=(meta or {}).get("subscription_id"),
     )
@@ -1403,20 +1412,38 @@ def handle_payment_event(event_type: str, data: dict) -> Order | None:
         else (email or order.buyer_email)
     )
 
+    # A gift is bought by one person for another, and everything that follows
+    # a purchase — the shelf row, the reader, the free membership months the
+    # product carries — follows the address on that row. Writing the
+    # recipient's here is the whole of handing it over.
+    from . import gifts
+    gifted = gifts.is_gift(order)
+    shelf_email = gifts.holder_email(order, record_email)
+
     if status == "paid" and not addon_checkout:
-        upsert_shop_purchase(
+        landed = upsert_shop_purchase(
             lemon_squeezy_order_id=str(payment_id),
-            customer_email=record_email,
+            customer_email=shelf_email,
             product_name=name,
             product_id=str(product_id) if product_id else None,
             variant_id=str(product_id) if product_id else None,
             download_url=None,
             refunded=False,
         )
+        # Only worth checking the first time a payment comes good: a replay
+        # finds the row already there and must not raise the alarm again.
+        if send_receipt and gifted and (
+                landed is None
+                or gifts.clean_email(landed.customer_email)
+                != gifts.clean_email(shelf_email)):
+            # Paid for and gone nowhere. Nobody is left thinking it arrived.
+            gifts.tell_sender_it_failed(
+                order, name=name, why="the purchase did not reach their shelf")
+            gifted = False
     elif status == "refunded" and not addon_checkout:
         upsert_shop_purchase(
             lemon_squeezy_order_id=str(payment_id),
-            customer_email=record_email,
+            customer_email=shelf_email,
             product_name=name,
             product_id=str(product_id) if product_id else None,
             variant_id=str(product_id) if product_id else None,
@@ -1440,16 +1467,28 @@ def handle_payment_event(event_type: str, data: dict) -> Order | None:
             and _is_challenge(product, name)):
         try:
             from .challenge import send_welcome
-            sent = send_welcome(order.buyer_email, product=product,
+            # Whoever the challenge is for is the one joining it, so the
+            # hello follows the product rather than the payment.
+            sent = send_welcome(shelf_email, product=product,
                                 order=order, name=name)
             # Said out loud either way: when one of these goes missing the
             # first question is whether the purchase was ever read as joining.
             log.info("challenge: %s joined by buying %s — welcome %s",
-                     order.buyer_email, name or "(unnamed)",
+                     shelf_email, name or "(unnamed)",
                      "sent" if sent else "not sent")
         except Exception:
             log.exception("Challenge welcome email failed for %s",
                           order.ls_order_id)
+
+    # Somebody has been given something and doesn't know yet, and whoever
+    # paid has nothing on their own shelf to show for it. Both are told.
+    if send_receipt and gifted and not addon_checkout:
+        try:
+            gifts.tell_them(order, product=product, name=name)
+        except Exception:
+            log.exception("Gift notices failed for %s", order.ls_order_id)
+            gifts.tell_sender_it_failed(order, name=name,
+                                        why="the notices did not go out")
 
     if (send_receipt and is_membership and not orphaned
             and order.buyer_email and "@" in order.buyer_email):

@@ -44,13 +44,15 @@ def _stripe_headers(body: bytes) -> dict:
 
 def _payment_payload(payment_id, email, product_id, *,
                      event="payment.succeeded", amount=4900,
-                     product_name=None, gift_to=None,
+                     product_name=None, gift_to=None, gift_note=None,
                      payment_status="paid", payment_intent=True):
     meta = {"price_id": str(product_id)}
     if product_name:
         meta["product_name"] = product_name
     if gift_to:
         meta["gift_to"] = gift_to
+    if gift_note:
+        meta["gift_note"] = gift_note
     if event == "payment.succeeded":
         stripe_type = "checkout.session.completed"
         obj = {
@@ -2376,20 +2378,32 @@ with app.app_context():
 ok("Self-cancel keeps membership until period end", tier == "healing", f"got {tier}")
 ok("Self-cancel does not hide Showcase listings mid-period", still_active >= 0)
 
-# Gift metadata still stored on Order (My Space links by buyer email only)
+# A gift goes to the person it was bought for, not the person who paid.
 gbody = _payment_payload(
     "GIFT-1", "santa@example.com", "prod_begin_again",
-    product_name="Gifted Guide", gift_to="free@example.com")
+    product_name="Gifted Guide", gift_to="free@example.com",
+    gift_note="Thought of you when I read this.")
 r = client.post("/webhooks/stripe", data=gbody, headers=_stripe_headers(gbody))
 ok("Gift webhook accepted", r.status_code == 200)
 with app.app_context():
     gift_order = Order.query.filter_by(ls_order_id="GIFT-1").first()
     gift_shop = ShopPurchase.query.filter_by(lemon_squeezy_order_id="GIFT-1").first()
+    gift_user = User.query.filter_by(email="free@example.com").first()
+    santa_rows = ShopPurchase.query.filter_by(
+        customer_email="santa@example.com").count()
 ok("Gift order stores gift_to_email",
    gift_order is not None and gift_order.gift_to_email == "free@example.com")
-ok("Shop purchase links to buyer email (not gift recipient)",
-   gift_shop is not None and gift_shop.customer_email == "santa@example.com"
-   and gift_shop.status == "pending_link")
+ok("And the note the buyer wrote with it",
+   gift_order is not None
+   and gift_order.gift_note == "Thought of you when I read this.",
+   f"note {gift_order.gift_note if gift_order else None!r}")
+ok("The purchase lands on the recipient's shelf, not the buyer's",
+   gift_shop is not None and gift_shop.customer_email == "free@example.com"
+   and gift_shop.user_id == gift_user.id and gift_shop.status == "linked",
+   f"{gift_shop.customer_email if gift_shop else '-'} / "
+   f"{gift_shop.status if gift_shop else '-'}")
+ok("The one who paid has nothing new on theirs", santa_rows == 0,
+   f"{santa_rows} rows for the buyer")
 
 # Multiple announcements stack; blank expiry defaults to +7 days
 admin.post("/admin/announcements", data={"add_announcement": "1",
@@ -9738,6 +9752,279 @@ try:
         db.session.commit()
 finally:
     _mailer.send_email = _real_send_email
+
+# --- buying a product for somebody else -------------------------------------
+# The buyer pays and never owns it: the shelf row, the reader and the free
+# membership months a product carries all follow the address on the purchase,
+# and a gift writes the recipient's there. What is held down here is that the
+# money and the product part company cleanly, that both people are told once,
+# and that nothing arrives twice when Stripe sends the same payment again.
+_gift_post = []
+
+
+def _catch_gift_post(to, subject, text, html_body=None, template_id=None,
+                     params=None, sender=None, attachments=None):
+    _gift_post.append({
+        "to": to, "subject": subject, "text": text,
+        "params": params or {},
+        "files": [a.get("name") for a in (attachments or [])],
+    })
+    return True
+
+
+_mailer.send_email = _catch_gift_post
+_real_gift_session = pay.create_checkout_session
+_gift_sessions = []
+pay.create_checkout_session = (
+    lambda **kw: _gift_sessions.append(kw) or "https://stripe.test/gift"
+)
+try:
+    from app.models import Notification as _Note
+    from app.models import ProductAsset as _GAsset
+    from app.services import catalog as _cat_gift
+
+    with app.app_context():
+        _gift_prod = Product(
+            title="A Gentle Beginning", slug="a-gentle-beginning",
+            type="guide", status="published", track="healing",
+            currency="USD", price_cents=2500,
+            stripe_price_id="price_gentle_beginning",
+            promise="Somewhere to start.",
+            perk_membership_tier="creator", perk_membership_months=2)
+        db.session.add(_gift_prod)
+        db.session.flush()
+        db.session.add(_GAsset(
+            product_id=_gift_prod.id, title="A Gentle Beginning",
+            filename="gentle.pdf", kind="pdf", mime="application/pdf",
+            size=len(_pdf), data=_pdf))
+        _giver = User(email="thegiver@example.com", display_name="Wren Giver",
+                      username="wrengiver", email_verified_at=utcnow())
+        _giver.set_password(USER_PW)
+        _getter = User(email="thegetter@example.com", display_name="Sam Getter",
+                       username="samgetter", membership="none",
+                       email_verified_at=utcnow())
+        _getter.set_password(USER_PW)
+        db.session.add_all([_giver, _getter])
+        db.session.commit()
+        _gift_prod_id, _giver_id, _getter_id = (
+            _gift_prod.id, _giver.id, _getter.id)
+
+    _giver_client = app.test_client()
+    _giver_client.post("/login", data={"email": "thegiver@example.com",
+                                       "password": USER_PW})
+
+    # The way in: a small second door beside the buy button, not a second offer.
+    _pd = client.get("/courses/a-gentle-beginning").get_data(as_text=True)
+    ok("The product page offers it as a gift beside the buy button",
+       "pd-hero__gift" in _pd and "/gift/a-gentle-beginning" in _pd)
+
+    r = _giver_client.get("/gift/a-gentle-beginning")
+    _gp_body = r.get_data(as_text=True)
+    ok("The gift page opens", r.status_code == 200
+       and "Send A Gentle Beginning" in _gp_body)
+    ok("It asks who it is for and what to tell them",
+       'data-gift-input' in _gp_body and 'data-gift-note' in _gp_body)
+    ok("And says the perk goes with it", "creator" in _gp_body.lower())
+
+    # Live previews as they type. A whole address is the one thing that has to
+    # be known beforehand; half of one must not read names back off the member
+    # list.
+    r = _giver_client.get("/gift/who?q=thegetter@example.com")
+    _found = r.get_json()
+    ok("A whole address shows whose it is", r.status_code == 200
+       and len(_found) == 1 and _found[0]["name"] == "Sam Getter",
+       f"got {_found}")
+    ok("Without ever handing the address back",
+       "thegetter@example.com" not in r.get_data(as_text=True), r.get_data(as_text=True))
+    ok("Half an address finds nobody",
+       _giver_client.get("/gift/who?q=thegetter@").get_json() == []
+       and _giver_client.get("/gift/who?q=t@e.com").get_json() == [])
+    ok("A name finds them the way @mentions do",
+       [p["name"] for p in _giver_client.get("/gift/who?q=samget").get_json()]
+       == ["Sam Getter"])
+    ok("Nobody signed out gets to look anyone up",
+       app.test_client().get("/gift/who?q=thegetter@example.com").status_code == 401)
+
+    r = _giver_client.post("/gift/a-gentle-beginning",
+                           data={"to": "thegiver@example.com", "note": ""},
+                           follow_redirects=True)
+    ok("Sending it to yourself is caught before any money moves",
+       "your own address" in r.get_data(as_text=True), flashes(r))
+    r = _giver_client.post("/gift/a-gentle-beginning",
+                           data={"to": "not an address", "note": ""},
+                           follow_redirects=True)
+    ok("So is an address that isn't one",
+       "whole address" in r.get_data(as_text=True), flashes(r))
+
+    # The buyer picks a face, so a typo afterwards can't send it to a stranger.
+    r = _giver_client.post("/gift/a-gentle-beginning",
+                           data={"to": "sam", "to_user": str(_getter_id),
+                                 "note": "  For the hard week.  "})
+    ok("Choosing somebody and paying goes to Stripe", r.status_code in (302, 303)
+       and "stripe.test" in r.headers.get("Location", ""))
+    _asked = _gift_sessions[-1] if _gift_sessions else {}
+    ok("Stripe is told who it is for",
+       _asked.get("metadata", {}).get("gift_to") == "thegetter@example.com",
+       f"metadata {_asked.get('metadata')}")
+    ok("And what to tell them, tidied up",
+       _asked.get("metadata", {}).get("gift_note") == "For the hard week.",
+       f"note {_asked.get('metadata', {}).get('gift_note')!r}")
+    ok("The buyer still pays with their own address",
+       _asked.get("customer_email") == "thegiver@example.com")
+    ok("And comes back to the product page, not to a library it isn't in",
+       "gifted=1" in (_asked.get("return_url") or ""),
+       _asked.get("return_url"))
+
+    # Paid. Everything downstream follows the recipient.
+    _gift_post.clear()
+    _gpay = _payment_payload("GIFT-9800", "thegiver@example.com",
+                             "price_gentle_beginning", amount=2500,
+                             product_name="A Gentle Beginning",
+                             gift_to="thegetter@example.com",
+                             gift_note="For the hard week.")
+    r = client.post("/webhooks/stripe", data=_gpay, headers=_stripe_headers(_gpay))
+    ok("The payment for a gift goes through", r.status_code == 200)
+    with app.app_context():
+        _row = _Shop.query.filter_by(lemon_squeezy_order_id="GIFT-9800").first()
+        _them = db.session.get(User, _getter_id)
+        _payer = db.session.get(User, _giver_id)
+        _payer_rows = _Shop.query.filter_by(user_id=_giver_id).count()
+        _tier = _them.effective_membership()
+        _payer_tier = _payer.effective_membership()
+        _bells = _Note.query.filter_by(user_id=_getter_id, kind="gift").all()
+        _back = _Note.query.filter_by(user_id=_giver_id, kind="gift_sent").all()
+        _bell_says = _bells[0].body if _bells else ""
+    ok("It is the recipient's purchase", _row is not None
+       and _row.user_id == _getter_id and _row.status == "linked",
+       f"{_row.customer_email if _row else '-'} / {_row.user_id if _row else '-'}")
+    ok("The buyer's own shelf is untouched", _payer_rows == 0,
+       f"{_payer_rows} rows")
+    ok("The membership months the product carries go to the recipient",
+       _tier == "creator", f"they are {_tier}")
+    ok("And not to whoever paid for it", _payer_tier == "none",
+       f"payer is {_payer_tier}")
+    ok("The recipient's bell says who it came from and what they wrote",
+       len(_bells) == 1 and "Wren Giver" in _bell_says
+       and "For the hard week." in _bell_says, f"bell {_bell_says!r}")
+    ok("Naming them by address too, which is what they may be known by",
+       "thegiver@example.com" in _bell_says, f"bell {_bell_says!r}")
+    ok("And that the membership months came with it",
+       "creator" in _bell_says.lower(), f"bell {_bell_says!r}")
+    ok("The buyer's bell says where it went",
+       len(_back) == 1 and "Sam Getter" in _back[0].body,
+       f"bell {_back[0].body if _back else None!r}")
+
+    _to_them = [m for m in _gift_post if m["to"] == "thegetter@example.com"]
+    _to_payer = [m for m in _gift_post if m["to"] == "thegiver@example.com"]
+    ok("The recipient is emailed that a gift arrived",
+       [m["subject"] for m in _to_them] == ["Wren Giver sent you a gift"],
+       f"sent {[m['subject'] for m in _to_them]}")
+    ok("With the note in it, and the address it came from",
+       _to_them and "For the hard week." in _to_them[0]["text"]
+       and "thegiver@example.com" in _to_them[0]["text"],
+       _to_them[0]["text"] if _to_them else None)
+    ok("And the guide itself, since it is theirs to read",
+       _to_them and _to_them[0]["files"] == ["gentle.pdf"],
+       f"attached {_to_them[0]['files'] if _to_them else None}")
+    ok("The buyer gets a receipt and word that it arrived",
+       sorted(m["subject"] for m in _to_payer)
+       == ["Your Bloom Anyway receipt", "Your gift is with them"],
+       f"sent {[m['subject'] for m in _to_payer]}")
+    ok("Their receipt comes without the file, which was never theirs",
+       all(not m["files"] for m in _to_payer),
+       f"attached {[m['files'] for m in _to_payer]}")
+
+    # Their order history is the only place a gift shows on the buyer's own
+    # account, and it has to say so, or it reads as something they own and
+    # can't find. Named, not addressed: they may have picked a face and never
+    # seen the address.
+    _hist = _giver_client.get("/account?tab=saved").get_data(as_text=True)
+    ok("The buyer's order history says where the gift went",
+       "Sent as a gift to Sam Getter" in _hist,
+       "no gift line in the order history")
+    ok("And doesn't hand back an address they were never shown",
+       "thegetter@example.com" not in _hist)
+
+    # Stripe sends the same payment more than once as a matter of course.
+    _gift_post.clear()
+    client.post("/webhooks/stripe", data=_gpay, headers=_stripe_headers(_gpay))
+    with app.app_context():
+        _again = _Note.query.filter_by(user_id=_getter_id, kind="gift").count()
+    ok("The same payment arriving twice doesn't send the gift twice",
+       _again == 1 and not _gift_post, f"{_again} bells, {len(_gift_post)} emails")
+
+    # Nobody by that address yet: it waits, and opens when they make one.
+    _gift_post.clear()
+    _waiting = "notyethere@example.com"
+    _wpay = _payment_payload("GIFT-9801", "thegiver@example.com",
+                             "price_gentle_beginning", amount=2500,
+                             product_name="A Gentle Beginning",
+                             gift_to=_waiting)
+    client.post("/webhooks/stripe", data=_wpay, headers=_stripe_headers(_wpay))
+    with app.app_context():
+        _wrow = _Shop.query.filter_by(lemon_squeezy_order_id="GIFT-9801").first()
+    ok("A gift to an address with no account is held for it",
+       _wrow is not None and _wrow.customer_email == _waiting
+       and _wrow.status == "pending_link", f"{_wrow.status if _wrow else '-'}")
+    _held = [m for m in _gift_post if m["to"] == "thegiver@example.com"
+             and m["subject"] == "Your gift is waiting for them"]
+    ok("And the buyer is told it is waiting rather than delivered", _held,
+       f"sent {[m['subject'] for m in _gift_post]}")
+    ok("The one it is for is written to all the same",
+       any(m["to"] == _waiting for m in _gift_post))
+    ok("And told how to open it",
+       any("/register" in m["text"] for m in _gift_post if m["to"] == _waiting))
+
+    _new = app.test_client()
+    _new.post("/register", data={"email": _waiting, "password": USER_PW,
+                                 "password_confirm": USER_PW})
+    _wcode = [c for c in sent_codes if c[0] == _waiting][-1][1]
+    _new.post("/verify-email", data={"email": _waiting, "code": _wcode},
+              follow_redirects=True)
+    with app.app_context():
+        _wu = User.query.filter_by(email=_waiting).first()
+        _wrow = _Shop.query.filter_by(lemon_squeezy_order_id="GIFT-9801").first()
+        _wtier = _wu.effective_membership() if _wu else "none"
+    ok("Making an account with that address opens the gift",
+       _wu is not None and _wrow.user_id == _wu.id and _wrow.status == "linked",
+       f"{_wrow.status} / user {_wrow.user_id}")
+    ok("The membership months it carried come with it", _wtier == "creator",
+       f"they are {_wtier}")
+
+    # Twice over is money for nothing, so it is stopped at the door.
+    r = _giver_client.post("/gift/a-gentle-beginning",
+                           data={"to": "thegetter@example.com", "note": ""},
+                           follow_redirects=True)
+    ok("Gifting somebody what they already have is refused",
+       "already have this one" in r.get_data(as_text=True), flashes(r))
+
+    # Paid for and gone nowhere is the one thing that must never be quiet.
+    _gift_post.clear()
+    with app.app_context():
+        from app.services import gifts as _gift_svc
+        _stuck = Order.query.filter_by(ls_order_id="GIFT-9800").first()
+        _gift_svc.tell_sender_it_failed(_stuck, name="A Gentle Beginning",
+                                        why="testing")
+        db.session.commit()
+        _sorry = _Note.query.filter_by(user_id=_giver_id, kind="gift_sent").all()
+        _owner_told = _Note.query.filter(
+            _Note.kind == "gift_sent",
+            _Note.body.like("%did not go through%")).count()
+    ok("A gift that never landed is said out loud to the buyer",
+       any("hasn't reached" in n.body for n in _sorry),
+       f"bells {[n.body for n in _sorry]}")
+    ok("In an email as well",
+       any(m["subject"] == "Your gift hasn't gone through yet"
+           for m in _gift_post), f"sent {[m['subject'] for m in _gift_post]}")
+    ok("And the owners hear about it, since it is theirs to put right",
+       _owner_told >= 1)
+
+    with app.app_context():
+        _cat_gift._purge_product(db.session.get(Product, _gift_prod_id))
+        db.session.commit()
+finally:
+    _mailer.send_email = _real_send_email
+    pay.create_checkout_session = _real_gift_session
 
 # --- the stylesheet is still readable text ---------------------------------
 # Twice now an edit has been saved with UTF-8 read back as Latin-1, which turns

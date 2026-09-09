@@ -633,6 +633,160 @@ def send_challenge_welcome(
     return send_email(to, subject, text, template_id=template_id, params=params)
 
 
+def _gift_template(key: str) -> int | None:
+    """A gift's own Brevo template, or the general one until there is one.
+
+    Nothing is designed for gifts yet, and a template id pointing at nothing
+    is a send that fails. Falling back on the general layout means these look
+    like every other letter from here from the day they go out.
+    """
+    return _int_config(key, 0) or _int_config("BREVO_TEMPLATE_GENERAL", 10) or None
+
+
+def send_gift_received(
+    to: str,
+    *,
+    product_name: str,
+    from_name: str,
+    from_email: str = "",
+    note: str = "",
+    perk: str = "",
+    has_account: bool = False,
+    attachments=None,
+) -> bool:
+    """Tell somebody a product has been bought for them.
+
+    Whoever sent it is named, because a gift from nobody is a puzzle rather
+    than a present, and what they wrote is here in full. Anything readable
+    comes attached, the same as it would if they had bought it themselves —
+    somebody with no account here can read their gift on the day it arrives
+    rather than after signing up for something.
+    """
+    product = (product_name or "").strip() or "something"
+    sender = (from_name or "").strip() or (from_email or "").strip() or "Someone"
+    at = (from_email or "").strip()
+    # The address as well as the name: it is what most people will know them
+    # by, and a name on its own can arrive meaning nothing.
+    naming = f"{sender} ({at})" if at and at != sender else sender
+    said = " ".join((note or "").split())
+    included = (perk or "").strip()
+    library_url = _public_href("/account?tab=saved")
+    join_url = _public_href("/register")
+    subject = f"{sender} sent you a gift"
+    where = (
+        "It's on your shelf in My space, to read whenever you like: "
+        + library_url
+        if has_account else
+        "Make an account with this address and it will be waiting on your "
+        "shelf: " + join_url
+    )
+    body = (
+        f"{naming} bought you {product}."
+        + (f"\n\nThey wrote: “{said}”" if said else "")
+        + (f"\n\nIt comes with {included}." if included else "")
+        + "\n\n" + where
+    )
+    text = f"{subject}\n\n{body}\n\n— Bloom Anyway"
+    template_id = _gift_template("BREVO_TEMPLATE_GIFT_RECEIVED")
+    if not template_id:
+        return send_email(to, subject, text, attachments=attachments)
+
+    params = {
+        "HEADER": "A gift",
+        "TITLE": f"{sender} sent you {product}",
+        "BODY": body,
+        "BUTTON_TEXT": "Open it" if has_account else "Make an account",
+        "BUTTON_URL": library_url if has_account else join_url,
+        "PRODUCT_NAME": product,
+        "FROM_NAME": sender,
+        "FROM_EMAIL": (from_email or "").strip(),
+        "GIFT_NOTE": said,
+        "MEMBERSHIP_INCLUDED": included,
+    }
+    return send_email(to, subject, text, template_id=template_id,
+                      params=params, attachments=attachments)
+
+
+def send_gift_sent(
+    to: str,
+    *,
+    product_name: str,
+    to_name: str,
+    to_email: str,
+    waiting: bool = False,
+    product_url: str = "",
+) -> bool:
+    """Tell the buyer their gift arrived, or that it is being held.
+
+    They paid for something they will never see on their own shelf, so this
+    is the only word they get on whether it went where they meant it to.
+    """
+    product = (product_name or "").strip() or "your gift"
+    who = (to_name or "").strip() or (to_email or "").strip() or "them"
+    where = product_url or _public_href("/courses")
+    if waiting:
+        subject = "Your gift is waiting for them"
+        body = (
+            f"{product} is bought and paid for, and held for {to_email}. "
+            "There's no account here under that address yet, so it opens the "
+            "moment they make one with it — we've written to tell them how."
+        )
+    else:
+        subject = "Your gift is with them"
+        body = (
+            f"{product} is on {who}'s shelf. They've been told it came from "
+            "you, along with anything you wrote."
+        )
+    text = f"{subject}\n\n{body}\n\n— Bloom Anyway"
+    template_id = _gift_template("BREVO_TEMPLATE_GIFT_SENT")
+    if not template_id:
+        return send_email(to, subject, text)
+
+    params = {
+        "HEADER": "A gift",
+        "TITLE": subject,
+        "BODY": body,
+        "BUTTON_TEXT": "Courses & Guides",
+        "BUTTON_URL": where,
+        "PRODUCT_NAME": product,
+        "TO_NAME": who,
+        "TO_EMAIL": (to_email or "").strip(),
+    }
+    return send_email(to, subject, text, template_id=template_id, params=params)
+
+
+def send_gift_stuck(to: str, *, product_name: str, to_email: str) -> bool:
+    """Tell the buyer their gift has not reached anybody yet.
+
+    Said plainly rather than quietly, because the alternative is somebody
+    believing a present arrived when it didn't. The owners get the same word.
+    """
+    product = (product_name or "").strip() or "your gift"
+    contact_url = _public_href("/contact")
+    subject = "Your gift hasn't gone through yet"
+    body = (
+        f"You paid for {product} for {to_email}, and it hasn't reached them. "
+        "We know, and it's being put right by hand — there's nothing for you "
+        "to do, and nothing more to pay. If you'd rather hear it from a "
+        "person, write to us."
+    )
+    text = f"{subject}\n\n{body}\n\n— Bloom Anyway"
+    template_id = _gift_template("BREVO_TEMPLATE_GIFT_STUCK")
+    if not template_id:
+        return send_email(to, subject, text)
+
+    params = {
+        "HEADER": "A gift",
+        "TITLE": subject,
+        "BODY": body,
+        "BUTTON_TEXT": "Get in touch",
+        "BUTTON_URL": contact_url,
+        "PRODUCT_NAME": product,
+        "TO_EMAIL": (to_email or "").strip(),
+    }
+    return send_email(to, subject, text, template_id=template_id, params=params)
+
+
 def send_healing_welcome(
     to: str,
     *,

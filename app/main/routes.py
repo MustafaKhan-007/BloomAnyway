@@ -29,6 +29,7 @@ from ..services import settings as settings_service
 from ..services.avatars import AvatarError, process_avatar
 from ..services.badges import CATEGORIES, category_progress, earned_badges
 from ..services.catalog import remove_demo_catalog
+from ..services import gifts as gift_svc
 from ..services import stripe_pay as pay
 from ..services.journey import build_journey_pdf
 from ..services.legal_copy import GUIDE_NO_REFUND
@@ -264,7 +265,8 @@ def course_detail(slug):
     # Back from paying without an account. Finish the order off the session id
     # rather than waiting on the webhook, so the receipt and its file are on
     # their way before the page even loads.
-    if (request.args.get("bought") or "").strip() and not is_preview:
+    gifted = bool((request.args.get("gifted") or "").strip())
+    if ((request.args.get("bought") or "").strip() or gifted) and not is_preview:
         session_id = (request.args.get("session_id") or "").strip()
         if session_id and pay.configured():
             try:
@@ -279,7 +281,12 @@ def course_detail(slug):
         # something that was never sent.
         from ..services.assets import RECEIPT_HELD_BACK
 
-        if any(product.has_type(kind) for kind in RECEIPT_HELD_BACK):
+        if gifted:
+            flash("Sent. It's on its way to them with your note, and we've "
+                  "emailed you to say where it went. If there's no account "
+                  "under that address yet, it waits for them and opens the "
+                  "moment they make one with it.", "success")
+        elif any(product.has_type(kind) for kind in RECEIPT_HELD_BACK):
             flash("Thank you — that's yours. The receipt is on its way to your "
                   "email. This one is read here on the site: make an account "
                   "with the same address and it will be waiting in My space.",
@@ -349,6 +356,112 @@ def checkout_product(slug):
         flash(str(exc), "error")
         return redirect(url_for("main.courses"))
     return redirect(url)
+
+
+def _buyable(product):
+    """Why this can't be bought right now, or an empty string."""
+    if product.is_off_shelf():
+        return "This one is off the shelves now and can't be bought any more."
+    if not (product.stripe_price_id or "").strip():
+        return "Checkout for this guide isn’t live yet — check back soon."
+    if not pay.configured():
+        return "Payments aren’t configured yet. Please try again later."
+    return ""
+
+
+@bp.route("/gift/who")
+@limiter.limit("60 per minute")
+def gift_who():
+    """Who the buyer might mean, from what they have typed so far.
+
+    Signed in only. Reading names back off addresses is how a list of
+    everybody here gets made, and there is no reason to hand that to someone
+    who hasn't so much as an account.
+    """
+    if not current_user.is_authenticated:
+        return jsonify([]), 401
+    try:
+        return jsonify(gift_svc.suggest(request.args.get("q") or "",
+                                        viewer=current_user))
+    except Exception:
+        log.exception("gift: could not look anybody up")
+        return jsonify([])
+
+
+@bp.route("/gift/<slug>", methods=["GET", "POST"])
+@limiter.limit("30 per hour", methods=["POST"])
+def gift_product(slug):
+    """Buy a product for somebody else.
+
+    The buyer says who it is for and what to tell them, and then pays as
+    normal. Nothing here takes money: it hands Stripe an address to carry, and
+    fulfillment puts the purchase on that person's shelf instead of theirs.
+    """
+    product = Product.query.filter_by(slug=slug, status="published").first_or_404()
+    if not product.visible_to(current_user):
+        abort(404)
+    stop = _buyable(product)
+    if stop:
+        flash(stop, "info")
+        return redirect(url_for("main.course_detail", slug=product.slug))
+
+    form = {"to": "", "to_user": "", "note": ""}
+    picked = None
+    if request.method == "POST":
+        form["to"] = (request.form.get("to") or "").strip()[:255]
+        form["to_user"] = (request.form.get("to_user") or "").strip()[:20]
+        form["note"] = gift_svc.clean_note(request.form.get("note"))
+
+        chosen = gift_svc.account_for_id(
+            int(form["to_user"]) if form["to_user"].isdigit() else None)
+        if chosen is not None:
+            picked = gift_svc.preview_for(chosen)
+            to_email = gift_svc.clean_email(chosen.email)
+        else:
+            to_email = gift_svc.clean_email(form["to"])
+            held = gift_svc.account_for(to_email)
+            if held is not None:
+                picked = gift_svc.preview_for(held)
+
+        mine = gift_svc.clean_email(
+            current_user.email if current_user.is_authenticated else "")
+        problem = ""
+        if "@" not in to_email or "." not in to_email.split("@", 1)[1]:
+            problem = ("Write out the whole address you want it sent to, or "
+                       "pick somebody from the list.")
+        elif to_email == mine:
+            problem = ("That's your own address. Buy it for yourself from the "
+                       "product page instead — it comes to the same thing "
+                       "without the wrapping.")
+        elif gift_svc.already_has(to_email, product):
+            problem = ("They already have this one, so it would only sit on "
+                       "their shelf twice. Something else, maybe.")
+        if problem:
+            flash(problem, "error")
+        else:
+            landing = url_for("main.course_detail", slug=product.slug,
+                              gifted=1, _external=True)
+            try:
+                url = pay.create_checkout_session(
+                    product_id=(product.stripe_price_id or "").strip(),
+                    return_url=landing,
+                    customer_email=(current_user.email
+                                    if current_user.is_authenticated else None),
+                    customer_name=(current_user.public_name()
+                                   if current_user.is_authenticated else None),
+                    metadata={"slug": product.slug, "kind": "product",
+                              "gift_to": to_email,
+                              "gift_note": form["note"]},
+                    submit_note=(GUIDE_NO_REFUND if product.is_guide() else ""),
+                )
+            except pay.StripeError as exc:
+                flash(str(exc), "error")
+                return redirect(url_for("main.course_detail",
+                                        slug=product.slug))
+            return redirect(url)
+
+    return render_template("main/gift.html", product=product, form=form,
+                           picked=picked)
 
 
 def _settle_membership_switch(*, paid: bool) -> None:
