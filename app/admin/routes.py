@@ -701,12 +701,22 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
     # A promo needs both halves. Clearing either one takes the banner down,
     # rather than leaving a code with no price or a price with no code.
     promo_code = (form.get("promo_code") or "").strip().upper()[:40]
-    promo_price = _parse_price_cents(form.get("promo_price"))
-    if not promo_code or (form.get("promo_price") or "").strip() == "":
+    promo_typed = (form.get("promo_price") or "").strip()
+    promo_price = _parse_price_cents(promo_typed)
+    if promo_typed and promo_price is None:
+        # A price with a currency sign in it read as no price at all, which
+        # saved a code that ran nothing and never said why.
+        flash(f"“{promo_typed}” didn't read as a price — write it in numbers, "
+              "like 19.00 — so the sale was left as it was.", "info")
+    elif not promo_code or not promo_typed:
         product.promo_code = None
         product.promo_price_cents = None
         product.promo_ends_at = None
     else:
+        # Whether this is a new sale or the old one coming back around on a
+        # save that was about something else entirely.
+        fresh = (promo_code != (product.promo_code or "").strip().upper()
+                 or promo_price != product.promo_price_cents)
         product.promo_code = promo_code
         product.promo_price_cents = promo_price
         ends_date = (form.get("promo_ends_date") or "").strip()
@@ -718,6 +728,13 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
         if ends_date and product.promo_ends_at is None:
             flash("That promo end date didn't look right, so the sale was left "
                   "running with no deadline.", "info")
+        if fresh and product.promo_expired():
+            # The form hands back the finished sale's end date, so a new code
+            # typed over the top of it would be over before it started.
+            flash("That end date has already gone by, so the new sale would "
+                  "have ended before it started. It's running with no end date "
+                  "— set a later one to have it stop on its own.", "info")
+            product.promo_ends_at = None
     if (product.promo_price_cents is not None and product.price_cents is not None
             and product.promo_price_cents >= product.price_cents):
         flash("The promo price needs to be lower than the normal price, so "

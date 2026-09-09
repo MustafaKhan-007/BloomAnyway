@@ -1315,6 +1315,88 @@ _sbody = admin.get(f"/admin/products/{_multi_id}/edit").get_data(as_text=True)
 ok("Studio says the sale has ended rather than pretending it's running",
    "This sale has ended" in _sbody)
 
+
+def _promo_date(page):
+    """What the form hands back in the end-date box, as a browser would post."""
+    tag = page.split('name="promo_ends_date"', 1)[-1].split(">", 1)[0]
+    found = re.search(r'value="([^"]*)"', tag)
+    return found.group(1) if found else ""
+
+
+# Running a second sale once the first has finished. The form hands the
+# finished sale's end date back, so a new code typed over the top of it used
+# to save quietly and never run — the day it was to end had already gone.
+with app.app_context():
+    _p = db.session.get(Product, _multi_id)
+    _p.promo_ends_at = utcnow() - timedelta(days=6)
+    db.session.commit()
+_over_on = _promo_date(
+    admin.get(f"/admin/products/{_multi_id}/edit").get_data(as_text=True))
+ok("The form still shows the day the last sale ended", bool(_over_on), _over_on)
+r = admin.post(f"/admin/products/{_multi_id}/edit",
+               data=dict(_promo_fields, promo_price="16.00",
+                         promo_code="AUTUMN30", promo_ends_date=_over_on,
+                         promo_ends_time="23:59"),
+               follow_redirects=True)
+_said = r.get_data(as_text=True)
+with app.app_context():
+    _p = db.session.get(Product, _multi_id)
+    ok("A new code over a finished sale runs rather than arriving over",
+       _p.has_promo() and _p.promo_code_display() == "AUTUMN30"
+       and _p.promo_price_cents == 1600 and _p.promo_ends_at is None,
+       f"got {_p.promo_code!r} {_p.promo_price_cents} ends {_p.promo_ends_at}")
+ok("And Studio says the old date is why it has no deadline",
+   "already gone by" in _said)
+
+# A price nobody can read is worse than a refusal: it used to leave the code
+# saved with no price behind it, running nothing and saying nothing.
+r = admin.post(f"/admin/products/{_multi_id}/edit",
+               data=dict(_promo_fields, promo_price="$14.00",
+                         promo_code="WINTER10", promo_ends_date="",
+                         promo_ends_time="23:59"),
+               follow_redirects=True)
+ok("A price with a currency sign on it is sent back to be retyped",
+   "didn&#39;t read as a price" in r.get_data(as_text=True)
+   or "didn't read as a price" in r.get_data(as_text=True))
+with app.app_context():
+    _p = db.session.get(Product, _multi_id)
+    ok("And the sale that was running is left exactly as it was",
+       _p.has_promo() and _p.promo_code_display() == "AUTUMN30"
+       and _p.promo_price_cents == 1600,
+       f"got {_p.promo_code!r} {_p.promo_price_cents}")
+
+# The other way round: a finished sale that nobody has touched must stay
+# finished, however many times the product is saved for other reasons.
+with app.app_context():
+    _p = db.session.get(Product, _multi_id)
+    _p.promo_code, _p.promo_price_cents = "SPRING25", 1800
+    _p.promo_ends_at = utcnow() - timedelta(days=2)
+    db.session.commit()
+_dead_on = _promo_date(
+    admin.get(f"/admin/products/{_multi_id}/edit").get_data(as_text=True))
+admin.post(f"/admin/products/{_multi_id}/edit",
+           data=dict(_promo_fields, promo_price="18.00", promo_code="SPRING25",
+                     promo_ends_date=_dead_on, promo_ends_time="23:59"),
+           follow_redirects=True)
+with app.app_context():
+    ok("A finished sale isn't revived by a save about something else",
+       not db.session.get(Product, _multi_id).has_promo(),
+       f"ends {db.session.get(Product, _multi_id).promo_ends_at}")
+# And ending a sale early by dating it in the past still ends it.
+with app.app_context():
+    _p = db.session.get(Product, _multi_id)
+    _p.promo_ends_at = utcnow() + timedelta(days=4)
+    db.session.commit()
+admin.post(f"/admin/products/{_multi_id}/edit",
+           data=dict(_promo_fields, promo_price="18.00", promo_code="SPRING25",
+                     promo_ends_date=(utcnow() - timedelta(days=1)
+                                      ).strftime("%Y-%m-%d"),
+                     promo_ends_time="23:59"),
+           follow_redirects=True)
+with app.app_context():
+    ok("While dating a running sale in the past is still how you stop it",
+       not db.session.get(Product, _multi_id).has_promo())
+
 # Leaving the date blank means it runs until it's taken down.
 admin.post(f"/admin/products/{_multi_id}/edit",
            data=dict(_promo_fields, promo_price="18.00", promo_code="SPRING25",
