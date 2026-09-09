@@ -4975,6 +4975,33 @@ with app.app_context():
        f"body={(_notes[0].body if _notes else '')!r}")
     ok("Spotlight expiry warning is sent once, not on every sweep", _again == 0)
 
+    # Two workers serve the site and both run this sweep. The one that loses
+    # the race has its own copy of the settings, taken before the other worker
+    # wrote the stamp, and used to send the notice a second time off the back
+    # of it — the duplicate in the bell. Written straight to the table here,
+    # which is what that looks like from the far side.
+    from app.models import Setting as _Setting
+    from app.services.settings import claim_setting as _claim
+    set_setting("reel_url", "https://instagram.com/reel/dupe")
+    set_setting("reel_expires", (_date.today() + timedelta(days=1)).isoformat())
+    set_setting("spotlight_reel_notified", "")
+    _reel_stamp = (_date.today() + timedelta(days=1)).isoformat()
+    _row = db.session.get(_Setting, "spotlight_reel_notified")
+    _row.value = _reel_stamp          # the other worker got there first
+    db.session.commit()
+    _held = Notification.query.filter_by(kind="spotlight_expiry").count()
+    _raced = _spot.sweep_expiry_notices()
+    ok("A notice another worker already sent is not sent twice",
+       _raced == 0
+       and Notification.query.filter_by(kind="spotlight_expiry").count() == _held,
+       f"sent={_raced}")
+    ok("A claim is taken once and refused after that",
+       _claim("spotlight_reel_notified", "2099-01-01")
+       and not _claim("spotlight_reel_notified", "2099-01-01"))
+    ok("A fresh claim on a key never stored is taken",
+       _claim("_smoke_never_stored", "1")
+       and not _claim("_smoke_never_stored", "1"))
+
     set_setting("creator_expires", (_date.today() + timedelta(days=20)).isoformat())
     _slots = {s["kind"]: s for s in _spot.spotlight_slots()}
     ok("Spotlight status reports days left per slot",
