@@ -20,6 +20,16 @@
       <a href="{{ url_for('main.support_groups_page') }}">support group</a>,
       where there is more than one of us to hear it.
     </p>
+    {# The little Feedback button takes a message without an address, and one
+       sent that way lands in our inbox as a guest with nothing to answer. Said
+       here because this is where somebody expecting an answer ends up. #}
+    <p class="contact-scope contact-scope--reply">
+      <strong>If it&rsquo;s a complaint, or something broken you need sorting
+      out, write from an email address you actually read.</strong>
+      That address is the only way back to you &mdash; anything that reaches us
+      without one shows up as a guest, and there is nothing for us to reply to,
+      however much we&rsquo;d like to.
+    </p>
     <form method="post" action="{{ url_for('main.contact') }}" style="margin-top: 32px;">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="honeypot" aria-hidden="true">

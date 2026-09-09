@@ -42,9 +42,15 @@
 
     {% if not current_user.is_authenticated %}
     <div class="field">
-      <label for="feedback-email">Email (optional)</label>
+      <label for="feedback-email">Email</label>
       <input type="email" id="feedback-email" name="contact_email" maxlength="255"
-             placeholder="If you'd like a reply">
+             placeholder="so we can write back">
+      {# Shown on the two tabs somebody expects an answer from. A complaint
+         with no address behind it arrives as a guest and dead-ends there. #}
+      <p class="field-help feedback-dialog__reply" data-feedback-reply hidden>
+        If you need this sorted out, leave your address. Without one you reach
+        us as a guest, and there is no way for us to come back to you.
+      </p>
     </div>
     {% endif %}
 
