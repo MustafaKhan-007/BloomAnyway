@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "partials/bloom_cover.html" import bloom_cover %}
+{% from "partials/gift_link.html" import gift_link %}
 {% block title %}{{ product.title }} — {{ site.site_title }}{% endblock %}
 {% block meta_description %}{{ product.meta_description or product.promise or product.description_md or product.title }}{% endblock %}
 
@@ -96,10 +97,17 @@
           <button class="btn btn--primary pd-hero__cta" type="button" disabled>Buy now</button>
           <p class="pd-hero__note">Preview only — checkout stays off until this product is live.</p>
           {% elif owned_purchase_id %}
-          <a class="btn btn--primary pd-hero__cta" href="{{ url_for('main.course_reader', purchase_id=owned_purchase_id) }}">Open &amp; read</a>
+          <div class="pd-hero__row">
+            <a class="btn btn--primary pd-hero__cta" href="{{ url_for('main.course_reader', purchase_id=owned_purchase_id) }}">Open &amp; read</a>
+            {# Having read it is often exactly when somebody thinks of who
+               else should. The gift goes to their shelf, so owning it is no
+               reason to take the offer away. #}
+            {% if not product.is_off_shelf() %}{{ gift_link(product) }}{% endif %}
+          </div>
           <p class="pd-hero__note">
             You already own this — open it in My space anytime.
-            {%- if product.is_off_shelf() %} It is off the shelves now, and yours to keep.{% endif %}
+            {%- if product.is_off_shelf() %} It is off the shelves now, and yours to keep.
+            {%- else %} You can still send it to somebody else — it lands on their shelf, not yours again.{% endif %}
           </p>
           {% elif product.is_off_shelf() %}
           <p class="pd-offshelf">
@@ -127,17 +135,7 @@
             <a class="btn btn--primary pd-hero__cta" href="{{ url_for('main.checkout_product', slug=product.slug) }}">Buy now</a>
             {# Same money, someone else's shelf. Kept small and beside the
                button rather than made a second offer of its own. #}
-            <a class="pd-hero__gift" href="{{ url_for('main.gift_product', slug=product.slug) }}"
-               title="Buy this as a gift" aria-label="Buy this as a gift">
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                <path d="M3 11h18v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-9Z"/>
-                <path d="M2 7h20v4H2z"/>
-                <path d="M12 7v14"/>
-                <path d="M12 7S10.5 3 8.5 3a2.5 2.5 0 0 0 0 5H12Z"/>
-                <path d="M12 7s1.5-4 3.5-4a2.5 2.5 0 0 1 0 5H12Z"/>
-              </svg>
-              <span>Gift it</span>
-            </a>
+            {{ gift_link(product) }}
           </div>
           <p class="pd-hero__note">Secure checkout. You’ll find it in My space after purchase.</p>
           {% endif %}
