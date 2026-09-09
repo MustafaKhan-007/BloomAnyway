@@ -9931,6 +9931,17 @@ try:
        all(not m["files"] for m in _to_payer),
        f"attached {[m['files'] for m in _to_payer]}")
 
+    # Their order history is the only place a gift shows on the buyer's own
+    # account, and it has to say so, or it reads as something they own and
+    # can't find. Named, not addressed: they may have picked a face and never
+    # seen the address.
+    _hist = _giver_client.get("/account?tab=saved").get_data(as_text=True)
+    ok("The buyer's order history says where the gift went",
+       "Sent as a gift to Sam Getter" in _hist,
+       "no gift line in the order history")
+    ok("And doesn't hand back an address they were never shown",
+       "thegetter@example.com" not in _hist)
+
     # Stripe sends the same payment more than once as a matter of course.
     _gift_post.clear()
     client.post("/webhooks/stripe", data=_gpay, headers=_stripe_headers(_gpay))

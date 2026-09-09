@@ -178,6 +178,9 @@ def _clear_membership_history(email: str, *, user_id: int) -> dict:
             order.buyer_email = _scrub_email_token(user_id, order.id)
         if gift_match:
             order.gift_to_email = None
+        # A note written with a gift is a private word between two people.
+        # Once either of them has gone there is nobody it belongs to.
+        order.gift_note = None
         out["orders_scrubbed"] += 1
 
     # 3. Detach shop / course purchases so they don't auto-link on re-signup.

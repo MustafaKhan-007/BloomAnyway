@@ -1850,6 +1850,24 @@ class Order(db.Model):
         except ValueError:
             return "\u2022\u2022\u2022"
 
+    def is_gift(self) -> bool:
+        """True when this was bought for an address other than the payer's."""
+        to = (self.gift_to_email or "").strip().lower()
+        return bool(to) and "@" in to and to != (self.buyer_email or "").strip().lower()
+
+    def gift_to_display(self) -> str:
+        """Who it went to, as the person who paid should see them named.
+
+        Their name if they have an account, since the buyer may have picked
+        them out of a list of faces and never seen the address at all.
+        """
+        if not self.is_gift():
+            return ""
+        from .services.gifts import account_for
+
+        who = account_for(self.gift_to_email)
+        return who.public_name() if who is not None else self.gift_to_email
+
 
 class ShopPurchase(db.Model):
     """A digital purchase from shop.bloomanyway.online (Lemon Squeezy storefront).

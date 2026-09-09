@@ -8,8 +8,8 @@
     <h1>Send {{ product.title }}</h1>
     <p class="gift-lede">
       You pay for it; it lands on their shelf, not yours. They&rsquo;ll be told
-      it came from you{% if product.has_perk() %}, and
-      {{ product.perk_summary() }} goes with it{% endif %}.
+      it came from you{% if product.has_perk() %}, and it comes with
+      {{ product.perk_offer() }}, free{% endif %}.
     </p>
 
     <form method="post" class="gift-form"

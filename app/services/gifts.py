@@ -37,12 +37,7 @@ def clean_email(raw: str | None) -> str:
 
 def is_gift(order: Order | None) -> bool:
     """True when this order was bought for an address other than the payer's."""
-    if order is None:
-        return False
-    to = clean_email(getattr(order, "gift_to_email", None))
-    if not to or "@" not in to:
-        return False
-    return to != clean_email(getattr(order, "buyer_email", None))
+    return order is not None and order.is_gift()
 
 
 def holder_email(order: Order | None, paid_by: str) -> str:
