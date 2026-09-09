@@ -2703,14 +2703,6 @@ def checkout_addon(kind):
     if kind_key in ("saman", "ayesha") and not intake_id:
         return redirect(url_for("main.coaching_book", coach=kind_key))
 
-    price_id = (settings_service.get_setting(info["setting"]) or "").strip()
-    if not price_id:
-        flash("Checkout for this add-on isn’t live yet — check back soon.", "info")
-        return redirect(url_for("main.support_groups_page"))
-    if not pay.configured():
-        flash("Payments aren’t configured yet. Please try again later.", "error")
-        return redirect(url_for("main.support_groups_page"))
-
     intake = None
     if intake_id:
         intake = db.session.get(CoachingIntake, intake_id)
@@ -2721,9 +2713,34 @@ def checkout_addon(kind):
             or intake.user_id != current_user.id
         ):
             flash("That booking form expired — please fill it in again.", "error")
-            if kind_key == "saman":
-                return redirect(url_for("main.coaching_book", coach="saman"))
+            if kind_key in ("saman", "ayesha"):
+                return redirect(url_for("main.coaching_book", coach=kind_key))
             return redirect(url_for("main.support_groups_page"))
+
+    def _no_checkout(message: str, category: str = "error"):
+        """Nothing was paid, so nothing should sit in Studio waiting on it.
+
+        A booking is written down before Stripe so the slot is held and the
+        answers survive the trip. If the trip never happens, the row is let go
+        of here — otherwise Studio reads "waiting on checkout" about a checkout
+        that was never opened, and the hour stays blocked.
+        """
+        if intake is not None and intake.status == "pending_payment":
+            intake.status = "cancelled"
+            db.session.commit()
+        flash(message, category)
+        anchor = "#facilitator" if kind_key == "facilitator" else "#coaching"
+        return redirect(url_for("main.support_groups_page") + anchor)
+
+    price_id = (settings_service.get_setting(info["setting"]) or "").strip()
+    if not price_id:
+        return _no_checkout(
+            "Checkout for this add-on isn’t live yet — check back soon. "
+            "Nothing has been charged.", "info")
+    if not pay.configured():
+        return _no_checkout(
+            "Payments aren’t configured yet, so nothing was charged — "
+            "please try again later.")
 
     email = current_user.email if current_user.is_authenticated else None
     name = current_user.public_name() if current_user.is_authenticated else None
@@ -2747,8 +2764,7 @@ def checkout_addon(kind):
             metadata=metadata,
         )
     except pay.StripeError as exc:
-        flash(str(exc), "error")
-        return redirect(url_for("main.support_groups_page"))
+        return _no_checkout(str(exc))
     return redirect(url)
 
 

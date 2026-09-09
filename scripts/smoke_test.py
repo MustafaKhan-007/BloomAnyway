@@ -4480,6 +4480,109 @@ with app.app_context():
     db.session.get(_CI, _unmade_id).status = "cancelled"
     db.session.commit()
 
+# --- money that lands after the sweep has given up ----------------------------
+# A form filled in holds the slot for two hours; after that the sweep lets it
+# go. Stripe retries a webhook for days, though, and a tab left open can be
+# paid from long after. The charge is proof the checkout was finished, so the
+# booking is picked back up rather than left as a payment with no session.
+with app.app_context():
+    _slow = _CI(user_id=_buyer_id, coach="saman", answers_json="{}",
+                scheduled_at=utcnow() + timedelta(days=9, minutes=7),
+                status="pending_payment",
+                created_at=utcnow() - timedelta(hours=5))
+    db.session.add(_slow)
+    db.session.commit()
+    _slow_id = _slow.id
+    intake_svc._expire_stale_pending("saman")
+    ok("A checkout nobody finished stops holding the slot",
+       db.session.get(_CI, _slow_id).status == "expired",
+       db.session.get(_CI, _slow_id).status)
+    _err = intake_svc.fulfill_intake(_slow_id)
+    _slow_row = db.session.get(_CI, _slow_id)
+    ok("But paying late still books the hour it was paid for",
+       _err is None and _slow_row.status == "scheduled" and _slow_row.meeting_id,
+       f"{_err} / {_slow_row.status}")
+
+with app.app_context():
+    _taken_at = (utcnow() + timedelta(days=11)).replace(microsecond=0)
+    _gone = _CI(user_id=_buyer_id, coach="saman", answers_json="{}",
+                scheduled_at=_taken_at, status="pending_payment",
+                created_at=utcnow() - timedelta(hours=5))
+    db.session.add(_gone)
+    db.session.commit()
+    _gone_id = _gone.id
+    intake_svc._expire_stale_pending("saman")
+    _rival = _CI(user_id=_buyer_id, coach="saman", answers_json="{}",
+                 scheduled_at=_taken_at, status="scheduled")
+    db.session.add(_rival)
+    db.session.commit()
+    _alerts_before = Notification.query.filter_by(
+        kind="support_group_alert").count()
+    _err = intake_svc.fulfill_intake(_gone_id)
+    ok("An hour sold on in the meantime isn't double-booked",
+       _err is not None and db.session.get(_CI, _gone_id).status == "paid",
+       f"{_err} / {db.session.get(_CI, _gone_id).status}")
+    _hers = (Notification.query
+             .filter_by(user_id=_buyer_id, kind="support_group")
+             .order_by(Notification.id.desc()).first())
+    ok("She's told the money landed and a new time is coming",
+       _hers is not None and "isn’t free any more" in (_hers.body or ""),
+       _hers.body if _hers else "no notification")
+    _alert = (Notification.query.filter_by(kind="support_group_alert")
+              .order_by(Notification.id.desc()).first())
+    ok("And Studio is told there's a time to agree on",
+       Notification.query.filter_by(kind="support_group_alert").count()
+       > _alerts_before and "set a time" in (_alert.body or ""),
+       _alert.body if _alert else "no alert")
+    db.session.get(_CI, _gone_id).status = "cancelled"
+    db.session.get(_CI, _rival.id).status = "cancelled"
+    db.session.commit()
+
+# Studio used to read "waiting on checkout" for weeks about a slot nobody was
+# holding, because the sweep only ran when somebody opened the booking page.
+with app.app_context():
+    _ghost = _CI(user_id=_buyer_id, coach="saman", answers_json="{}",
+                 scheduled_at=utcnow() + timedelta(days=13),
+                 status="pending_payment",
+                 created_at=utcnow() - timedelta(days=3))
+    db.session.add(_ghost)
+    db.session.commit()
+    _ghost_id = _ghost.id
+    _listed = [i.id for i in intake_svc.studio_intakes()]
+    ok("Studio stops listing a checkout nobody came back to",
+       _ghost_id not in _listed
+       and db.session.get(_CI, _ghost_id).status == "expired",
+       db.session.get(_CI, _ghost_id).status)
+
+# A booking is written down before Stripe so the slot is held and the answers
+# survive the trip. If the trip never happens, it is let go of again.
+with app.app_context():
+    _norun = _CI(user_id=_buyer_id, coach="ayesha", answers_json="{}",
+                 scheduled_at=utcnow() + timedelta(days=15),
+                 status="pending_payment")
+    db.session.add(_norun)
+    db.session.commit()
+    _norun_id = _norun.id
+
+
+def _stripe_says_no(**_kw):
+    raise pay.StripeError("Stripe wouldn’t take that price")
+
+
+_real_addon_checkout = pay.create_checkout_session
+pay.create_checkout_session = _stripe_says_no
+try:
+    r = wrap_client.get(f"/checkout/addon/ayesha?intake={_norun_id}",
+                        follow_redirects=True)
+finally:
+    pay.create_checkout_session = _real_addon_checkout
+ok("A checkout Stripe refuses says so instead of going quiet",
+   "wouldn’t take that price" in flashes(r), flashes(r))
+with app.app_context():
+    ok("And the booking behind it isn't left waiting on a payment",
+       db.session.get(_CI, _norun_id).status == "cancelled",
+       db.session.get(_CI, _norun_id).status)
+
 # --- the room is the coach's, not the Studio account's ------------------------
 with app.app_context():
     _ooo = db.session.get(SupportGroupMeeting, _ooo_mid)

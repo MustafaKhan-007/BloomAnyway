@@ -26,9 +26,17 @@
       {% for row in intake_rows %}
       {% set intake = row.intake %}
       {% set meeting = row.meeting %}
+      {# The column reads pending_payment / paid / scheduled; say what each one
+         means for the member instead, so nobody has to guess whether money has
+         changed hands. #}
+      {% set status_words = {
+        'pending_payment': 'at checkout',
+        'paid': 'paid · needs a time',
+        'scheduled': 'booked',
+      } %}
       <details class="sg-intake" {% if intake.status in ('paid', 'scheduled') %}open{% endif %}>
         <summary class="sg-intake__summary">
-          <span class="sg-pill">{{ intake.status }}</span>
+          <span class="sg-pill">{{ status_words.get(intake.status, intake.status) }}</span>
           <span class="sg-pill sg-pill--coach">{{ row.coach_label }}</span>
           <strong>{{ row.member.public_name() if row.member else 'Member' }}</strong>
           <span class="field-help">{{ row.member.email if row.member else '' }}</span>
@@ -81,8 +89,16 @@
           {% elif intake.scheduled_at %}
           <p class="field-help" style="margin: 0 0 12px;">
             Chosen slot: {{ intake.scheduled_at|when('%A, %b %d · %I:%M %p') }}
-            {% if intake.status == 'pending_payment' %} · waiting on checkout{% endif %}
+            {% if intake.status == 'pending_payment' %} · nothing paid yet{% endif %}
           </p>
+          {% if intake.status == 'pending_payment' %}
+          <p class="field-help" style="margin: 0 0 12px;">
+            The form is filled in and the slot is held, but they're still at
+            Stripe — the answers are saved before checkout so neither is lost on
+            the way. It turns into a session the moment payment lands, and the
+            slot is let go of if it doesn't within two hours.
+          </p>
+          {% endif %}
           {% endif %}
 
           {% set ns = namespace(prev='') %}
