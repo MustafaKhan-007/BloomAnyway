@@ -350,6 +350,43 @@ Everything else is optional or auto-managed:
 - **Subjects**: each course/guide can be filed under a subject; the catalogue
   shows a second row of filter tabs for the subjects actually in use.
 
+## 4h. Buying a product for somebody else
+
+- A **Gift it** icon sits beside *Buy now* on every product page and leads to
+  `/gift/<slug>`: who it's for, an optional note (400 characters, carried in
+  Stripe metadata), then the ordinary Stripe checkout. The buyer pays with
+  their own card and their own address.
+- **What makes it a gift.** Everything downstream of a purchase — the shelf row
+  in My space, the reader, the free membership months a product carries — hangs
+  off `ShopPurchase.customer_email`. Fulfillment writes the recipient's address
+  there (`gifts.holder_email`) instead of the payer's, and the rest follows: the
+  perk is theirs, a bundle unpacks onto their shelf, a refund takes it back off
+  the shelf it went to. The `Order` keeps both addresses plus `gift_note`.
+  Nothing new appears on the buyer's shelf; their order history says where it
+  went instead.
+- **No account yet?** The purchase waits as `pending_link` against that address
+  and opens the moment they make an account with it, membership months
+  included — the same path a guest purchase already takes.
+- **Finding who it's for** (`/gift/who`, signed in only). A whole address
+  matches the account it belongs to and nothing else: typing `a@` and reading
+  names back is how a list of everybody's addresses gets made. Names and
+  handles search as you type, the same as @mentions. The previews return name,
+  handle, tier and face — never an address. Picking one fixes the account by
+  id, so a typo afterwards can't send it to a stranger. Refused before any
+  money moves: your own address, a malformed one, and somebody who already owns
+  the product.
+- **Both are told.** The recipient gets a bell (`kind="gift"`) and an email
+  naming the sender, quoting the note, and carrying the file itself if the
+  product is one that arrives by email. The buyer gets a receipt — without the
+  file, which was never theirs — and word of where it went (`kind="gift_sent"`),
+  or that it is being held. A gift that is paid for and lands nowhere tells the
+  buyer plainly and alerts the owners, since that one is fixed by hand. All of
+  it is claimed against `orders.gift_told_at` first, so a replayed payment
+  cannot hand the same gift over twice.
+- Brevo templates: `BREVO_TEMPLATE_GIFT_RECEIVED` / `_GIFT_SENT` / `_GIFT_STUCK`.
+  All default to 0, which falls back to the general layout (#10) — set them once
+  there are designs.
+
 ## 5. Security notes
 
 - Passwords: hashed with werkzeug (scrypt), minimum 8 characters, never logged,
