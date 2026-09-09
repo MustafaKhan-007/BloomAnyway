@@ -14,6 +14,8 @@ from ..models import (SUPPORT_CIRCLE_SEED, SupportGroupApplication,
                       SupportGroupCircle, SupportGroupMeeting,
                       SupportGroupTopicAlert, User, utcnow)
 from .mailer import (
+    absolute_url,
+    owner_emails,
     send_facilitator_booked,
     send_facilitator_cancelled,
     send_one_on_one_booked,
@@ -1519,7 +1521,6 @@ def coach_reminder_addresses(coach: str) -> tuple[list[str], bool]:
     the owners rather than nowhere — an hour somebody paid for shouldn't go
     unattended because a field was left blank.
     """
-    from .mailer import owner_emails
     from .settings import get_setting
 
     key = (coach or "").strip().casefold()
@@ -1566,8 +1567,6 @@ def remind_coach(meeting: SupportGroupMeeting) -> int:
     addresses, to_owners = coach_reminder_addresses(coach)
     if not addresses:
         return 0
-
-    from .mailer import absolute_url
 
     member = booking_member(meeting)
     who = member.public_name() if member is not None else "A member"
