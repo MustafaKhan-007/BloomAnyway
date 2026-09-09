@@ -4646,6 +4646,52 @@ with app.app_context():
     ok("But Remove current photo still takes one down",
        not get_setting("portrait_url")
        and get_setting("hero_image_url") == _before_imgs[1])
+# --- a setting saved is the setting shown -----------------------------------
+# Two gunicorn workers serve the live site, and each used to hold these for the
+# life of the process: whichever one took the save knew about it, and the other
+# went on serving what it read at boot until the next deploy. From inside one
+# process the other worker's save looks exactly like a row changing underneath
+# it, which is what this does.
+from app.models import Setting as _Setting
+
+
+def _other_worker_saves(key, value):
+    row = db.session.get(_Setting, key)
+    if row is None:
+        db.session.add(_Setting(key=key, value=value))
+    else:
+        row.value = value
+    db.session.commit()
+
+
+with app.app_context():
+    _from_now = (date.today() + timedelta(days=45)).isoformat()
+    admin.get("/admin/")           # fill whatever this process holds
+    _other_worker_saves("founder_price_ends", _from_now)
+_dash = admin.get("/admin/").get_data(as_text=True)
+ok("A founder date saved a moment ago is the one Studio counts down",
+   "<strong>45</strong> day" in _dash,
+   re.sub(r"\s+", " ", "".join(
+       re.findall(r"<strong>\d+</strong> days? remaining", _dash)) or "no count"))
+with app.app_context():
+    _other_worker_saves("site_title", "Bloom Anyway Again")
+ok("And a name saved a moment ago is the one every page carries",
+   "Bloom Anyway Again" in app.test_client().get("/").get_data(as_text=True))
+with app.app_context():
+    _other_worker_saves("site_title", "Bloom Anyway")
+    _other_worker_saves("founder_price_ends", "")
+
+# Saving through Studio still reads back straight away, in the same breath.
+admin.post("/admin/settings", data={
+    "site_title": "Bloom Anyway", "instagram_url": "", "contact_email": "",
+    "announcement_text": "", "announcement_expires": "",
+    "founder_price_ends": (date.today() + timedelta(days=9)).isoformat(),
+}, follow_redirects=True)
+ok("Saving a founder date in Studio shows it on the next page",
+   "<strong>9</strong> day" in admin.get("/admin/").get_data(as_text=True))
+with app.app_context():
+    _other_worker_saves("founder_price_ends", "")
+
 r = app.test_client().get("/")
 ok("Home uses the split healing / building hero",
    "home-hero" in r.get_data(as_text=True)
