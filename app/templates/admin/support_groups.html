@@ -93,10 +93,10 @@
           </p>
           {% if intake.status == 'pending_payment' %}
           <p class="field-help" style="margin: 0 0 12px;">
-            The form is filled in and the slot is held, but they're still at
-            Stripe — the answers are saved before checkout so neither is lost on
-            the way. It turns into a session the moment payment lands, and the
-            slot is let go of if it doesn't within two hours.
+            The form is filled in and the slot is held, but they haven’t paid
+            yet — answers and time are saved before checkout so neither is lost
+            on the way. It turns into a session the moment payment lands, and
+            the slot is let go of if it doesn’t within two hours.
           </p>
           {% endif %}
           {% endif %}

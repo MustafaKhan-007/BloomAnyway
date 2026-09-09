@@ -4583,6 +4583,26 @@ with app.app_context():
        db.session.get(_CI, _norun_id).status == "cancelled",
        db.session.get(_CI, _norun_id).status)
 
+# Studio used to print the column name at whoever was reading it.
+with app.app_context():
+    _atck = _CI(user_id=_buyer_id, coach="ayesha", answers_json="{}",
+                scheduled_at=utcnow() + timedelta(days=17),
+                status="pending_payment")
+    db.session.add(_atck)
+    db.session.commit()
+    _atck_id = _atck.id
+_sgpage = admin.get("/admin/support-groups").get_data(as_text=True)
+ok("Studio says where a booking has got to, not what the column is called",
+   "at checkout" in _sgpage and "pending_payment" not in _sgpage,
+   "pending_payment still printed" if "pending_payment" in _sgpage
+   else "no 'at checkout' pill")
+ok("And that nothing has been paid on it yet",
+   "nothing paid yet" in _sgpage
+   and "saved before checkout" in _sgpage)
+with app.app_context():
+    db.session.get(_CI, _atck_id).status = "cancelled"
+    db.session.commit()
+
 # --- the room is the coach's, not the Studio account's ------------------------
 with app.app_context():
     _ooo = db.session.get(SupportGroupMeeting, _ooo_mid)
