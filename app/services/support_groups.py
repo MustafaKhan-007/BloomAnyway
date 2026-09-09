@@ -25,7 +25,7 @@ from .mailer import (
     send_support_group_reminder,
 )
 from .social_graph import notify
-from .timefmt import (format_local, normalize_timezone,
+from .timefmt import (format_local, local_day_bounds, normalize_timezone,
                       parse_owner_parts, to_local)
 from . import daily as daily_svc
 
@@ -38,7 +38,9 @@ PEER_MEETING_CAP = 8
 FACILITATOR_MEETING_CAP = 8
 ONE_ON_ONE_CAP = 2
 MAX_OPEN_SESSIONS_PER_CIRCLE = 4
-PEER_SCHEDULE_COOLDOWN_DAYS = 14
+#: Hosting is a day's work, so a member takes one day at a time. Sitting in
+#: somebody else's session costs nothing and is not counted at all.
+PEER_SESSIONS_HOSTED_PER_DAY = 1
 FACILITATOR_DURATION_MINUTES = 60
 ONE_ON_ONE_DURATION_MINUTES = 60
 
@@ -344,57 +346,37 @@ def user_selected_on_meeting(user_id: int, meeting_id: int
             .first())
 
 
-def user_open_seat_in_circle(user_id: int, circle_id: int
-                            ) -> SupportGroupApplication | None:
-    row = (SupportGroupApplication.query
-           .options(joinedload(SupportGroupApplication.meeting))
-           .filter(
-               SupportGroupApplication.user_id == user_id,
-               SupportGroupApplication.circle_id == circle_id,
-               SupportGroupApplication.status == "selected",
-           )
-           .order_by(SupportGroupApplication.created_at.desc())
-           .first())
-    if row is None or row.meeting is None:
-        return None
-    if row.meeting.status not in ("draft", "scheduled"):
-        return None
-    if (row.meeting.status == "scheduled"
-            and row.meeting.scheduled_at
-            and row.meeting.scheduled_at <= utcnow()):
-        return None
-    return row
+def sessions_hosted_on(user_id: int, when: datetime,
+                       tz_name: str | None = None) -> list[SupportGroupMeeting]:
+    """Peer sessions this person already hosts on the day ``when`` falls on.
 
-
-def last_peer_schedule_at(user_id: int) -> datetime | None:
-    row = (SupportGroupMeeting.query
-           .filter(
-               SupportGroupMeeting.scheduled_by_user_id == user_id,
-               SupportGroupMeeting.kind == "peer",
-               SupportGroupMeeting.status.in_(("draft", "scheduled", "completed")),
-           )
-           .order_by(SupportGroupMeeting.created_at.desc())
-           .first())
-    return row.created_at if row else None
+    Their day, not the server's. They pick times on the clock in their
+    settings, and an evening in Karachi is the small hours of the next day in
+    UTC — counted the other way, a member would lose a Tuesday they never used.
+    """
+    start, end = local_day_bounds(when, tz_name)
+    return (SupportGroupMeeting.query
+            .filter(
+                SupportGroupMeeting.scheduled_by_user_id == user_id,
+                SupportGroupMeeting.kind == "peer",
+                SupportGroupMeeting.status.in_(("draft", "scheduled")),
+                SupportGroupMeeting.scheduled_at.isnot(None),
+                SupportGroupMeeting.scheduled_at >= start,
+                SupportGroupMeeting.scheduled_at < end,
+            )
+            .order_by(SupportGroupMeeting.scheduled_at.asc())
+            .all())
 
 
 def can_schedule_peer(user: User) -> tuple[bool, str | None]:
+    """Whether this person may host at all. Which day is a separate question.
+
+    The day is settled when they name one, in :func:`schedule_peer_session`,
+    because somebody with a session on Tuesday is free on Wednesday and a page
+    that took the form away would only be wrong.
+    """
     if not user or not user.is_member():
         return False, "Support groups are for Healing, Creator, and Full Bloom members."
-    # Owners schedule freely — no cooldown — unless they are looking at the
-    # site as a member, in which case they get the member's rules.
-    if user.is_owner_view():
-        return True, None
-    last = last_peer_schedule_at(user.id)
-    if last is None:
-        return True, None
-    unlock = last + timedelta(days=PEER_SCHEDULE_COOLDOWN_DAYS)
-    if utcnow() < unlock:
-        when = format_local(unlock, "%b %d", tz_name=getattr(user, "timezone", None) or "UTC")
-        return False, (
-            f"You can schedule another peer session after {when or 'two weeks'} "
-            f"(one every {PEER_SCHEDULE_COOLDOWN_DAYS} days)."
-        )
     return True, None
 
 
@@ -681,14 +663,25 @@ def schedule_peer_session(
             "sessions. Join one of those, or try another topic."
         )
 
-    if user_open_seat_in_circle(user.id, circle.id):
-        return None, f"You're already booked in an upcoming {circle.title} session."
-
-    when = parse_owner_parts(date_s, time_s, tz_name or getattr(user, "timezone", None))
+    zone = tz_name or getattr(user, "timezone", None)
+    when = parse_owner_parts(date_s, time_s, zone)
     if when is None:
         return None, "Pick a date and time for the session."
     if when <= utcnow():
         return None, "Choose a time in the future."
+
+    # One a day to host. Owners are the exception, as they always were, unless
+    # they are looking at the site as a member.
+    if not user.is_owner_view():
+        held = sessions_hosted_on(user.id, when, zone)
+        if len(held) >= PEER_SESSIONS_HOSTED_PER_DAY:
+            at = format_local(held[0].scheduled_at, "%b %d at %I:%M %p",
+                              tz_name=zone or "UTC")
+            return None, (
+                f"You're already hosting a session that day — {at}. "
+                "One a day is the limit for hosting; sit in as many of "
+                "everybody else's as you like."
+            )
 
     custom = is_custom_circle(circle)
     topic = normalize_custom_topic(topic_title) if custom else ""
@@ -870,14 +863,10 @@ def join_peer_session(user: User, meeting_id: int
     if existing:
         return existing, None
 
-    if kind == "peer" and meeting.circle_id:
-        other = user_open_seat_in_circle(user.id, meeting.circle_id)
-        if other and other.meeting_id != meeting.id:
-            return None, (
-                f"You're already booked for another {meeting.circle.title} session. "
-                "Leave that one first if you want to switch."
-            )
-
+    # Nothing counts how many seats one person holds, here or anywhere: a seat
+    # costs the room nothing and the member only their evening, so somebody
+    # who wants three circles this week can sit in three.
+    #
     # From here the seat count has to hold still. Counting free seats and then
     # inserting is a race: two people clicking at the same moment both count
     # the same empty seat before either has taken it, and both get in.
