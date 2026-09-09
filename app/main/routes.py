@@ -2569,6 +2569,8 @@ def support_groups_page():
         m.id: sg_svc.meeting_seat_count(m) for m in facilitator_sessions
     }
     my_one_on_ones = []
+    owner_unlimited = (current_user.is_authenticated
+                       and current_user.is_owner_view())
     if current_user.is_authenticated:
         member_tz = account_timezone(current_user)
         if current_user.is_member():
@@ -2587,6 +2589,7 @@ def support_groups_page():
         alert_circle_ids=alert_circle_ids,
         can_schedule=can_schedule,
         schedule_err=schedule_err,
+        owner_unlimited=owner_unlimited,
         member_tz=member_tz,
         peer_cap=sg_svc.PEER_MEETING_CAP,
         peer_minutes=sg_svc.peer_meeting_minutes(),
