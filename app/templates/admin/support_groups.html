@@ -307,8 +307,14 @@
         <p class="field-help" style="margin: 8px 0 0;">
           {{ s.seated }} seated across open sessions
           · {{ s.joinable_sessions }} with spots left
-          {% if s.sessions_full %} · topic at max (4){% endif %}
+          · {{ s.member_sessions }} put up by members
+          {% if s.sessions_full %} · they can't add another here (4){% endif %}
         </p>
+        {% if s.sessions_full %}
+        <p class="field-help" style="margin: 4px 0 0;">
+          You still can — schedule from the Support Groups page.
+        </p>
+        {% endif %}
       </article>
       {% endfor %}
     </div>

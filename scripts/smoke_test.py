@@ -3696,6 +3696,86 @@ with app.app_context():
     db.session.get(User, _host_id).timezone = "UTC"
     db.session.commit()
 
+# Both caps — four upcoming to a topic, one a day to host — exist so that no
+# one member fills a topic on her own. The owner putting the timetable up is
+# not that member: as many as she likes, in one topic, two at the same hour if
+# that is what the week needs. A quiet topic, so nothing here is counting the
+# sessions the tests above left standing.
+with app.app_context():
+    _quiet_cid = (SupportGroupCircle.query
+                  .filter_by(slug="starting-over").first().id)
+_owner_day = (datetime.utcnow() + timedelta(days=16)).strftime("%Y-%m-%d")
+for _hour in ("09:00", "11:00", "13:00", "15:00", "17:00"):
+    r = admin.post("/support-groups/schedule",
+                   data={"circle_id": _quiet_cid, "meeting_date": _owner_day,
+                         "meeting_time": _hour},
+                   follow_redirects=True)
+_last_owner_sched = flashes(r)
+with app.app_context():
+    _owner_row = User.query.filter_by(email="owner@example.com").first()
+    _owner_id = _owner_row.id
+    _owner_sessions = (SupportGroupMeeting.query
+                       .filter_by(scheduled_by_user_id=_owner_id,
+                                  circle_id=_quiet_cid, kind="peer",
+                                  status="scheduled")
+                       .count())
+ok("An owner can put up more sessions in one topic than a member may",
+   _owner_sessions == 5, f"{_owner_sessions} stood up | {_last_owner_sched}")
+r = admin.post("/support-groups/schedule",
+               data={"circle_id": _quiet_cid, "meeting_date": _owner_day,
+                     "meeting_time": "09:00"},
+               follow_redirects=True)
+ok("Two of theirs at the same hour in the same topic is allowed as well",
+   "Session scheduled" in r.get_data(as_text=True), flashes(r))
+_sg_owner_page = admin.get("/support-groups").get_data(as_text=True)
+ok("So the form stays on the page for them however full the topic is",
+   "as many in one topic as you want" in _sg_owner_page
+   and "sessions coming up in this topic" not in _sg_owner_page)
+
+# And a topic the owner has filled is not a topic taken away from the members
+# who host in it — the four they are allowed are four of their own.
+r = stranger_client.post("/support-groups/schedule",
+                         data={"circle_id": _quiet_cid,
+                               "meeting_date": _owner_day,
+                               "meeting_time": "19:00"},
+                         follow_redirects=True)
+ok("A member can still host in a topic the owner has filled",
+   "Session scheduled" in r.get_data(as_text=True), flashes(r))
+with app.app_context():
+    _filler = User.query.filter_by(email="stranger@example.com").first()
+    for _n in range(3):
+        _m = SupportGroupMeeting(
+            circle_id=_quiet_cid, capacity=8, kind="peer",
+            scheduled_by_user_id=_filler.id, status="scheduled",
+            scheduled_at=utcnow() + timedelta(days=20 + _n),
+            created_at=utcnow())
+        db.session.add(_m)
+    db.session.commit()
+r = stranger_client.post("/support-groups/schedule",
+                         data={"circle_id": _quiet_cid,
+                               "meeting_date": (datetime.utcnow()
+                                                + timedelta(days=25)
+                                                ).strftime("%Y-%m-%d"),
+                               "meeting_time": "19:00"},
+                         follow_redirects=True)
+ok("Once four of those four are members', the cap bites again",
+   "another topic" in r.get_data(as_text=True), flashes(r))
+admin.post("/admin/preview", data={"tier": "healing"})
+r = admin.post("/support-groups/schedule",
+               data={"circle_id": _quiet_cid, "meeting_date": _owner_day,
+                     "meeting_time": "21:00"},
+               follow_redirects=True)
+ok("An owner reading the site as a member is held to the members' rules too",
+   "another topic" in r.get_data(as_text=True), flashes(r))
+admin.post("/admin/preview", data={"tier": "off"})
+with app.app_context():
+    for _m in (SupportGroupMeeting.query
+               .filter_by(circle_id=_quiet_cid, kind="peer").all()):
+        (SupportGroupApplication.query
+         .filter_by(meeting_id=_m.id).delete(synchronize_session=False))
+        db.session.delete(_m)
+    db.session.commit()
+
 r = client.post(f"/support-groups/meetings/{mid}/join", follow_redirects=True)
 ok("Another member can join an upcoming peer session",
    "You're in" in r.get_data(as_text=True)
@@ -4113,7 +4193,7 @@ with app.app_context():
         tz_name="UTC",
     )
     ok("Topic blocks a 5th upcoming peer session",
-       m5 is None and err5 and "4 upcoming" in err5)
+       m5 is None and err5 and "already have 4 sessions" in err5, err5)
 
 # Post-session wrap + silent peer report
 with app.app_context():

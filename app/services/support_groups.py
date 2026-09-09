@@ -6,7 +6,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 from flask import url_for
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import joinedload
 
 from ..extensions import db
@@ -329,14 +329,22 @@ def open_facilitator_sessions(limit: int = 20) -> list[SupportGroupMeeting]:
             .all())
 
 
-def open_peer_session_count(circle_id: int) -> int:
+def member_hosted_session_count(circle_id: int) -> int:
+    """Upcoming sessions in this topic that a member put up.
+
+    What the four-a-topic cap counts. An owner's own sessions sit outside it
+    both ways: no number of them stops her adding another, and no number of
+    them takes the topic away from the members who host in it.
+    """
     return (SupportGroupMeeting.query
+            .outerjoin(User, SupportGroupMeeting.scheduled_by_user_id == User.id)
             .filter(
                 SupportGroupMeeting.circle_id == circle_id,
                 SupportGroupMeeting.kind == "peer",
                 SupportGroupMeeting.status == "scheduled",
                 SupportGroupMeeting.scheduled_at.isnot(None),
                 SupportGroupMeeting.scheduled_at > utcnow(),
+                or_(User.id.is_(None), User.is_admin.is_(False)),
             )
             .count())
 
@@ -400,11 +408,16 @@ def circle_stats() -> list[dict]:
         open_n = len(sessions)
         joinable = sum(1 for n in spots.values() if n > 0)
         seated = sum(seats.values())
+        # Hosts came back with the sessions, so the members' share of them is
+        # counted here rather than asked for again per circle.
+        member_hosted = sum(1 for m in sessions
+                            if not (m.host is not None and m.host.is_admin))
         out.append({
             "circle": c,
             "open_sessions": open_n,
             "joinable_sessions": joinable,
-            "sessions_full": open_n >= MAX_OPEN_SESSIONS_PER_CIRCLE,
+            "member_sessions": member_hosted,
+            "sessions_full": member_hosted >= MAX_OPEN_SESSIONS_PER_CIRCLE,
             "sessions": sessions,
             "session_seats": seats,
             "session_spots": spots,
@@ -659,10 +672,19 @@ def schedule_peer_session(
             return None, "Creator accountability groups aren’t included in your plan."
         return None, "Healing peer groups aren’t included in your plan."
 
-    if open_peer_session_count(circle.id) >= MAX_OPEN_SESSIONS_PER_CIRCLE:
+    # Every cap below keeps one member from filling a topic on their own. An
+    # owner running the place is not that member: they may put up as many
+    # sessions as they like, in one topic, at whatever times suit them. An
+    # owner previewing the site as a member is held to the member's rules.
+    owner_view = bool(user.is_owner_view())
+
+    if (not owner_view
+            and member_hosted_session_count(circle.id)
+            >= MAX_OPEN_SESSIONS_PER_CIRCLE):
         return None, (
-            f"{circle.title} already has {MAX_OPEN_SESSIONS_PER_CIRCLE} upcoming "
-            "sessions. Join one of those, or try another topic."
+            f"Members already have {MAX_OPEN_SESSIONS_PER_CIRCLE} sessions "
+            f"coming up in {circle.title}. Join one of those, or try "
+            "another topic."
         )
 
     zone = tz_name or getattr(user, "timezone", None)
@@ -672,9 +694,8 @@ def schedule_peer_session(
     if when <= utcnow():
         return None, "Choose a time in the future."
 
-    # One a day to host. Owners are the exception, as they always were, unless
-    # they are looking at the site as a member.
-    if not user.is_owner_view():
+    # One a day to host, for a member.
+    if not owner_view:
         held = sessions_hosted_on(user.id, when, zone)
         if len(held) >= PEER_SESSIONS_HOSTED_PER_DAY:
             at = format_local(held[0].scheduled_at, "%b %d at %I:%M %p",
@@ -691,15 +712,16 @@ def schedule_peer_session(
         return None, "Name your custom topic (what this session is about)."
     topic_key = custom_topic_key(topic) if custom else None
 
-    conflict = peer_session_time_conflict(
-        circle.id, when, topic_key=topic_key,
-    )
-    if conflict is not None:
-        label = meeting_display_title(conflict) if custom else circle.title
-        return None, (
-            f"There’s already a {label} session at that time. "
-            "Pick a different time, or join the existing one."
+    if not owner_view:
+        conflict = peer_session_time_conflict(
+            circle.id, when, topic_key=topic_key,
         )
+        if conflict is not None:
+            label = meeting_display_title(conflict) if custom else circle.title
+            return None, (
+                f"There’s already a {label} session at that time. "
+                "Pick a different time, or join the existing one."
+            )
 
     meeting = SupportGroupMeeting(
         circle_id=circle.id,
@@ -1155,8 +1177,11 @@ def schedule_meeting(meeting: SupportGroupMeeting, *, scheduled_at: datetime,
     if scheduled_at <= utcnow():
         return "Choose a time in the future."
 
-    # Also block overlapping times when rescheduling an existing peer meeting.
-    if (meeting.kind or "peer") == "peer" and meeting.circle_id:
+    # Also block overlapping times when rescheduling an existing peer meeting —
+    # for a member. Whoever is doing it here is the same person the caps were
+    # checked against, and an owner is free to run two side by side.
+    by_owner = bool(owner is not None and owner.is_owner_view())
+    if not by_owner and (meeting.kind or "peer") == "peer" and meeting.circle_id:
         topic_key = (
             custom_topic_key(meeting.notes)
             if is_custom_circle(meeting.circle) else None

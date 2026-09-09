@@ -73,9 +73,9 @@
       {% endif %}
 
       {% if can_use %}
-      {% if s.sessions_full %}
+      {% if s.sessions_full and not owner_unlimited %}
       <p class="field-help" style="margin:10px 0 0;">
-        This topic already has {{ max_sessions }} upcoming sessions. Join one above, or pick another topic.
+        Members already have {{ max_sessions }} sessions coming up in this topic. Join one above, or pick another topic.
       </p>
       {% elif can_schedule %}
       <form method="post" action="{{ url_for('main.schedule_support_session') }}" class="sg-schedule">
@@ -104,12 +104,14 @@
           <button class="btn btn--primary btn--sm" type="submit">Schedule</button>
         </div>
         <p class="field-help" style="margin:6px 0 0;">
-          {% if current_user.is_authenticated and current_user.is_admin %}
-          Owners can host as often as they like.
+          {% if owner_unlimited %}
+          You can host as often as you like — as many in one topic as you want,
+          two at the same hour if you need them. The limit of
+          {{ max_sessions }} a topic is a members' one.
           {% else %}
           Host one session a day — sit in on as many as you like.
-          {% endif %}
           Two sessions for the same topic can’t overlap.
+          {% endif %}
         </p>
       </form>
       {% elif schedule_err %}
