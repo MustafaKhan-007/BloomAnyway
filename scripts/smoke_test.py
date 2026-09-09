@@ -3831,8 +3831,19 @@ with app.app_context():
     meeting.scheduled_at = utcnow() + timedelta(hours=20)
     meeting.reminded_at = None
     db.session.commit()
+    # The other worker reads the same due session a moment before this one
+    # stamps it — it must find the reminder already taken rather than send a
+    # second copy of every email and bell.
+    _also_due = sg_svc.due_reminders()
     n = sg_svc.dispatch_due_reminders()
     ok("24h reminder dispatch runs", n == 1)
+    _notes_after_reminder = Notification.query.filter_by(kind="support_group").count()
+    _second_worker = [m for m in _also_due if sg_svc._claim_reminder(m)]
+    ok("A second worker sweeping the same session sends no second reminder",
+       _also_due and not _second_worker
+       and Notification.query.filter_by(kind="support_group").count()
+       == _notes_after_reminder,
+       f"due={len(_also_due)} claimed={len(_second_worker)}")
 ok("Reminder email includes in-site Join link",
    any(room_path in (m.get("text") or "")
        and ("session is tomorrow" in m["subject"].lower()
