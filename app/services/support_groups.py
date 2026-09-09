@@ -1567,11 +1567,13 @@ def remind_coach(meeting: SupportGroupMeeting) -> int:
     if not addresses:
         return 0
 
+    from .mailer import absolute_url
+
     member = booking_member(meeting)
     who = member.public_name() if member is not None else "A member"
     label = coach or "a founder"
     room = _meeting_room_url(meeting)
-    studio = _studio_sessions_url()
+    studio = absolute_url(_studio_sessions_url())
     sent = 0
     told: set[int] = set()
     for address in addresses:

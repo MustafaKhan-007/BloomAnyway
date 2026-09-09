@@ -4653,8 +4653,9 @@ with app.app_context():
     ok("Naming who booked it, and the time on her own clock",
        _booker in _hers[0]["text"] and "Karachi" in _hers[0]["text"],
        _hers[0]["text"])
-    ok("Where Studio keeps their answers is in it as well",
-       "/admin/support-groups" in _hers[0]["text"], _hers[0]["text"])
+    ok("Where Studio keeps their answers is in it, as a link that works from an inbox",
+       "://" in _hers[0]["text"].split("/admin/support-groups")[0].rsplit(" ", 1)[-1]
+       and "/admin/support-groups" in _hers[0]["text"], _hers[0]["text"])
     ok("And it's in her bell too",
        Notification.query.filter_by(user_id=_coach_id, kind="support_group")
        .count() == _bell_mark + 1)
