@@ -1816,9 +1816,15 @@ class Order(db.Model):
     membership_tier = db.Column(db.String(20), index=True)
     product_id = db.Column(db.Integer, db.ForeignKey("products.id"))
     buyer_email = db.Column(db.String(255), nullable=False, index=True)
-    # if the buyer gifted this to a friend, the friend's account email gets
-    # access to the product's files instead of/along with the buyer
+    # If the buyer gifted this, the product goes to this address instead of
+    # theirs: the shelf row, the reader and any free membership months all
+    # follow the address, so this is the whole of what makes a gift a gift.
     gift_to_email = db.Column(db.String(255), index=True)
+    #: what the buyer wrote to go with it, read by the recipient
+    gift_note = db.Column(db.String(400))
+    #: stamped when both of them have been told, so a webhook arriving twice
+    #: can't hand the same gift over again
+    gift_told_at = db.Column(db.DateTime)
     total_cents = db.Column(db.Integer, nullable=False, default=0)
     currency = db.Column(db.String(3), nullable=False, default="USD")
     status = db.Column(db.String(20), nullable=False, default="paid")
