@@ -153,6 +153,17 @@ class Config:
     )
     # Sent alongside the receipt when what was bought is the challenge, so the
     # buyer gets what they paid for and what happens next in the same breath.
+    # Gifts have no designed template yet, so these sit at 0 and the general
+    # layout carries them. Set one here the day there is one.
+    BREVO_TEMPLATE_GIFT_RECEIVED = int(
+        os.environ.get("BREVO_TEMPLATE_GIFT_RECEIVED", "0") or 0
+    )
+    BREVO_TEMPLATE_GIFT_SENT = int(
+        os.environ.get("BREVO_TEMPLATE_GIFT_SENT", "0") or 0
+    )
+    BREVO_TEMPLATE_GIFT_STUCK = int(
+        os.environ.get("BREVO_TEMPLATE_GIFT_STUCK", "0") or 0
+    )
     BREVO_TEMPLATE_CHALLENGE_WELCOME = int(
         os.environ.get("BREVO_TEMPLATE_CHALLENGE_WELCOME", "30") or 0
     )
