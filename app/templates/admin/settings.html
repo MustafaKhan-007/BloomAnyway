@@ -210,6 +210,25 @@
                  placeholder="https://cal.com/…">
         </div>
       </div>
+      <div class="form-row">
+        <div class="field">
+          <label for="ayesha_coach_email">Ayesha's address for 1:1 reminders</label>
+          <input type="email" id="ayesha_coach_email" name="ayesha_coach_email"
+                 value="{{ values.ayesha_coach_email }}"
+                 placeholder="ayesha@…">
+        </div>
+        <div class="field">
+          <label for="saman_coach_email">Saman's address for 1:1 reminders</label>
+          <input type="email" id="saman_coach_email" name="saman_coach_email"
+                 value="{{ values.saman_coach_email }}"
+                 placeholder="saman@…">
+        </div>
+      </div>
+      <p class="field-help" style="margin: 0 0 10px;">
+        The day before a 1:1, whoever is taking it is emailed who booked it and
+        when. Leave an address blank and that founder's reminders go to every
+        owner instead, so an hour somebody paid for is never unattended.
+      </p>
       <p class="field-help" style="margin: 0;">
         Session prices come from these Stripe Price ids at checkout — nothing is hard-coded on the site.
       </p>

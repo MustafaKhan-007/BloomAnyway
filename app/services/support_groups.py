@@ -1327,6 +1327,14 @@ def _reminder_day_and_timing(
     day_word is ``today``, ``tomorrow``, or None. timing is a short phrase like
     ``starting soon`` / ``later today`` / ``in about 20 hours``.
     """
+    tz = normalize_timezone(getattr(user, "timezone", None)) or "UTC"
+    return _day_word_for_tz(tz, scheduled_at, now=now)
+
+
+def _day_word_for_tz(
+    tz: str, scheduled_at: datetime | None, *, now: datetime | None = None,
+) -> tuple[str | None, str]:
+    """The same, for a clock rather than an account."""
     now = now or utcnow()
     if scheduled_at is None:
         return None, "coming up"
@@ -1338,7 +1346,6 @@ def _reminder_day_and_timing(
     if ref.tzinfo is not None:
         ref = ref.astimezone(timezone.utc).replace(tzinfo=None)
 
-    tz = normalize_timezone(getattr(user, "timezone", None)) or "UTC"
     local_now = to_local(ref, tz)
     local_start = to_local(start, tz)
     delta = start - ref
@@ -1393,9 +1400,14 @@ def seat_display_name(meeting: SupportGroupMeeting, user: User) -> str:
 def _session_date_and_time(user: User, scheduled_at: datetime | None
                            ) -> tuple[str, str]:
     """Date + time strings in the member's timezone for booking emails."""
+    tz = normalize_timezone(getattr(user, "timezone", None)) or "UTC"
+    return _session_stamp(tz, scheduled_at)
+
+
+def _session_stamp(tz: str, scheduled_at: datetime | None) -> tuple[str, str]:
+    """The same date and time strings, for a clock rather than an account."""
     if scheduled_at is None:
         return "—", "—"
-    tz = normalize_timezone(getattr(user, "timezone", None)) or "UTC"
     day = format_local(scheduled_at, "%A, %b %d, %Y", tz_name=tz) or "—"
     time_s = format_local(scheduled_at, "%I:%M %p", tz_name=tz) or "—"
     if time_s and time_s != "—":
@@ -1492,6 +1504,117 @@ def _send_booked_email(meeting: SupportGroupMeeting, user: User) -> None:
         )
     except Exception:
         log.exception("Support-group booking email failed for user %s", user.id)
+
+
+COACH_EMAIL_SETTINGS = {
+    "saman": "saman_coach_email",
+    "ayesha": "ayesha_coach_email",
+}
+
+
+def coach_reminder_addresses(coach: str) -> tuple[list[str], bool]:
+    """Where a founder's own 1:1 reminder goes, and whether the owners got it.
+
+    Each founder's address is set in Studio. Without one the reminder goes to
+    the owners rather than nowhere — an hour somebody paid for shouldn't go
+    unattended because a field was left blank.
+    """
+    from .mailer import owner_emails
+    from .settings import get_setting
+
+    key = (coach or "").strip().casefold()
+    setting = COACH_EMAIL_SETTINGS.get(key)
+    address = (get_setting(setting) or "").strip() if setting else ""
+    if address:
+        return [address], False
+    return owner_emails(), True
+
+
+def _account_for_email(address: str) -> User | None:
+    email = (address or "").strip().lower()
+    if not email:
+        return None
+    return (User.query
+            .filter(func.lower(User.email) == email, User.deleted_at.is_(None))
+            .first())
+
+
+def booking_member(meeting: SupportGroupMeeting) -> User | None:
+    """Whoever booked the hour — the seat that isn't the Studio host."""
+    for row in meeting_seats(meeting):
+        user = row.author
+        if not user or user.deleted_at:
+            continue
+        if (meeting.scheduled_by_user_id
+                and user.id == meeting.scheduled_by_user_id):
+            continue
+        return user
+    return None
+
+
+def remind_coach(meeting: SupportGroupMeeting) -> int:
+    """Tell whoever is taking a 1:1 that it's coming, and who booked it.
+
+    The member has had a reminder since the beginning; the founder on the
+    other side of the call had nothing but the Studio page to remember to
+    look at. Sent the day before with the rest of them, so it's one sweep and
+    one claim rather than a second thing to keep in step.
+    """
+    if (meeting.kind or "").strip().lower() != "one_on_one":
+        return 0
+    coach = normalize_custom_topic(meeting.notes) or ""
+    addresses, to_owners = coach_reminder_addresses(coach)
+    if not addresses:
+        return 0
+
+    member = booking_member(meeting)
+    who = member.public_name() if member is not None else "A member"
+    label = coach or "a founder"
+    room = _meeting_room_url(meeting)
+    studio = _studio_sessions_url()
+    sent = 0
+    told: set[int] = set()
+    for address in addresses:
+        account = _account_for_email(address)
+        tz = normalize_timezone(getattr(account, "timezone", None)) or "UTC"
+        day, time_s = _session_stamp(tz, meeting.scheduled_at)
+        # An hour booked this morning for this evening is not "tomorrow".
+        day_word, _timing = _day_word_for_tz(tz, meeting.scheduled_at)
+        soon = day_word or "coming up"
+        heading = (f"{label}'s 1:1" if to_owners else "Your 1:1")
+        body = (
+            f"{who} booked an hour with {label}.\n\n"
+            f"Date: {day}\n"
+            f"Time: {time_s}\n\n"
+            "What they wrote on the booking form is in Studio under Support "
+            f"groups: {studio}"
+        )
+        try:
+            send_styled_email(
+                address,
+                subject=f"{heading} is {soon} — {who}",
+                preview=f"{who}, {day} at {time_s}.",
+                header="Session reminder",
+                title=f"{heading} with {who} is {soon}",
+                body=body,
+                button_text="Open the room",
+                button_url=room,
+            )
+            sent += 1
+        except Exception:
+            log.exception("1:1 coach reminder email failed for %s", address)
+        if account is not None and account.id not in told:
+            told.add(account.id)
+            notify(
+                account.id,
+                kind="support_group",
+                body=(f"{heading} with {who} is {soon} — {day}, "
+                      f"{time_s}.")[:300],
+                url=room,
+            )
+    if told:
+        db.session.commit()
+    return sent
 
 
 def _send_reminder_email(meeting: SupportGroupMeeting, user: User) -> None:
@@ -1755,6 +1878,7 @@ def dispatch_due_reminders(now: datetime | None = None) -> int:
         if not _claim_reminder(meeting):
             continue
         _notify_seats(meeting, kind="reminder")
+        remind_coach(meeting)
         db.session.commit()
         sent += 1
     return sent

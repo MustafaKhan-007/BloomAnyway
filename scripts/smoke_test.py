@@ -4603,6 +4603,111 @@ with app.app_context():
     db.session.get(_CI, _atck_id).status = "cancelled"
     db.session.commit()
 
+# --- the founder taking the hour hears about it too ---------------------------
+# The member has always had a reminder the day before. Whoever is sitting on
+# the other side of the call had nothing but the Studio page to remember to
+# look at.
+with app.app_context():
+    from app.services.settings import set_setting as _set_coach
+    _set_coach("ayesha_coach_email", "")
+    _due = db.session.get(SupportGroupMeeting, _ooo_mid)
+    _due.status = "scheduled"
+    _due.scheduled_at = utcnow() + timedelta(hours=20)
+    _due.reminded_at = None
+    db.session.commit()
+    _mail_mark = len(_sent_mail)
+    sg_svc.dispatch_due_reminders()
+    _fresh = _sent_mail[_mail_mark:]
+    _booker = db.session.get(User, _buyer_id).public_name()
+    ok("With no address saved for her, the owners are reminded of the 1:1",
+       any(m["to"] == "owner@example.com"
+           and ("1:1 is tomorrow" in m["subject"]
+                or "1:1 is today" in m["subject"])
+           for m in _fresh),
+       [(m["to"], m["subject"]) for m in _fresh])
+    ok("And the member's own reminder still goes as it did",
+       any(m["to"] == _buyer_email for m in _fresh),
+       [m["to"] for m in _fresh])
+
+with app.app_context():
+    _coach_acct = User(email="ayesha-coach@example.com", display_name="Ayesha",
+                       username="ayeshacoach", timezone="Asia/Karachi",
+                       email_verified_at=utcnow())
+    _coach_acct.set_password(USER_PW)
+    db.session.add(_coach_acct)
+    db.session.commit()
+    _coach_id = _coach_acct.id
+    _set_coach("ayesha_coach_email", "ayesha-coach@example.com")
+    _due = db.session.get(SupportGroupMeeting, _ooo_mid)
+    _due.scheduled_at = utcnow() + timedelta(hours=18)
+    _due.reminded_at = None
+    db.session.commit()
+    _mail_mark = len(_sent_mail)
+    _bell_mark = Notification.query.filter_by(
+        user_id=_coach_id, kind="support_group").count()
+    sg_svc.dispatch_due_reminders()
+    _fresh = _sent_mail[_mail_mark:]
+    _hers = [m for m in _fresh if m["to"] == "ayesha-coach@example.com"]
+    ok("Once Studio has her address, the reminder goes to her",
+       len(_hers) == 1, [(m["to"], m["subject"]) for m in _fresh])
+    ok("Naming who booked it, and the time on her own clock",
+       _booker in _hers[0]["text"] and "Karachi" in _hers[0]["text"],
+       _hers[0]["text"])
+    ok("Where Studio keeps their answers is in it as well",
+       "/admin/support-groups" in _hers[0]["text"], _hers[0]["text"])
+    ok("And it's in her bell too",
+       Notification.query.filter_by(user_id=_coach_id, kind="support_group")
+       .count() == _bell_mark + 1)
+    ok("The owners are left out of it now somebody else is taking the call",
+       not any(m["to"] == "owner@example.com" for m in _fresh),
+       [m["to"] for m in _fresh])
+
+# An hour booked this morning for this evening is not tomorrow, and saying so
+# is what makes the reminder worth reading.
+with app.app_context():
+    from app.services.timefmt import to_local as _to_local
+    # Three hours from now is only "later today" on a clock that isn't near
+    # midnight, so put her on one where it plainly is.
+    _daytime_tz = next(
+        tz for tz in ("UTC", "Asia/Karachi", "America/New_York", "Asia/Tokyo",
+                      "Pacific/Auckland", "America/Los_Angeles")
+        if _to_local(utcnow(), tz).hour <= 18
+    )
+    db.session.get(User, _coach_id).timezone = _daytime_tz
+    _due = db.session.get(SupportGroupMeeting, _ooo_mid)
+    _due.scheduled_at = utcnow() + timedelta(hours=3)
+    _due.reminded_at = None
+    db.session.commit()
+    _mail_mark = len(_sent_mail)
+    sg_svc.dispatch_due_reminders()
+    _hers = [m for m in _sent_mail[_mail_mark:]
+             if m["to"] == "ayesha-coach@example.com"]
+    ok("A session later the same day says today, not tomorrow",
+       len(_hers) == 1 and "today" in _hers[0]["subject"].lower()
+       and "tomorrow" not in _hers[0]["subject"].lower(),
+       [m["subject"] for m in _hers])
+    _set_coach("ayesha_coach_email", "")
+
+_coach_settings = admin.get("/admin/settings").get_data(as_text=True)
+ok("Studio asks for each founder's address for these reminders",
+   'name="saman_coach_email"' in _coach_settings
+   and 'name="ayesha_coach_email"' in _coach_settings
+   and "go to every" in _coach_settings)
+with app.app_context():
+    from app.services.settings import all_settings as _all_settings
+    _settings_form = dict(_all_settings())
+_settings_form["saman_coach_email"] = "saman-coach@example.com"
+admin.post("/admin/settings", data=_settings_form, follow_redirects=True)
+with app.app_context():
+    ok("And saving one keeps it",
+       get_setting("saman_coach_email") == "saman-coach@example.com",
+       get_setting("saman_coach_email"))
+    ok("Which is then where that founder's reminders go",
+       sg_svc.coach_reminder_addresses("Saman")
+       == (["saman-coach@example.com"], False),
+       str(sg_svc.coach_reminder_addresses("Saman")))
+    _set_coach("saman_coach_email", "")
+
 # --- the room is the coach's, not the Studio account's ------------------------
 with app.app_context():
     _ooo = db.session.get(SupportGroupMeeting, _ooo_mid)
