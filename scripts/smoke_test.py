@@ -4709,6 +4709,19 @@ with app.app_context():
        str(sg_svc.coach_reminder_addresses("Saman")))
     _set_coach("saman_coach_email", "")
 
+# A grid column is as wide as its widest child unless it is told it may be
+# narrower. The availability week is eight columns across, so on a phone it
+# stretched the whole of Studio past the screen and every other line on the
+# page — headings, notes, a member's email — was cut off mid-word.
+_studio_css = client.get("/static/css/main.css").get_data(as_text=True)
+ok("Studio's one column may be narrower than what it holds",
+   re.search(r"\.admin-shell \{[^}]*grid-template-columns: minmax\(0, 1fr\)",
+             _studio_css) is not None,
+   "the shell still sizes itself to its widest child")
+ok("So the week grid scrolls sideways instead of pushing the page wide",
+   re.search(r"\.sg-grid__scroll \{[^}]*overflow: auto[^}]*min-width: 0",
+             _studio_css, re.S) is not None)
+
 # --- the room is the coach's, not the Studio account's ------------------------
 with app.app_context():
     _ooo = db.session.get(SupportGroupMeeting, _ooo_mid)

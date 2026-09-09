@@ -803,7 +803,12 @@ body.is-studio-readonly .admin-main button[type="submit"],
 body.is-studio-readonly .admin-main input[type="submit"] {
   opacity: 0.55; cursor: not-allowed;
 }
-.admin-shell { display: grid; min-height: 100vh; grid-template-columns: 1fr; }
+/* minmax(0, 1fr), not 1fr: a grid column's automatic minimum is its content,
+   so one wide thing inside Studio — the availability week, a table — used to
+   stretch the whole page past the width of a phone and cut every other line
+   off at the right edge. The column may now be narrower than what it holds,
+   which is what lets a scroller inside it scroll. */
+.admin-shell { display: grid; min-height: 100vh; grid-template-columns: minmax(0, 1fr); }
 .admin-sidebar {
   background: var(--plum); color: var(--dawn-ivory); padding: 24px 16px;
   display: flex; flex-direction: column; min-height: 0;
@@ -825,7 +830,7 @@ body.is-studio-readonly .admin-main input[type="submit"] {
 }
 .admin-nav a:hover { background: var(--plum-deep); }
 .admin-nav a.active { background: var(--plum-deep); box-shadow: inset 3px 0 0 var(--gold); }
-.admin-main { padding: 28px 24px 64px; max-width: 1140px; width: 100%; }
+.admin-main { padding: 28px 24px 64px; max-width: 1140px; width: 100%; min-width: 0; }
 .admin-main h1 { font-size: 30px; }
 @media (min-width: 900px) {
   /* Independent panes: sidebar scroll stops at nav end; main scrolls alone */
@@ -3272,7 +3277,7 @@ a.studio-member-filter.is-active span { color: #fff; }
 .sg-grid__toolbar-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .sg-grid__count { font-size: 13px; font-weight: 800; color: var(--plum-deep); white-space: nowrap; }
 .sg-grid__scroll {
-  max-height: 460px; overflow: auto;
+  max-height: 460px; overflow: auto; min-width: 0;
   border: 1px solid rgba(61, 20, 49, 0.12); border-radius: 14px; background: #fff;
 }
 .sg-grid {
