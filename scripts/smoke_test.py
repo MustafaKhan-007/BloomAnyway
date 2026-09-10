@@ -3464,6 +3464,14 @@ with app.app_context():
 r = _rotw_post(client)
 ok("Creator member can enter Reel of the Week",
    "in the running for the next spotlight" in r.get_data(as_text=True))
+# An entry waits on the next pick, whenever that comes, so there is no week
+# to name — the day it went in is the fact worth having instead.
+_rotw_hub = client.get("/watch").get_data(as_text=True)
+_entered = _rotw_hub.split("entered <time", 1)[-1].split("</time>", 1)[0]
+ok("An entry waiting on the next pick names no week, only the day it went in",
+   "in the running for the next spotlight." in _rotw_hub
+   and "entered <time" in _rotw_hub
+   and utcnow().strftime("%b %d") in _entered)
 r = _rotw_post(client, reel_url="https://www.instagram.com/reel/SHARED200/")
 ok("Second Reel of the Week entry in the same round is blocked",
    "already in for the next spotlight" in r.get_data(as_text=True))

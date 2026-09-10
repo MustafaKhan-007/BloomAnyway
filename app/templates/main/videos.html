@@ -223,11 +223,14 @@
           {% if can_reel %}
             {% if my_reel_submission %}
             <div class="hub-exact__notice">
-              <p>Your reel is in the running for the next spotlight
-                (week of {{ week_key.strftime('%b %d, %Y') }}).</p>
+              {# No week here: an entry waits for the next pick, whenever the
+                 owner makes it, so naming the Monday it was filed under only
+                 read as a date that had already gone. #}
+              <p>Your reel is in the running for the next spotlight.</p>
               <p class="field-help">
                 <a href="{{ my_reel_submission.reel_url }}" target="_blank" rel="noopener">View on Instagram</a>
                 &middot; {{ '{:,}'.format(my_reel_submission.share_count) }} shares
+                &middot; entered {{ my_reel_submission.created_at|when('%b %d') }}
               </p>
             </div>
             {% else %}
