@@ -9701,6 +9701,19 @@ ok("And a member asked for by name comes back open, with nothing running",
    f'id="owns-{_shelf_id}" data-member-panel>' in _sbody
    and 'aria-expanded="true"' in _sbody)
 
+# That shelf is a row of its own, which on a phone means a card of its own:
+# it opened as an unrelated box under theirs, and far enough down a tall card
+# that the tap looked like it had done nothing at all.
+_members_css = client.get("/static/css/main.css").get_data(as_text=True)
+ok("On a phone the shelf is joined to the card it belongs to",
+   re.search(r"\.admin-table\.is-stacked tbody tr\.member-owns \{"
+             r"[^}]*margin-top: 0", _members_css, re.S) is not None,
+   "it still sits apart, like somebody else's card")
+_admin_js = client.get("/static/js/admin.js").get_data(as_text=True)
+ok("And opening one brings it to where they can see it",
+   re.search(r"aria-expanded[^}]*scrollIntoView", _admin_js, re.S) is not None,
+   "it can still open below the fold")
+
 r = admin.post(f"/admin/members/{_shelf_id}/owns/{_older_id}/remove",
                follow_redirects=True)
 _after = r.get_data(as_text=True)
