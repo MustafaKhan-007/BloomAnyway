@@ -9749,6 +9749,23 @@ _tzbody = r.get_data(as_text=True)
 ok("Choosing a timezone in settings takes", r.status_code == 200
    and "Times are now shown in Europe/Berlin" in _tzbody)
 ok("And the settings page says so", "Europe/Berlin (UTC+" in _tzbody)
+
+# Six hundred zones is a long scroll to reach Karachi, so the list can be
+# narrowed by typing. The box is only there when the script that works it is.
+ok("The timezone list is long enough to need finding in",
+   _tzbody.count('<option value="') > 300,
+   f"only {_tzbody.count(chr(60) + 'option value=')} zones on the page")
+ok("Settings offers a way to search it",
+   'data-tz-find' in _tzbody and 'id="settings-tz-find"' in _tzbody)
+ok("Which stays out of the way when nothing is running",
+   re.search(r'class="tz-find" data-tz-find hidden', _tzbody) is not None,
+   "an input that does nothing is worse than no input")
+_tz_js = client.get("/static/js/main.js").get_data(as_text=True)
+ok("Typing narrows what the picker holds",
+   "data-tz-find" in _tz_js and "settings-tz" in _tz_js)
+ok("And never narrows away the zone they are on",
+   "Showing times in now" in _tz_js,
+   "filtering could leave the form saving a zone nobody picked")
 _tzc.post("/account/timezone", json={"timezone": "Asia/Karachi"})
 with app.app_context():
     _tzuser = User.query.filter_by(email="buyer@example.com").first()
