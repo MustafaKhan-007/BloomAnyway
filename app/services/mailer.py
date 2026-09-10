@@ -139,9 +139,28 @@ def _parse_mail_from(raw: str) -> tuple[str, str]:
     return "Bloom Anyway", value
 
 
+def _is_template_error(status: int, body: str) -> bool:
+    """Whether Brevo refused because the template id points at nothing.
+
+    A template that was never built in the account, or was deleted out from
+    under us, comes back as a 400 or 404 naming templateId. Worth telling
+    apart from every other rejection: the words of the email are fine, it is
+    only the design that is missing, and that is recoverable.
+    """
+    return status in (400, 404) and "template" in (body or "").lower()
+
+
 def _brevo_error_hint(status: int, body: str) -> str:
     """Turn a Brevo HTTP failure into a short owner-facing hint."""
     text = (body or "").lower()
+    # Ahead of the sender hint below, which this would otherwise be read as
+    # and send somebody checking a verified domain that was never the problem.
+    if _is_template_error(status, body):
+        return (
+            "Brevo has no such template. Build it in Brevo → Transactional → "
+            "Templates, or set the matching BREVO_TEMPLATE_* to one that "
+            f"exists. Details: {(body or '')[:220]}"
+        )
     if status == 401 or "unauthorized" in text or "key not found" in text \
             or "invalid" in text and "key" in text:
         return (
@@ -202,34 +221,37 @@ def _send_via_brevo(to: str, subject: str, text_body: str,
         )
         return False
 
-    payload = {
-        "sender": {"name": name, "email": email},
-        "to": [{"email": to}],
-    }
-    if template_id:
-        payload["templateId"] = int(template_id)
-        if params:
-            payload["params"] = params
-        # Subject in the Brevo template wins unless we override
-        if subject:
-            payload["subject"] = subject
-    else:
-        if not html_body:
-            html_body = (
+    files = _as_brevo_attachments(attachments)
+
+    def payload_for(use_template: bool) -> dict:
+        body = {
+            "sender": {"name": name, "email": email},
+            "to": [{"email": to}],
+        }
+        if use_template:
+            body["templateId"] = int(template_id)
+            if params:
+                body["params"] = params
+            # Subject in the Brevo template wins unless we override
+            if subject:
+                body["subject"] = subject
+        else:
+            html = html_body or (
                 "<pre style=\"font-family:ui-monospace,monospace;white-space:pre-wrap;"
                 "font-size:15px;line-height:1.5;\">"
                 f"{escape(text_body)}</pre>"
             )
-        payload["subject"] = subject
-        payload["textContent"] = text_body
-        payload["htmlContent"] = html_body
-    files = _as_brevo_attachments(attachments)
-    if files:
-        payload["attachment"] = files
-    try:
-        resp = requests.post(
+            body["subject"] = subject
+            body["textContent"] = text_body
+            body["htmlContent"] = html
+        if files:
+            body["attachment"] = files
+        return body
+
+    def post(body: dict):
+        return requests.post(
             BREVO_SEND_URL,
-            json=payload,
+            json=body,
             headers={
                 "api-key": key,
                 "accept": "application/json",
@@ -237,6 +259,19 @@ def _send_via_brevo(to: str, subject: str, text_body: str,
             },
             timeout=20,
         )
+
+    try:
+        resp = post(payload_for(bool(template_id)))
+        if template_id and _is_template_error(resp.status_code, resp.text):
+            # The design is missing from Brevo. The words are not — every one
+            # of these is written out in full before a template is reached
+            # for. A receipt that arrives plain is worth more than a receipt
+            # that doesn't arrive, so it goes in the house style instead.
+            log.error(
+                "Brevo has no template #%s; sending %r to %s without it",
+                template_id, subject, to,
+            )
+            resp = post(payload_for(False))
         if resp.status_code in (200, 201, 202):
             log.info("Brevo: sent to %s (status %s)", to, resp.status_code)
             _set_error("")

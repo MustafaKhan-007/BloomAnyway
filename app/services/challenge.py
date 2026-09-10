@@ -64,6 +64,26 @@ def _claim(order: Order | None) -> bool:
     return True
 
 
+def _release(order: Order | None) -> None:
+    """Give the claim back, because the welcome never went.
+
+    The claim is taken before the send so two webhooks can't both welcome
+    somebody. Keeping it after a send that failed is the opposite mistake:
+    the buyer has nothing, the order says they were welcomed, and Studio's
+    "send it by hand" refuses on those grounds — for good, so fixing whatever
+    broke changes nothing. Held only for a welcome that actually went out.
+    """
+    if order is None:
+        return
+    order.welcome_sent_at = None
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        log.exception("challenge: could not release the welcome for %s",
+                      getattr(order, "ls_order_id", None))
+
+
 def welcome_already_sent(order: Order | None) -> bool:
     return bool(order is not None
                 and getattr(order, "welcome_sent_at", None) is not None)
@@ -89,7 +109,7 @@ def send_welcome(email: str, *, product: Product | None = None,
     when = getattr(order, "created_at", None)
     title = (name or "").strip() or (product.title if product is not None else "")
     try:
-        return send_challenge_welcome(
+        sent = send_challenge_welcome(
             address,
             product_name=title,
             order_id=getattr(order, "ls_order_id", "") or "",
@@ -99,7 +119,10 @@ def send_welcome(email: str, *, product: Product | None = None,
         )
     except Exception:
         log.exception("challenge: welcome email failed for %s", address)
-        return False
+        sent = False
+    if not sent:
+        _release(order)
+    return sent
 
 
 def last_purchase(email: str) -> Order | None:

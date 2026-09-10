@@ -5917,6 +5917,9 @@ try:
         name, email = mailer_mod._parse_mail_from("Bloom Anyway <hello@example.com>")
         bad_key_hint = mailer_mod._brevo_error_hint(401, '{"message":"Key not found"}')
         domain_hint = mailer_mod._brevo_error_hint(400, '{"message":"Invalid sender"}')
+        tpl_hint = mailer_mod._brevo_error_hint(
+            400, '{"code":"invalid_parameter",'
+                 '"message":"templateId: value is not valid"}')
     ok("Brevo API key is normalized",
        cleaned == "xkeysib-abc123" and quoted == "xkeysib-xyz-key")
     ok("MAIL_FROM wrapping quotes are stripped",
@@ -5927,6 +5930,64 @@ try:
        "BREVO_API_KEY" in bad_key_hint)
     ok("Brevo 400 hint mentions verified sender",
        "verified" in domain_hint.lower())
+    # Read as a sender problem, this sent owners to check a verified domain
+    # that was never what Brevo was complaining about.
+    ok("A template Brevo hasn't got is reported as a template, not a sender",
+       "template" in tpl_hint.lower() and "verified" not in tpl_hint.lower(),
+       f"got {tpl_hint!r}")
+
+    # Every one of these emails is written out in full before a template is
+    # reached for, so a template the account hasn't got costs the design and
+    # nothing else. It used to cost the whole email.
+    _posted = []
+
+    class _BrevoSays:
+        def __init__(self, status, text):
+            self.status_code, self.text = status, text
+
+    def _no_templates(url, json=None, headers=None, timeout=None):
+        _posted.append(json)
+        if json.get("templateId"):
+            return _BrevoSays(400, '{"code":"invalid_parameter",'
+                                   '"message":"templateId: value is not valid"}')
+        return _BrevoSays(201, '{"messageId":"<ok>"}')
+
+    _real_post = mailer_mod.requests.post
+    _real_from = app.config["MAIL_FROM"]
+    mailer_mod.requests.post = _no_templates
+    app.config["MAIL_FROM"] = "Bloom Anyway <hello@bloomanyway.online>"
+    try:
+        with app.app_context():
+            _welcome_went = mailer_mod.send_challenge_welcome(
+                "buyer@example.com", product_name="2-Month Creator Challenge")
+        _welcome_posts = list(_posted)
+        _posted.clear()
+        with app.app_context():
+            _receipt_went = mailer_mod.send_order_receipt(
+                "buyer@example.com", order_id="R-9", product_name="Steady Guide",
+                amount="$19", order_date="Sep 10, 2026",
+                attachments=[{"name": "guide.pdf", "data": b"%PDF-1.4\n"}])
+        _receipt_posts = list(_posted)
+    finally:
+        mailer_mod.requests.post = _real_post
+        app.config["MAIL_FROM"] = _real_from
+    ok("A welcome whose template Brevo hasn't got still reaches the buyer",
+       _welcome_went is True and len(_welcome_posts) == 2,
+       f"{len(_welcome_posts)} attempts, sent {_welcome_went}")
+    ok("It arrives plain, carrying the words the template would have dressed",
+       _welcome_posts[0].get("templateId") == 30
+       and "templateId" not in _welcome_posts[1]
+       and _welcome_posts[1]["subject"] == "Welcome to the challenge"
+       and "2-Month Creator Challenge" in _welcome_posts[1]["textContent"]
+       and _welcome_posts[1]["to"][0]["email"] == "buyer@example.com",
+       f"got {_welcome_posts[-1]}")
+    ok("So does a receipt, with the file they paid for still attached",
+       _receipt_went is True
+       and "templateId" not in _receipt_posts[-1]
+       and "R-9" in _receipt_posts[-1]["textContent"]
+       and [a["name"] for a in _receipt_posts[-1].get("attachment") or []]
+       == ["guide.pdf"],
+       f"got {_receipt_posts[-1]}")
 finally:
     if _prev_brevo is not None:
         os.environ["BREVO_API_KEY"] = _prev_brevo
@@ -8938,6 +8999,49 @@ try:
        in admin.post("/admin/send-challenge-welcome", data={"email": "nope"},
                      follow_redirects=True).get_data(as_text=True)
        and not _letters)
+
+    # The welcome is claimed against the order before it is sent, so two
+    # webhooks can't both welcome somebody. Keeping that claim when the send
+    # then failed was the worst of both: the buyer had nothing, and the one
+    # tool for putting it right refused on the grounds it had already gone.
+    _sending_works = {"yet": False}
+
+    def _catch_or_fail(to, subject, text, html_body=None, template_id=None,
+                       params=None, sender=None, attachments=None):
+        if template_id == 30 and not _sending_works["yet"]:
+            return False
+        _letters.append({"to": to, "subject": subject, "text": text,
+                         "template_id": template_id, "params": params or {}})
+        return True
+
+    _mailer.send_email = _catch_or_fail
+    _unlucky = _bought("pi_challenge_r3_3", "unlucky@example.com")
+    ok("A receipt still arrives when the welcome can't be sent",
+       _unlucky == ["Your Bloom Anyway receipt"], f"sent {_unlucky}")
+    with app.app_context():
+        _uo = Order.query.filter_by(ls_order_id="pi_challenge_r3_3").first()
+        ok("And a welcome that never went is not written down as sent",
+           _uo is not None and _uo.welcome_sent_at is None,
+           f"got {getattr(_uo, 'welcome_sent_at', 'no order')!r}")
+
+    _sending_works["yet"] = True      # whatever was wrong has been put right
+    _letters.clear()
+    _mended = admin.post("/admin/send-challenge-welcome",
+                         data={"email": "unlucky@example.com"},
+                         follow_redirects=True)
+    ok("So Studio can still reach somebody the failure left out",
+       "Sent the challenge welcome" in _mended.get_data(as_text=True)
+       and any(m["template_id"] == 30 and m["to"] == "unlucky@example.com"
+               for m in _letters),
+       f"{flashes(_mended)} / sent {[m['to'] for m in _letters]}")
+    _letters.clear()
+    ok("And once it has gone, it still can't go twice",
+       "already had the challenge welcome"
+       in admin.post("/admin/send-challenge-welcome",
+                     data={"email": "unlucky@example.com"},
+                     follow_redirects=True).get_data(as_text=True)
+       and not _letters)
+    _mailer.send_email = _catch_letters
     _studio_dash = admin.get("/admin/").get_data(as_text=True)
     ok("The send sits with the other missed-purchase tools in Studio",
        "Challenge welcome missing?" in _studio_dash)
