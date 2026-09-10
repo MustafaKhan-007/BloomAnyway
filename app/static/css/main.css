@@ -1443,7 +1443,10 @@ html.is-page-loading { cursor: progress; }
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
   margin: 0; color: var(--ink-soft); font-size: 13px;
 }
-.post-row__author { display: inline-flex; align-items: center; gap: 6px; }
+.post-row__author {
+  display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  min-width: 0;
+}
 .post-row__aside {
   display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
   text-align: right; color: var(--ink-soft); font-size: 13px;
@@ -1477,7 +1480,11 @@ html.is-page-loading { cursor: progress; }
 .forum-post { background: var(--ivory-deep); border-radius: var(--radius-card);
   box-shadow: var(--shadow-card); padding: 28px; margin: 16px 0 40px; }
 .forum-post h1 { margin-top: 0; }
-.forum-body { line-height: 1.6; margin: 16px 0; white-space: normal; }
+.forum-body {
+  line-height: 1.6; margin: 16px 0; white-space: normal;
+  /* A pasted link is one long word; without this it runs off the card. */
+  overflow-wrap: anywhere;
+}
 .forum-body ul, .forum-body ol { margin: 0 0 12px; padding-left: 1.3em; }
 .forum-body li { margin: 0 0 5px; }
 .forum-body li::marker { color: var(--plum); }
@@ -1493,14 +1500,18 @@ html.is-page-loading { cursor: progress; }
 
 /* Who wrote it, then when — the time sits on its own line under the name
    rather than beside it. A handle, an OP tag, a badge and a full date is
-   more than a phone has room for on one line, and the date was breaking in
-   half beside the name to fit. */
+   more than a phone has room for on one line: the date used to break in
+   half beside the name, and the card it was in grew wider than the screen
+   and had its right edge cut off. */
 .byline { display: grid; gap: 2px; min-width: 0; }
 .byline__who {
   display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px;
   min-width: 0;
 }
 .byline__when { color: var(--ink-soft); font-size: 13px; }
+/* Nothing inside one of these cards may stretch the card itself: a grid
+   track grows to its widest item unless the item is told it may be narrow. */
+.comment-list > *, .comment-thread > *, .reply-list > * { min-width: 0; }
 
 .like-form { display: inline-block; }
 .heart-btn span { font-weight: 600; }

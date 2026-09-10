@@ -2544,6 +2544,11 @@ ok("Every comment says its time the same way",
 _aside = _feed_html.split('class="post-row__aside">')[1].split("</div>")[0]
 ok("Which leaves the feed's right-hand column to the reply count alone",
    "<time" not in _aside and "replies" in _aside)
+_forum_css = client.get("/static/css/main.css").get_data(as_text=True)
+ok("And nothing inside a card can stretch the card past the screen",
+   ".comment-list > *, .comment-thread > *, .reply-list > * { min-width: 0; }"
+   in _forum_css
+   and "overflow-wrap: anywhere" in _forum_css)
 
 # Showcase tags are collapsible
 r = app.test_client().get("/showcase")
