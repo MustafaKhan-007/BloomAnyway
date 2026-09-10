@@ -39,10 +39,14 @@
 <div class="comment {{ 'comment--reply' if is_reply }}" id="comment-{{ c.id }}">
   <div class="comment__head">
     {{ avatar(c.author, 'sm', c.anonymous) }}
-    <strong>{{ author_name(c.author, c.anonymous, post.id) }}</strong>
-    {% if not c.anonymous and c.user_id == post.user_id %}<span class="op-tag">OP</span>{% endif %}
-    {{ byline_badge(c.author, c.anonymous) }}
-    <span class="comment__date">{{ c.created_at|when }}</span>
+    <div class="byline">
+      <span class="byline__who">
+        <strong>{{ author_name(c.author, c.anonymous, post.id) }}</strong>
+        {% if not c.anonymous and c.user_id == post.user_id %}<span class="op-tag">OP</span>{% endif %}
+        {{ byline_badge(c.author, c.anonymous) }}
+      </span>
+      <span class="byline__when">{{ c.created_at|when }}</span>
+    </div>
   </div>
   <div class="forum-body">{{ c.body|mentions }}</div>
   <div class="forum-actions">
@@ -101,13 +105,17 @@
         {% endif %}
       </div>
       <h1>{{ post.title }}</h1>
-      <p class="post-row__meta">
+      <div class="post-row__meta">
         {{ avatar(post.author, 'sm', post.anonymous) }}
-        {{ author_name(post.author, post.anonymous, post.id) }}
-        <span class="op-tag">OP</span>
-        {{ byline_badge(post.author, post.anonymous) }}
-        &middot; {{ post.created_at|when }}
-      </p>
+        <span class="byline">
+          <span class="byline__who">
+            {{ author_name(post.author, post.anonymous, post.id) }}
+            <span class="op-tag">OP</span>
+            {{ byline_badge(post.author, post.anonymous) }}
+          </span>
+          <span class="byline__when">{{ post.created_at|when }}</span>
+        </span>
+      </div>
       <div class="forum-body">{{ post.body|mentions }}</div>
       <div class="forum-actions">
         {{ like_button(url_for('forums.like_post', post_id=post.id), post.like_count(), post.id in liked_posts) }}
