@@ -1,6 +1,15 @@
 {% extends "base.html" %}
 {% block title %}Content Hub — {{ site.site_title }}{% endblock %}
 
+{# Both entry forms take a raw video, and a raw phone export is routinely
+   bigger than one request may carry, so both send it up in slices first. #}
+{% macro reel_upload_attrs() -%}
+data-reel-upload
+  data-upload-begin="{{ url_for('main.reel_upload_begin') }}"
+  data-upload-chunk="{{ url_for('main.reel_upload_chunk', upload_id='UPLOAD_ID') }}"
+  data-upload-abort="{{ url_for('main.reel_upload_abort', upload_id='UPLOAD_ID') }}"
+{%- endmacro %}
+
 {% block content %}
 {% set is_creator = current_user.is_authenticated and current_user.has_feature('content_hub_creator') %}
 {% set is_healing = current_user.is_authenticated and current_user.has_feature('content_hub_healing') %}
@@ -166,7 +175,8 @@
             <form class="stack-form" method="post" action="{{ url_for('main.reel_review_request') }}"
                   enctype="multipart/form-data"
                   data-max-upload-mb="{{ max_mb }}"
-                  data-max-upload-input="raw_video">
+                  data-max-upload-input="raw_video"
+                  {{ reel_upload_attrs() }}>
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <h3>Submit your reel</h3>
               <p class="field-help">Paste your posted Instagram reel link and upload the raw video. One entry per week.</p>
@@ -177,7 +187,8 @@
               <label>Raw video file
                 <input type="file" name="raw_video" accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm" required>
               </label>
-              <p class="field-help">Max {{ max_mb }} MB (MP4, MOV or WEBM). Larger files are blocked before they reach us — compress or trim first if needed.</p>
+              <p class="field-help">Up to {{ max_upload_label }} (MP4, MOV or WEBM). Big files go up in pieces before you send the form, so give it a moment to finish.</p>
+              <ul class="chunk-up__list" data-reel-progress hidden></ul>
               <p class="field-help flash flash--error" data-upload-error hidden role="alert"></p>
               <button class="btn btn--primary" type="submit">Put my reel forward</button>
             </form>
@@ -236,7 +247,8 @@
             <form class="stack-form" method="post" action="{{ url_for('main.reel_of_week_submit') }}"
                   enctype="multipart/form-data"
                   data-max-upload-mb="{{ max_mb }}"
-                  data-max-upload-input="raw_video">
+                  data-max-upload-input="raw_video"
+                  {{ reel_upload_attrs() }}>
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <h3>Enter Reel of the Week</h3>
               <label>Instagram reel link
@@ -251,7 +263,8 @@
               <label>Raw video file
                 <input type="file" name="raw_video" accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm" required>
               </label>
-              <p class="field-help">Max {{ max_mb }} MB (MP4, MOV or WEBM).</p>
+              <p class="field-help">Up to {{ max_upload_label }} (MP4, MOV or WEBM).</p>
+              <ul class="chunk-up__list" data-reel-progress hidden></ul>
               <label class="checkline">
                 <input type="checkbox" name="confirm_shares" value="1" required>
                 <span>That share count is accurate.</span>

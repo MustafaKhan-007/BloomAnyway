@@ -11,8 +11,6 @@ import random
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from flask import current_app
-
 from ..extensions import db
 from ..models import ReelReview, ReelReviewApplication
 
@@ -150,20 +148,24 @@ def purge_old_applications(before: date | None = None) -> int:
     stale = (ReelReviewApplication.query
              .filter(ReelReviewApplication.week_key < before)
              .all())
-    from .videos import delete_stored
+    from . import reel_uploads
 
-    store = current_app.config["VIDEO_STORAGE_DIR"]
     dropped = 0
     for app_row in stale:
         if app_row.review is not None:
             # Keep the row, but the raw upload has done its job.
             if app_row.disk_name:
-                delete_stored(store, app_row.disk_name)
+                reel_uploads.delete(app_row.disk_name)
                 app_row.disk_name = None
-                app_row.size = 0
+            # Uploads from before these went to disk are bytes in a Postgres
+            # column. Only the file was ever released, so a reviewed one from
+            # back then sat in the database for good — and travelled with
+            # every backup taken since.
+            app_row.data = None
+            app_row.size = 0
             continue
         if app_row.disk_name:
-            delete_stored(store, app_row.disk_name)
+            reel_uploads.delete(app_row.disk_name)
         db.session.delete(app_row)
         dropped += 1
     if stale:

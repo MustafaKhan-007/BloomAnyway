@@ -36,6 +36,20 @@ def _sniff(ext: str, head: bytes) -> bool:
     return False
 
 
+def sniff_stored(path: str, ext: str) -> bool:
+    """Whether a file already on disk opens like that kind of video.
+
+    An upload that arrived in slices was never read as a stream, so this is
+    where it gets the same look-at-the-first-bytes check a whole one gets.
+    """
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(16)
+    except OSError:
+        return False
+    return bool(head) and _sniff(ext, head)
+
+
 def _safe_remove(path: str):
     try:
         os.remove(path)

@@ -3376,12 +3376,106 @@ ok("Studio says it the same way",
    and _span in admin.get("/admin/spotlight").get_data(as_text=True))
 with app.app_context():
     import os as _os
+    from app.services import reel_uploads as _reel_up
     stored = ReelReviewApplication.query.first()
     disk_ok = (stored is not None and stored.disk_name
                and _os.path.isfile(_os.path.join(
-                   app.config["VIDEO_STORAGE_DIR"], stored.disk_name)))
-    ok("Reel raw video is streamed to video storage (not loaded into Postgres)",
-       disk_ok)
+                   app.config["REEL_RAW_DIR"], stored.disk_name)))
+    ok("Reel raw video is streamed to the disk (not loaded into Postgres)",
+       disk_ok and not stored.data)
+    # Its own folder, because the weekly sweep below empties whatever folder
+    # it is pointed at and the owner's Content Hub videos are not disposable.
+    ok("Raw reels are kept apart from the owner's own videos",
+       _os.path.abspath(app.config["REEL_RAW_DIR"])
+       != _os.path.abspath(app.config["VIDEO_STORAGE_DIR"]))
+    ok("A raw reel is found wherever it happens to live",
+       _reel_up.locate(stored.disk_name) is not None
+       and _reel_up.locate("no-such-file.mp4") is None)
+
+# A raw phone export runs to hundreds of megabytes, and Cloudflare refuses any
+# single request body much over a hundred whatever the cap here says. So a reel
+# goes up a slice at a time first, the way Studio sends a lesson video, and the
+# form then carries the id of what landed rather than the file.
+with app.app_context():
+    ok("The ceiling on a reel is far past what one request could ever carry",
+       app.config["REEL_RAW_MAX_MB"] >= 1024
+       and _reel_up.SINGLE_MAX_BYTES < 100 * 1024 * 1024
+       and app.config["REEL_CHUNK_MB"] * 1024 * 1024 < 100 * 1024 * 1024)
+    ok("And it is said in a unit a person would use",
+       _reel_up.max_upload_label().endswith("GB"))
+
+# Start again by the long road, so the entry this week ends up being one that
+# arrived in pieces — same member, same week, nothing else moved.
+with app.app_context():
+    _first = ReelReviewApplication.query.first()
+    _first_file = _first.disk_name
+    db.session.delete(_first)
+    db.session.commit()
+    _reel_up.delete(_first_file)
+
+_hub_form = client.get("/watch").get_data(as_text=True)
+ok("Both entry forms know where to send the slices",
+   _hub_form.count("data-reel-upload") == 2
+   and "/watch/reel-upload/begin" in _hub_form)
+
+_big_reel = minimal_mp4 + (b"reel-bytes" * 5000)
+r = client.post("/watch/reel-upload/begin",
+                json={"filename": "export.mp4", "size": len(_big_reel)})
+_reel_start = r.get_json() or {}
+ok("A member can start sending a reel up in slices",
+   r.status_code == 200 and bool(_reel_start.get("upload_id"))
+   and _reel_start.get("chunk_bytes", 0) > 0)
+_reel_upload_id = _reel_start.get("upload_id")
+for _i in range(0, len(_big_reel), 4096):
+    r = client.post(f"/watch/reel-upload/{_reel_upload_id}/chunk",
+                    data={"chunk": (io.BytesIO(_big_reel[_i:_i + 4096]), "part")},
+                    content_type="multipart/form-data")
+ok("Every slice is taken and counted back",
+   r.status_code == 200 and (r.get_json() or {}).get("received") == len(_big_reel))
+r = client.post("/watch/review-request", data={
+    "reel_url": "https://www.instagram.com/reel/TESTREEL1/",
+    "upload_id": _reel_upload_id, "upload_name": "export.mp4",
+}, follow_redirects=True)
+ok("The form takes what already landed instead of a file",
+   "Your reel is in for this week" in r.get_data(as_text=True))
+with app.app_context():
+    _sliced_reel = ReelReviewApplication.query.first()
+    _sliced_path = _os.path.join(app.config["REEL_RAW_DIR"],
+                                 _sliced_reel.disk_name or "")
+    ok("The reassembled reel is on the disk, byte for byte what was sent",
+       _sliced_reel.size == len(_big_reel)
+       and _os.path.isfile(_sliced_path)
+       and open(_sliced_path, "rb").read() == _big_reel)
+    ok("No half-finished slice is left behind",
+       not _os.path.isfile(_os.path.join(_reel_up.parts_dir(), _reel_upload_id)))
+
+r = client.post("/watch/reel-upload/begin",
+                json={"filename": "enormous.mp4",
+                      "size": (app.config["REEL_RAW_MAX_MB"] + 1) * 1024 * 1024})
+ok("A reel over even that ceiling is turned away before a byte is sent",
+   r.status_code == 400 and "trim" in (r.get_json() or {}).get("error", ""))
+r = client.post("/watch/reel-upload/begin",
+                json={"filename": "notes.pdf", "size": 4096})
+ok("And something that isn't a video never gets started",
+   r.status_code == 400 and "MP4" in (r.get_json() or {}).get("error", ""))
+r = client.post("/watch/reel-upload/nonesuch.mp4/chunk",
+                data={"chunk": (io.BytesIO(b"orphan"), "part")},
+                content_type="multipart/form-data")
+ok("Slices for an upload nobody started are refused", r.status_code == 400)
+r = client.post("/watch/reel-of-week", data={
+    "reel_url": "https://www.instagram.com/reel/TESTREEL3/",
+    "share_count": "412", "confirm_shares": "1",
+    "upload_id": "nonesuch.mp4", "upload_name": "gone.mp4",
+}, follow_redirects=True)
+ok("And an entry pointing at one says so rather than failing quietly",
+   "start it again" in r.get_data(as_text=True))
+r = banclient.post("/watch/reel-upload/begin",
+                   json={"filename": "sneaky.mp4", "size": 4096})
+ok("A member without the perk can't send a reel up either", r.status_code == 403)
+r = app.test_client().post("/watch/reel-upload/begin",
+                           json={"filename": "sneaky.mp4", "size": 4096})
+ok("Nor can a stranger", r.status_code in (302, 401, 403))
+
 r = client.post("/watch/review-request", data={
     "reel_url": "https://www.instagram.com/reel/TESTREEL2/",
     "raw_video": (io.BytesIO(minimal_mp4), "raw2.mp4"),
@@ -3785,6 +3879,24 @@ with app.app_context():
     reviewed_id = reviewed.id
     ReelSubmission.query.update({"week_key": last_week})
     db.session.commit()
+    # Rows are only half of what a week leaves on the disk. Slices from an
+    # upload nobody finished, and files whose row went another way, were the
+    # part of a reel that outlived its week — every week, with nothing ever
+    # coming back for them.
+    from app.services import reel_uploads as _reel_up
+    _os.makedirs(_reel_up.parts_dir(), exist_ok=True)
+    _abandoned = _os.path.join(_reel_up.parts_dir(), "abandoned.mp4")
+    _orphan = _os.path.join(_reel_up.storage_dir(), "nobody-points-here.mp4")
+    _kept = db.session.get(ReelReviewApplication, reviewed_id).disk_name
+    for _p in (_abandoned, _orphan):
+        with open(_p, "wb") as _fh:
+            _fh.write(b"x" * 512)
+    _os.utime(_abandoned, (_time.time() - 30 * 3600,) * 2)
+    _os.utime(_orphan, (_time.time() - 30 * 3600,) * 2)
+    _fresh = _os.path.join(_reel_up.storage_dir(), "landed-a-moment-ago.mp4")
+    with open(_fresh, "wb") as _fh:
+        _fh.write(b"x" * 512)
+
     cleared = rotw_svc.sweep_old_weeks()
     ok("Monday clears last week's unreviewed reel entries",
        cleared["reel_reviews"] == 1
@@ -3793,7 +3905,16 @@ with app.app_context():
        db.session.get(ReelReviewApplication, reviewed_id) is not None
        and ReelReview.query.filter_by(application_id=reviewed_id).count() == 1)
     ok("The reviewed entry's raw upload is released once it's served its purpose",
-       db.session.get(ReelReviewApplication, reviewed_id).disk_name is None)
+       db.session.get(ReelReviewApplication, reviewed_id).disk_name is None
+       and not db.session.get(ReelReviewApplication, reviewed_id).data
+       and not _os.path.isfile(_os.path.join(_reel_up.storage_dir(), _kept or "x")))
+    ok("Monday also clears slices from uploads nobody finished",
+       cleared["parts"] == 1 and not _os.path.isfile(_abandoned))
+    ok("And raw reels no row points at any more",
+       cleared["orphan_files"] == 1 and not _os.path.isfile(_orphan))
+    ok("A file that only just landed is left where it is",
+       _os.path.isfile(_fresh))
+    _os.remove(_fresh)
     ok("Monday clears last week's Reel of the Week entries",
        cleared["reel_of_week"] == 2 and ReelSubmission.query.count() == 0)
     ok("Next Monday starts back at the first round",
