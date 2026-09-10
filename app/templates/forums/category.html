@@ -223,8 +223,11 @@
               {% if post.looking_for_label() %}
               <span class="tag-chip tag-chip--mini tag-chip--looking">Looking for {{ post.looking_for_label()|lower }}</span>
               {% endif %}
-              <span class="post-row__author">
-                {% if post.anonymous %}Anonymous{% elif post.author.username %}<span class="at-handle">@{{ post.author.username }}</span>{% else %}{{ post.display_author() }}{% endif %}{{ byline_badge(post.author, post.anonymous) }}
+              <span class="byline">
+                <span class="post-row__author">
+                  {% if post.anonymous %}Anonymous{% elif post.author.username %}<span class="at-handle">@{{ post.author.username }}</span>{% else %}{{ post.display_author() }}{% endif %}{{ byline_badge(post.author, post.anonymous) }}
+                </span>
+                <span class="byline__when">{{ post.created_at|when('%b %d · %I:%M %p') }}</span>
               </span>
             </div>
             {% if post.body %}
@@ -232,7 +235,6 @@
             {% endif %}
           </div>
           <div class="post-row__aside">
-            {{ post.created_at|when('%b %d · %I:%M %p') }}
             <span>{{ comment_n }} {{ 'reply' if comment_n == 1 else 'replies' }}</span>
           </div>
           {% if current_user.is_authenticated and (current_user.id == post.user_id or current_user.is_admin) %}

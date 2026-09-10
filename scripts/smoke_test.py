@@ -2531,6 +2531,20 @@ ok("Forum list view renders without tiles toggle",
    r.status_code == 200 and "post-list--list" in r.get_data(as_text=True)
    and "view-toggle" not in r.get_data(as_text=True))
 
+# A byline is the name, and then the time on its own line under it. Sharing
+# one line with a handle, an OP tag and a badge left the date breaking in
+# half on a phone, and the card it sat in grew wider than the screen.
+_feed_html = client.get("/forums/c/healing").get_data(as_text=True)
+_post_html = client.get(f"/forums/p/{pid}").get_data(as_text=True)
+ok("The time a post went up reads under the name it belongs to",
+   'class="byline"' in _feed_html and "byline__when" in _feed_html
+   and 'class="byline"' in _post_html and "byline__when" in _post_html)
+ok("Every comment says its time the same way",
+   _post_html.count("byline__when") > 1 and "comment__date" not in _post_html)
+_aside = _feed_html.split('class="post-row__aside">')[1].split("</div>")[0]
+ok("Which leaves the feed's right-hand column to the reply count alone",
+   "<time" not in _aside and "replies" in _aside)
+
 # Showcase tags are collapsible
 r = app.test_client().get("/showcase")
 ok("Showcase tags fold is collapsible",

@@ -1449,7 +1449,7 @@ html.is-page-loading { cursor: progress; }
   text-align: right; color: var(--ink-soft); font-size: 13px;
   white-space: nowrap; padding-left: 8px;
 }
-.post-row__aside time { font-variant-numeric: tabular-nums; }
+.byline__when time { font-variant-numeric: tabular-nums; }
 @media (max-width: 640px) {
   .post-row {
     grid-template-columns: auto minmax(0, 1fr);
@@ -1489,8 +1489,18 @@ html.is-page-loading { cursor: progress; }
 .comment-form { margin: 16px 0 28px; }
 .comment-list { display: grid; gap: 16px; }
 .comment { background: var(--ivory-deep); border-radius: 14px; box-shadow: var(--shadow-card); padding: 18px 20px; }
-.comment__head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.comment__date { color: var(--ink-soft); font-size: 13px; margin-left: auto; }
+.comment__head { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
+
+/* Who wrote it, then when — the time sits on its own line under the name
+   rather than beside it. A handle, an OP tag, a badge and a full date is
+   more than a phone has room for on one line, and the date was breaking in
+   half beside the name to fit. */
+.byline { display: grid; gap: 2px; min-width: 0; }
+.byline__who {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px;
+  min-width: 0;
+}
+.byline__when { color: var(--ink-soft); font-size: 13px; }
 
 .like-form { display: inline-block; }
 .heart-btn span { font-weight: 600; }
@@ -5076,6 +5086,7 @@ a.at-handle:hover { text-decoration: underline; }
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px;
 }
 .fc .post-row__author .at-handle { color: var(--fc-gold); font-weight: 700; }
+.fc .byline__when { color: var(--fc-gold); font-weight: 600; }
 .fc .tag-chip--mini {
   background: var(--fc-soft); border-color: transparent; color: var(--fc-plum);
   font-size: 11px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
