@@ -25,6 +25,10 @@ SECRET_KEY_SETTING = "_secret_key"
 #: sticks instead of being written back on the next boot
 SUPPORT_EMAIL_SEEDED = "_contact_email_seeded"
 
+#: set once the founder end date has been seeded, for the same reason: the
+#: date the owner picks in Studio has to outlive the next deploy
+FOUNDER_ENDS_SEEDED = "_founder_price_ends_seeded"
+
 #: support addresses we have shipped as the default over time. A site still
 #: sitting on an old one gets moved to the current default; anything the owner
 #: typed themselves is left exactly as it is.
@@ -344,6 +348,31 @@ def ensure_support_email() -> bool:
         set_setting("contact_email", DEFAULTS["contact_email"])
         filled = True
     db.session.add(Setting(key=SUPPORT_EMAIL_SEEDED, value="1"))
+    db.session.commit()
+    invalidate_cache()
+    return filled
+
+
+def ensure_founder_window() -> bool:
+    """Fill in the founder end date the first time only. True if it wrote one.
+
+    ``seed.py`` runs on every deploy, and this used to be a plain write of the
+    date that shipped. So a date set in Studio held until the next deploy and
+    then went back to what it had been — changed several times over, and gone
+    every time. A marker makes the fill-in a one-off, the same way the support
+    address does it.
+
+    A site that already has a date keeps it, blank included: blank is the
+    owner saying the banner is off, and that is not ours to undo either.
+    """
+    marker = db.session.get(Setting, FOUNDER_ENDS_SEEDED)
+    if marker is not None:
+        return False
+    filled = False
+    if db.session.get(Setting, "founder_price_ends") is None:
+        set_setting("founder_price_ends", DEFAULTS["founder_price_ends"])
+        filled = True
+    db.session.add(Setting(key=FOUNDER_ENDS_SEEDED, value="1"))
     db.session.commit()
     invalidate_cache()
     return filled

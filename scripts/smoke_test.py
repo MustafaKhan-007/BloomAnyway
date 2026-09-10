@@ -2925,6 +2925,82 @@ with app.app_context():
     _settings.set_setting("contact_email", SUPPORT_EMAIL)
     _settings.invalidate_cache()
 
+# --- the founder end date outlives a deploy ---------------------------------
+# seed.py runs on every deploy. It used to write the date that shipped over
+# whatever was there, so a date picked in Studio was gone by the next one.
+with app.app_context():
+    from app.models import Setting as _Setting
+    from app.services import founder_pricing as _founder
+
+    def _forget_founder_marker():
+        _row = db.session.get(_Setting, _settings.FOUNDER_ENDS_SEEDED)
+        if _row is not None:
+            db.session.delete(_row)
+            db.session.commit()
+        _settings.invalidate_cache()
+
+    def _wipe_founder_date():
+        _row = db.session.get(_Setting, "founder_price_ends")
+        if _row is not None:
+            db.session.delete(_row)
+            db.session.commit()
+        _settings.invalidate_cache()
+
+    # A site that has never had one gets the date that ships, once.
+    _forget_founder_marker()
+    _wipe_founder_date()
+    ok("A brand new site is given a founder end date",
+       _settings.ensure_founder_window() is True
+       and _settings.get_setting("founder_price_ends")
+       == _settings.DEFAULTS["founder_price_ends"],
+       f"got {_settings.get_setting('founder_price_ends')!r}")
+
+    # The owner picks their own, and deploys again. And again.
+    _owner_date = (date.today() + timedelta(days=112)).isoformat()
+    _settings.set_setting("founder_price_ends", _owner_date)
+    _settings.invalidate_cache()
+    ok("A date the owner set survives the next deploy",
+       _settings.ensure_founder_window() is False
+       and _settings.get_setting("founder_price_ends") == _owner_date,
+       f"got {_settings.get_setting('founder_price_ends')!r}")
+    for _ in range(3):
+        _settings.ensure_founder_window()
+    ok("And the one after that, however many there are",
+       _settings.get_setting("founder_price_ends") == _owner_date,
+       f"got {_settings.get_setting('founder_price_ends')!r}")
+
+    # Studio counts down to the owner's date, not the one that shipped.
+    ok("Studio counts the days to the date the owner set",
+       "<strong>112</strong> day" in admin.get("/admin/").get_data(as_text=True),
+       re.sub(r"\s+", " ", "".join(re.findall(
+           r"<strong>\d+</strong> days? remaining",
+           admin.get("/admin/").get_data(as_text=True))) or "no count"))
+
+    # An existing site upgrading to this has no marker yet: whatever date it is
+    # already on is adopted as-is, rather than written over one last time.
+    _forget_founder_marker()
+    ok("A site upgrading to this keeps the date it is already on",
+       _settings.ensure_founder_window() is False
+       and _settings.get_setting("founder_price_ends") == _owner_date,
+       f"got {_settings.get_setting('founder_price_ends')!r}")
+
+    # Blank is the owner turning the banner off, which is also theirs to keep.
+    _forget_founder_marker()
+    _settings.set_setting("founder_price_ends", "")
+    _settings.invalidate_cache()
+    ok("Turning the banner off stays off across deploys",
+       _settings.ensure_founder_window() is False
+       and _settings.get_setting("founder_price_ends") == ""
+       and _founder.is_active() is False)
+    _settings.set_setting("founder_price_ends", "")
+    _settings.invalidate_cache()
+
+# The write that caused it: nothing may set that date on a plain deploy path.
+_seed_src = (Path(__file__).parents[1] / "seed.py").read_text(encoding="utf-8")
+ok("Seeding never writes the founder date over one already there",
+   'set_setting("founder_price_ends"' not in _seed_src
+   and "ensure_founder_window()" in _seed_src)
+
 for _path, _where in (("/", "home page footer"),
                       ("/contact", "contact page"),
                       ("/faq", "FAQ")):
