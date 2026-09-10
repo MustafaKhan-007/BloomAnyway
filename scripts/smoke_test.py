@@ -971,6 +971,62 @@ with app.app_context():
 ok("Only earned badges are saved for display", chosen == ["storyteller"], f"got {chosen}")
 ok("Primary badge is the chosen Storyteller", bool(prim) and prim["cat"] == "storyteller")
 
+# Three is the most a profile shows. Over that, the page used to keep the
+# first three going down it and drop the rest without a word — so ticking a
+# badge low down came back unticked under a cheerful "Saved", which reads as
+# the setting refusing to save at all.
+with app.app_context():
+    from app.models import Follow, Quote, QuoteFavorite
+    m = User.query.filter_by(email="newperson@example.com").first()
+    m.longest_streak = 10                                  # Showing Up
+    _fan = User.query.filter(User.id != m.id).first()
+    db.session.add(Follow(follower_id=_fan.id, following_id=m.id))  # Deep Roots
+    for _q in Quote.query.limit(5).all():                  # Quote Keeper
+        db.session.add(QuoteFavorite(user_id=m.id, quote_id=_q.id))
+    db.session.commit()
+    _earned = [b["cat"] for b in earned_badges(m)]
+ok("A member can earn more categories than a profile has room for",
+   len(_earned) > 3, f"earned={_earned}")
+
+client.post("/account/profile",
+            data={"display_name": "New Person",
+                  "badges_display": ["showing_up", "storyteller", "roots"]},
+            follow_redirects=True)
+with app.app_context():
+    m = User.query.filter_by(email="newperson@example.com").first()
+    ok("Three of them show at once",
+       m.displayed_badges() == ["showing_up", "storyteller", "roots"],
+       f"got {m.displayed_badges()}")
+
+# the page submits every ticked box in the order they appear down it, so a
+# badge picked near the bottom arrives last
+r = client.post("/account/profile",
+                data={"display_name": "New Person",
+                      "badges_display": ["showing_up", "storyteller",
+                                         "roots", "keeper"]},
+                follow_redirects=True)
+with app.app_context():
+    m = User.query.filter_by(email="newperson@example.com").first()
+    _showing = m.displayed_badges()
+ok("Picking a fourth keeps the one they just picked",
+   "keeper" in _showing and len(_showing) == 3, f"got {_showing}")
+ok("And says which one stepped aside, rather than dropping it quietly",
+   "stepped aside" in flashes(r) and "Showing Up" in flashes(r), flashes(r))
+_sbody = client.get("/account/settings").get_data(as_text=True)
+ok("So the badge they chose comes back ticked",
+   re.search(r'value="keeper"\s*\n?\s*checked', _sbody) is not None,
+   "their pick came back unticked again")
+ok("Nothing running, the cap is at least declared on the page",
+   'data-badge-max="3"' in _sbody)
+_main_js = client.get("/static/js/main.js").get_data(as_text=True)
+ok("And with it running, the fourth tick displaces one there and then",
+   "data-badge-max" in _main_js and "stepped aside" in _main_js,
+   "nothing reads the cap, so a fourth tick only fails on save")
+with app.app_context():
+    m = User.query.filter_by(email="newperson@example.com").first()
+    m.set_displayed_badges(["storyteller"])
+    db.session.commit()
+
 r = client.get(f"/u/{av_uid}")
 ok("Profile displays the member's badge (with milestone tooltip)",
    "Storyteller" in r.get_data(as_text=True))
