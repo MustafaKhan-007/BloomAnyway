@@ -9376,6 +9376,101 @@ with app.app_context():
     reconcile_user(dripper)
     db.session.commit()
     ok("Clearing the override hands the perk back", dripper.membership == "creator")
+
+# That override outranks billing, and it used to outrank months somebody then
+# went and paid for: the buyer was told they had them and the tier never
+# moved. Money that arrives after the decision replaces it, the same as paying
+# for a membership does.
+admin.post("/admin/products/new", data={
+    "title": "Second Helping", "track": "building", "type": "course",
+    "price": "25.00", "promise": "Another one with months on it.",
+    "stripe": "price_second_helping", "live": "1",
+    "perk_tier": "creator", "perk_months": "2"})
+with app.app_context():
+    from app.services.memberships import set_manual_tier
+    _helping = Product.query.filter_by(stripe_price_id="price_second_helping").first()
+    ok("A second product with months on it is in the catalogue",
+       _helping is not None and _helping.has_perk(),
+       f"{_helping} / {getattr(_helping, 'perk_membership_tier', None)}")
+    dripper = User.query.filter_by(email="dripper@example.com").first()
+    set_manual_tier(dripper, "none")
+    db.session.commit()
+    ok("Studio puts them back to Free over the perk they hold",
+       dripper.membership == "none" and dripper.membership_manual == "none")
+_second_pay = _payment_payload(
+    "9110", "dripper@example.com", "price_second_helping",
+    amount=2500, product_name="Second Helping")
+client.post("/webhooks/stripe", data=_second_pay,
+            headers=_stripe_headers(_second_pay))
+with app.app_context():
+    dripper = User.query.filter_by(email="dripper@example.com").first()
+    ok("Months bought after that land all the same",
+       dripper.membership == "creator" and dripper.membership_manual is None,
+       f"on {dripper.membership}, manual={dripper.membership_manual}")
+    _said = (_Note.query.filter_by(user_id=dripper.id, kind="membership")
+             .order_by(_Note.id.desc()).first())
+    ok("And the buyer is told what they actually got",
+       _said is not None and "Second Helping" in (_said.body or "")
+       and "on your account now" in (_said.body or ""),
+       getattr(_said, "body", None))
+
+# The other way round: a payment made before the owner's decision leaves it
+# standing — and then says nothing, rather than promising months that are not
+# coming.
+with app.app_context():
+    from app.services.memberships import set_manual_tier
+    from app.services.shop_purchases import sync_membership_perk
+    dripper = User.query.filter_by(email="dripper@example.com").first()
+    set_manual_tier(dripper, "none")
+    db.session.commit()
+    _told_before = (_Note.query
+                    .filter_by(user_id=dripper.id, kind="membership").count())
+    # what a replayed webhook for that same payment runs
+    sync_membership_perk(
+        ShopPurchase.query.filter_by(lemon_squeezy_order_id="9110").first())
+    db.session.commit()
+    ok("A payment older than the Studio choice leaves it standing",
+       dripper.membership == "none" and dripper.membership_manual == "none",
+       f"on {dripper.membership}, manual={dripper.membership_manual}")
+    ok("And nobody is told they have months they haven't got",
+       (_Note.query.filter_by(user_id=dripper.id, kind="membership").count()
+        == _told_before))
+# An account this already happened to is stuck: the payment has been and
+# gone, and no webhook is coming back to put it right. Opening the account
+# page is enough.
+with app.app_context():
+    from app.services.memberships import set_manual_tier
+    dripper = User.query.filter_by(email="dripper@example.com").first()
+    set_manual_tier(dripper, "none")
+    db.session.commit()
+    _stuck = ShopPurchase.query.filter_by(lemon_squeezy_order_id="9110").first()
+    _stuck.purchased_at = utcnow() + timedelta(seconds=1)
+    db.session.commit()
+    ok("A buyer left on Free with months they paid for after the fact",
+       dripper.membership == "none" and dripper.membership_manual == "none")
+drip_client.get("/account")
+with app.app_context():
+    dripper = User.query.filter_by(email="dripper@example.com").first()
+    ok("Opening their account hands those months over without a new payment",
+       dripper.membership == "creator" and dripper.membership_manual is None,
+       f"on {dripper.membership}, manual={dripper.membership_manual}")
+
+with app.app_context():
+    from app.services.memberships import reconcile_user
+    dripper = User.query.filter_by(email="dripper@example.com").first()
+    dripper.membership_manual = None
+    dripper.membership_manual_at = None
+    _extra = ShopPurchase.query.filter_by(lemon_squeezy_order_id="9110").first()
+    if _extra is not None:
+        db.session.delete(_extra)
+    _extra_prod = Product.query.filter_by(slug="second-helping").first()
+    if _extra_prod is not None:
+        db.session.delete(_extra_prod)
+    db.session.commit()
+    reconcile_user(dripper)
+    db.session.commit()
+    ok("With that one gone, the course they bought is the perk again",
+       dripper.membership == "creator")
 _backdate_drip(200)
 with app.app_context():
     from app.services.memberships import reconcile_user
