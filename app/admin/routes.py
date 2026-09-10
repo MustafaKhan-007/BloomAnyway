@@ -7,7 +7,6 @@ forward, so day-to-day use never nags. Re-authentication is only required after
 import csv
 import io
 import logging
-import os
 from datetime import date, datetime, timedelta
 from functools import wraps
 
@@ -33,6 +32,7 @@ from ..services import demo_accounts
 from ..services import quotes as quotes_service
 from ..services import reel_of_week as rotw_svc
 from ..services import reel_reviews as reel_svc
+from ..services import reel_uploads as reel_up
 from ..services import stats
 from ..services import mailer
 from ..services.mailer import (last_send_error, send_customer_support_email,
@@ -2045,14 +2045,14 @@ def spotlight():
 def spotlight_reel_raw(entry_id):
     """Download a Reel of the Week entrant's raw video (Studio only)."""
     entry = db.session.get(ReelSubmission, entry_id) or abort(404)
-    disk_name = os.path.basename(entry.disk_name or "")
-    if not disk_name:
+    if not entry.disk_name:
         flash("That entry has no raw video upload.", "error")
         return redirect(url_for("admin.spotlight"))
-    directory = os.path.abspath(current_app.config["VIDEO_STORAGE_DIR"])
-    if not os.path.isfile(os.path.join(directory, disk_name)):
+    found = reel_up.locate(entry.disk_name)
+    if found is None:
         flash("That entry's raw video is no longer on the server.", "error")
         return redirect(url_for("admin.spotlight"))
+    directory, disk_name = found
     resp = send_from_directory(
         directory, disk_name,
         mimetype=entry.mime or "application/octet-stream",
@@ -3698,20 +3698,18 @@ def reel_reviews_raw_download(app_id):
     mime = application.mime or "application/octet-stream"
 
     # Prefer on-disk file (streamed uploads). Fall back to legacy DB bytes.
-    disk_name = os.path.basename(application.disk_name or "")
-    if disk_name:
-        directory = os.path.abspath(current_app.config["VIDEO_STORAGE_DIR"])
-        path = os.path.join(directory, disk_name)
-        if os.path.isfile(path):
-            resp = send_from_directory(
-                directory, disk_name,
-                mimetype=mime,
-                as_attachment=True,
-                download_name=name,
-                max_age=0,
-            )
-            resp.headers["Cache-Control"] = "private, no-store"
-            return resp
+    found = reel_up.locate(application.disk_name)
+    if found is not None:
+        directory, disk_name = found
+        resp = send_from_directory(
+            directory, disk_name,
+            mimetype=mime,
+            as_attachment=True,
+            download_name=name,
+            max_age=0,
+        )
+        resp.headers["Cache-Control"] = "private, no-store"
+        return resp
 
     if application.data:
         resp = send_file(

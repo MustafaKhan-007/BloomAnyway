@@ -25,6 +25,7 @@ from ..models import (MARKETPLACE_KINDS, MARKETPLACE_KIND_LABELS,
 from ..services import quotes as quotes_service
 from ..services import reel_of_week as rotw_svc
 from ..services import reel_reviews as reel_svc
+from ..services import reel_uploads as reel_up
 from ..services import settings as settings_service
 from ..services.avatars import AvatarError, process_avatar
 from ..services.badges import CATEGORIES, category_progress, earned_badges
@@ -46,7 +47,7 @@ from ..services.shop_purchases import (
 from ..services.social import (instagram_embed_url, instagram_from_links,
                                instagram_handle, instagram_profile_url,
                                upsert_instagram_link)
-from ..services.videos import VideoError, delete_stored, process_video
+from ..services.videos import VideoError
 from . import bp
 
 log = logging.getLogger(__name__)
@@ -2115,7 +2116,8 @@ def videos():
         reel_round=reel_round,
         featured_reel=rotw_svc.featured_submission(week_key),
         reviews_per_week=reel_svc.REVIEWS_PER_WEEK,
-        max_mb=current_app.config.get("REEL_RAW_MAX_MB", 100),
+        max_mb=current_app.config["REEL_RAW_MAX_MB"],
+        max_upload_label=reel_up.max_upload_label(),
     )
 
 
@@ -2146,19 +2148,18 @@ def reel_review_request():
         flash("Paste the Instagram link of the reel you posted "
               "(it should look like instagram.com/reel/\u2026).", "error")
         return redirect(url_for("main.videos") + "#reviews")
-    upload = request.files.get("raw_video")
-    if not upload or not upload.filename:
-        flash("Upload the raw video file for your reel too.", "error")
-        return redirect(url_for("main.videos") + "#reviews")
-    # Stream to VIDEO_STORAGE_DIR (same as Content Hub). Loading the whole
-    # file into Postgres BYTEA OOMs Render workers and returns a 502.
-    max_bytes = current_app.config.get("REEL_RAW_MAX_MB", 100) * 1024 * 1024
+    # Either already on the media disk in slices, or riding along with this
+    # post. Never into Postgres: a raw reel read whole into a BYTEA column
+    # OOMs a Render worker and answers the member with a 502.
     try:
-        disk_name, mime, fname, size = process_video(
-            upload, current_app.config["VIDEO_STORAGE_DIR"], max_bytes)
+        landed = reel_up.claim(request.form, request.files)
     except VideoError as exc:
         flash(str(exc), "error")
         return redirect(url_for("main.videos") + "#reviews")
+    if landed is None:
+        flash("Upload the raw video file for your reel too.", "error")
+        return redirect(url_for("main.videos") + "#reviews")
+    disk_name, mime, fname, size = landed
     app_row = ReelReviewApplication(
         user_id=current_user.id, week_key=week, reel_url=reel_url,
         disk_name=disk_name, filename=fname, mime=mime, size=size)
@@ -2167,7 +2168,7 @@ def reel_review_request():
         db.session.commit()
     except Exception:
         db.session.rollback()
-        delete_stored(current_app.config["VIDEO_STORAGE_DIR"], disk_name)
+        reel_up.delete(disk_name)
         log.exception("reel review application failed")
         flash("We couldn't save your entry just now — please try again.", "error")
         return redirect(url_for("main.videos") + "#reviews")
@@ -2209,18 +2210,15 @@ def reel_of_week_submit():
     if not request.form.get("confirm_shares"):
         flash("Tick the box to confirm the share count is accurate.", "error")
         return redirect(back)
-    upload = request.files.get("raw_video")
-    if not upload or not upload.filename:
-        flash("Upload the raw video for your reel too.", "error")
-        return redirect(back)
-
-    max_bytes = current_app.config.get("REEL_RAW_MAX_MB", 100) * 1024 * 1024
     try:
-        disk_name, mime, fname, size = process_video(
-            upload, current_app.config["VIDEO_STORAGE_DIR"], max_bytes)
+        landed = reel_up.claim(request.form, request.files)
     except VideoError as exc:
         flash(str(exc), "error")
         return redirect(back)
+    if landed is None:
+        flash("Upload the raw video for your reel too.", "error")
+        return redirect(back)
+    disk_name, mime, fname, size = landed
     row = ReelSubmission(user_id=current_user.id, week_key=week,
                          round_key=reel_round,
                          reel_url=reel_url, share_count=shares,
@@ -2231,12 +2229,70 @@ def reel_of_week_submit():
         db.session.commit()
     except Exception:
         db.session.rollback()
-        delete_stored(current_app.config["VIDEO_STORAGE_DIR"], disk_name)
+        reel_up.delete(disk_name)
         log.exception("reel of the week submission failed")
         flash("We couldn't save your entry just now — please try again.", "error")
         return redirect(back)
     flash("Your reel is in the running for the next spotlight.", "success")
     return redirect(back)
+
+
+# --- raw reels that are too big for one request ------------------------------
+# Cloudflare Free rejects any request body over roughly 100 MB, so a phone's
+# unedited export cannot arrive in one piece however the app is configured.
+# The browser cuts it up and posts the slices here first; the entry form then
+# carries the id of what landed instead of the file itself.
+
+def _reel_uploader_or_error():
+    """None if this member may send a reel up, or the JSON refusal if not."""
+    if not current_user.has_feature("reel_reviews"):
+        return jsonify({"error": "Reels are a Creator perk."}), 403
+    return None
+
+
+@bp.route("/watch/reel-upload/begin", methods=["POST"])
+@login_required
+@limiter.limit("30 per hour")
+def reel_upload_begin():
+    refused = _reel_uploader_or_error()
+    if refused:
+        return refused
+    payload = request.get_json(silent=True) or {}
+    try:
+        upload_id = reel_up.begin_upload(
+            str(payload.get("filename") or ""),
+            int(payload.get("size") or 0))
+    except (VideoError, TypeError, ValueError) as exc:
+        return jsonify({"error": str(exc) or "That file didn't look right."}), 400
+    return jsonify({"upload_id": upload_id,
+                    "chunk_bytes": reel_up.chunk_bytes()})
+
+
+@bp.route("/watch/reel-upload/<upload_id>/chunk", methods=["POST"])
+@login_required
+def reel_upload_chunk(upload_id):
+    refused = _reel_uploader_or_error()
+    if refused:
+        return refused
+    part = request.files.get("chunk")
+    data = part.read() if part else request.get_data()
+    if not data:
+        return jsonify({"error": "That slice was empty."}), 400
+    try:
+        received = reel_up.append_chunk(upload_id, data)
+    except VideoError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"received": received})
+
+
+@bp.route("/watch/reel-upload/<upload_id>/abort", methods=["POST"])
+@login_required
+def reel_upload_abort(upload_id):
+    refused = _reel_uploader_or_error()
+    if refused:
+        return refused
+    reel_up.abort_upload(upload_id)
+    return jsonify({"ok": True})
 
 
 @bp.route("/watch/<int:video_id>")

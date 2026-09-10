@@ -124,6 +124,20 @@ def create_app(config_class=None):
         logging.getLogger(__name__).warning(
             "Could not create video storage directory %s", video_dir)
 
+    # Members' raw reel uploads sit beside those rather than among them. They
+    # are cleared out weekly, and a folder shared with the owner's own videos
+    # is one where a sweep with a bug in it deletes the wrong thing.
+    reel_dir = (app.config.get("REEL_RAW_DIR") or "").strip() or _os.path.join(
+        _os.path.dirname(video_dir.rstrip("/") or "/"), "reel_raw")
+    app.config["REEL_RAW_DIR"] = reel_dir
+    try:
+        # Slices land in a sibling folder so a half-sent file is never
+        # mistaken for a finished one.
+        _os.makedirs(_os.path.join(reel_dir, "parts"), exist_ok=True)
+    except OSError:
+        logging.getLogger(__name__).warning(
+            "Could not create reel upload directory %s", reel_dir)
+
     shop_dir = (app.config.get("SHOP_FILES_DIR") or "").strip() \
         or _os.path.join(app.instance_path, "shop_files")
     app.config["SHOP_FILES_DIR"] = shop_dir

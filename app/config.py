@@ -39,11 +39,18 @@ class Config:
     # per-file cap; MAX_CONTENT_LENGTH sits just above it (+ headroom for the
     # thumbnail and several 25 MB course files) and rejects absurd bodies fast.
     MAX_VIDEO_MB = int(os.environ.get("MAX_VIDEO_MB", "1024") or 1024)
-    # Reel-review raw uploads stream to VIDEO_STORAGE_DIR (like Content Hub
-    # videos). Cap under Cloudflare's free-plan 100 MB request body limit so
-    # members see our friendly message instead of a blank "413 Payload Too Large".
-    REEL_RAW_MAX_MB = int(os.environ.get("REEL_RAW_MAX_MB", "90") or 90)
     VIDEO_STORAGE_DIR = os.environ.get("VIDEO_STORAGE_DIR", "").strip()
+
+    # Raw reel uploads — the file behind a reel-review request or a Reel of
+    # the Week entry. Their own folder on the media disk, because they are
+    # swept weekly and a sweep must not be able to reach the owner's videos.
+    REEL_RAW_DIR = os.environ.get("REEL_RAW_DIR", "").strip()
+    # Sent up a slice at a time, like a course video, so this ceiling is not
+    # the request body limit any more. Cloudflare Free still rejects a single
+    # body over ~100 MB, which is why REEL_CHUNK_MB stays well under it.
+    REEL_RAW_MAX_MB = int(os.environ.get("REEL_RAW_MAX_MB", "2048") or 2048)
+    REEL_CHUNK_MB = max(1, min(
+        32, int(os.environ.get("REEL_CHUNK_MB", "8") or 8)))
     MAX_CONTENT_LENGTH = (MAX_VIDEO_MB + 32) * 1024 * 1024
 
     # Course module files (lesson videos, worksheets, slides). These stream to

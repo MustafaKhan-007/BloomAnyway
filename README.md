@@ -216,6 +216,19 @@ Everything else is optional or auto-managed:
 - Watch the disk: `render.yaml` mounts 25 GB at `/var/media`, shared with
   Content Hub videos. Resize it in the Render dashboard before loading a course
   up with hour-long videos.
+- **Raw reels take the same road.** Members upload a raw video with every reel
+  review request and Reel of the Week entry, and a phone export is routinely
+  past the 100 MB wall too, so the browser slices it and posts the pieces to
+  `/watch/reel-upload/{begin,chunk,abort}`; the entry form then carries the id
+  of what landed rather than the file. Ceiling is `REEL_RAW_MAX_MB` (default
+  2048) with `REEL_CHUNK_MB` (default 8) the slice size; a file arriving whole
+  is capped at `reel_uploads.SINGLE_MAX_BYTES`, 90 MB. They live in
+  `REEL_RAW_DIR` (`/var/media/reel_raw`) rather than among the owner's videos,
+  because unlike a lesson video they are wanted for about a week:
+  `reel_of_week.sweep_old_weeks()` empties that folder of last week's entries,
+  of slices from uploads nobody finished, and of any file no row points at any
+  more. It runs opportunistically (hourly at most, off a request) and from
+  `/cron/support-groups`.
 - Buyers read them at `/library/<slug>`. Access is gated by `_owns_product`: the
   studio owner (for preview) or anyone with a **paid** order whose email matches
   their account. Non-buyers get a 404 (the reader's existence is hidden).

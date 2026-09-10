@@ -1335,6 +1335,183 @@
     });
   })();
 
+  /* ---- raw reel uploads, sent up a slice at a time ---- */
+  /* A raw phone export runs to hundreds of megabytes and Cloudflare refuses
+     any single request body much over a hundred, so the file goes up on its
+     own before the form is sent and the form carries only its id. Same shape
+     as Studio's course uploader. Without JavaScript the file still rides
+     along with the post, and the server caps that at what a request holds. */
+  (function () {
+    var csrf = (document.body && document.body.getAttribute("data-csrf")) || "";
+
+    function readJson(resp) {
+      return resp
+        .json()
+        .catch(function () {
+          return {};
+        })
+        .then(function (body) {
+          return { ok: resp.ok, body: body };
+        });
+    }
+
+    document.querySelectorAll("form[data-reel-upload]").forEach(function (form) {
+      var input = form.querySelector('input[type="file"][name="raw_video"]');
+      var beginUrl = form.getAttribute("data-upload-begin");
+      var chunkTpl = form.getAttribute("data-upload-chunk") || "";
+      var abortTpl = form.getAttribute("data-upload-abort") || "";
+      var listEl = form.querySelector("[data-reel-progress]");
+      var errEl = form.querySelector("[data-upload-error]");
+      var button = form.querySelector('button[type="submit"], button:not([type])');
+      if (!input || !beginUrl || !listEl || !window.FormData || !input.files) return;
+
+      var landedId = "";
+      var busy = false;
+
+      function field(name, value) {
+        var el = form.querySelector('input[type="hidden"][name="' + name + '"]');
+        if (!el) {
+          el = document.createElement("input");
+          el.type = "hidden";
+          el.name = name;
+          form.appendChild(el);
+        }
+        el.value = value;
+      }
+
+      function showErr(msg) {
+        if (!errEl) return;
+        errEl.hidden = !msg;
+        errEl.textContent = msg || "";
+      }
+
+      function reset() {
+        // Whatever went up before is now the wrong file, so let it be swept
+        // rather than leave the form pointing at it.
+        if (landedId && abortTpl) {
+          fetch(abortTpl.replace("UPLOAD_ID", landedId), {
+            method: "POST",
+            headers: { "X-CSRFToken": csrf, "X-Requested-With": "fetch" }
+          }).catch(function () {});
+        }
+        landedId = "";
+        field("upload_id", "");
+        field("upload_name", "");
+        listEl.hidden = true;
+        listEl.innerHTML = "";
+      }
+
+      function row(name) {
+        var li = document.createElement("li");
+        li.className = "chunk-up__item";
+        li.innerHTML =
+          '<span class="chunk-up__name"></span>' +
+          '<span class="chunk-up__bar"><i></i></span>' +
+          '<span class="chunk-up__state">Starting</span>';
+        li.querySelector(".chunk-up__name").textContent = name;
+        listEl.hidden = false;
+        listEl.appendChild(li);
+        return li;
+      }
+
+      function send(file) {
+        var li = row(file.name);
+        var bar = li.querySelector(".chunk-up__bar i");
+        var state = li.querySelector(".chunk-up__state");
+        busy = true;
+        if (button) button.disabled = true;
+
+        return fetch(beginUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": csrf,
+            "X-Requested-With": "fetch"
+          },
+          body: JSON.stringify({ filename: file.name, size: file.size })
+        })
+          .then(readJson)
+          .then(function (res) {
+            if (!res.ok) throw new Error(res.body.error || "Could not start that upload.");
+            var id = res.body.upload_id;
+            var step = res.body.chunk_bytes || 8 * 1024 * 1024;
+            var sent = 0;
+
+            function nextSlice() {
+              if (sent >= file.size) {
+                landedId = id;
+                field("upload_id", id);
+                field("upload_name", file.name);
+                // The file is on the disk now. Leaving it in the picker too
+                // would send every byte a second time with the form.
+                input.required = false;
+                input.value = "";
+                bar.style.width = "100%";
+                li.classList.add("is-done");
+                state.textContent = "Ready to send";
+                return;
+              }
+              var slice = file.slice(sent, Math.min(sent + step, file.size));
+              var fd = new FormData();
+              fd.append("chunk", slice);
+              return fetch(chunkTpl.replace("UPLOAD_ID", id), {
+                method: "POST",
+                headers: { "X-CSRFToken": csrf, "X-Requested-With": "fetch" },
+                body: fd
+              })
+                .then(readJson)
+                .then(function (cr) {
+                  if (!cr.ok) throw new Error(cr.body.error || "That upload stalled.");
+                  sent = cr.body.received;
+                  var pct = Math.min(100, Math.round((100 * sent) / file.size));
+                  bar.style.width = pct + "%";
+                  state.textContent = pct + "%";
+                  return nextSlice();
+                });
+            }
+
+            return nextSlice();
+          })
+          .catch(function (err) {
+            li.classList.add("is-error");
+            state.textContent = "Didn't go up";
+            // The file is still in the picker, so sending the form now posts
+            // it the ordinary way. That works for anything small enough.
+            showErr(
+              (err.message || "That upload didn't go through.") +
+                " You can try again, or send the form as it is if the video is small."
+            );
+          })
+          .then(function () {
+            busy = false;
+            if (button) button.disabled = false;
+          });
+      }
+
+      input.addEventListener("change", function () {
+        reset();
+        var file = input.files && input.files[0];
+        if (!file) return;
+        showErr("");
+        send(file);
+      });
+
+      form.addEventListener("submit", function (e) {
+        if (!busy) return;
+        e.preventDefault();
+        showErr("Your video is still going up — one moment.");
+      });
+    });
+
+    window.addEventListener("beforeunload", function (e) {
+      if (!document.querySelector("[data-reel-progress] .chunk-up__item:not(.is-done):not(.is-error)")) {
+        return;
+      }
+      e.preventDefault();
+      e.returnValue = "";
+    });
+  })();
+
   /* ---- 1:1 booking slot calendar ---- */
   (function () {
     var root = document.querySelector("[data-slot-cal]");

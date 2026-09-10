@@ -11,8 +11,6 @@ import logging
 import time
 from datetime import date
 
-from flask import current_app
-
 from ..extensions import db
 from ..models import ReelSubmission, utcnow
 from .reel_reviews import atlanta_today, is_instagram_reel_url, week_monday
@@ -166,12 +164,11 @@ def purge_old_submissions(before: date | None = None) -> int:
              .all())
     if not stale:
         return 0
-    from .videos import delete_stored
+    from . import reel_uploads
 
-    store = current_app.config["VIDEO_STORAGE_DIR"]
     for row in stale:
         if row.disk_name:
-            delete_stored(store, row.disk_name)
+            reel_uploads.delete(row.disk_name)
         db.session.delete(row)
     db.session.commit()
     log.info("Reel of the week: cleared %s entries from past weeks.", len(stale))
@@ -179,13 +176,23 @@ def purge_old_submissions(before: date | None = None) -> int:
 
 
 def sweep_old_weeks() -> dict:
-    """Monday's clear-out for both reel queues."""
-    from . import reel_reviews
+    """Monday's clear-out for both reel queues, and for the disk beneath them.
 
-    return {
+    Purging the rows only frees the files those rows still knew about. What
+    is left over is everything else the week put on the disk: slices from an
+    upload nobody finished, and files whose row went another way — an account
+    closed, a review deleted. Nothing ever removed those, so they were the
+    one part of a reel that outlived its week, every week, forever.
+    """
+    from . import reel_reviews, reel_uploads
+
+    cleared = {
         "reel_reviews": reel_reviews.purge_old_applications(),
         "reel_of_week": purge_old_submissions(),
     }
+    cleared["parts"] = reel_uploads.sweep_parts()
+    cleared["orphan_files"] = reel_uploads.sweep_orphans()
+    return cleared
 
 
 def maybe_sweep() -> dict:

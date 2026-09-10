@@ -31,8 +31,16 @@ services:
       # uploads under that unless the upload host bypasses the proxy.
       - key: MAX_VIDEO_MB
         value: "95"
+      # Members' raw reel uploads, in a folder of their own on the same disk
+      # because they are swept weekly. These go up in slices too, so the cap
+      # is not the request body limit — REEL_CHUNK_MB is what has to stay
+      # under Cloudflare's ~100 MB.
+      - key: REEL_RAW_DIR
+        value: /var/media/reel_raw
       - key: REEL_RAW_MAX_MB
-        value: "90"
+        value: "2048"
+      - key: REEL_CHUNK_MB
+        value: "8"
       # Course module content (lesson videos, worksheets) on the media disk,
       # not in Postgres. Studio sends big files up in slices, so this cap is
       # not bound by Cloudflare's ~100 MB request body limit — COURSE_CHUNK_MB
