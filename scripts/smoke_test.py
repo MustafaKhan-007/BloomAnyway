@@ -3531,6 +3531,9 @@ ok("Clearing Reel of the Week takes it off the home page",
    "cleared from the home page" in r.get_data(as_text=True)
    and "instagram.com/reel/SHARED100/embed"
    not in app.test_client().get("/").get_data(as_text=True))
+ok("Studio says which of them were entered before the last pick",
+   "entered before the last pick"
+   in admin.get("/admin/spotlight").get_data(as_text=True))
 
 # Monday's clear-out: last week's entries go, reviewed ones stay
 with app.app_context():
