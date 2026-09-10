@@ -6,10 +6,13 @@ refund — no expiry job, and nothing to clean up.
 """
 from __future__ import annotations
 
+import logging
 from calendar import monthrange
 from datetime import datetime
 
 from ..models import Product, ShopPurchase, higher_membership, utcnow
+
+log = logging.getLogger(__name__)
 
 
 def add_months(start: datetime, months: int) -> datetime:
@@ -126,6 +129,39 @@ def perk_state(user) -> dict:
     return out
 
 
+def months_bought_since(user, when: datetime | None) -> bool:
+    """Did this buyer pay for membership months after ``when``?
+
+    A tier an owner sets by hand in Studio outranks billing, and it outranked
+    perk months too — including months bought long afterwards, which left the
+    buyer paying for a membership that never arrived. Money that lands after
+    the decision answers it; money that came before does not. ``when`` of
+    ``None`` (a choice made before we recorded the date) counts as before.
+    """
+    if user is None or not getattr(user, "id", None):
+        return False
+    products = perk_products()
+    if not products:
+        return False
+    now = utcnow()
+    purchases = (ShopPurchase.query
+                 .filter(ShopPurchase.user_id == user.id,
+                         ShopPurchase.status.in_(("linked", "removed")))
+                 .all())
+    for purchase in purchases:
+        product = _match(purchase, products)
+        if product is None:
+            continue
+        bought = purchase.purchased_at or now
+        if when is not None and bought <= when:
+            continue
+        # Months that have already run out are not worth reopening.
+        if product.perk_window(bought)[1] <= now:
+            continue
+        return True
+    return False
+
+
 def perk_summary_for(purchase) -> str:
     """"3 months of Creator membership" for what this purchase carried, or ""."""
     product = _match(purchase, perk_products()) if purchase is not None else None
@@ -134,12 +170,19 @@ def perk_summary_for(purchase) -> str:
     return product.perk_offer()
 
 
-def announce(user, purchase) -> bool:
+def announce(user, purchase, *, held_before: str | None = None) -> bool:
     """Tell a buyer their purchase carried free membership months. Once.
 
     Nothing said so at the time: the tier simply went up, and the only place
     it was written down was the membership card on their account, which
     somebody who has just bought a guide has no reason to open.
+
+    Said after the tier has been worked out, and it reports what actually
+    happened: months that are on the account now, or a perk with a date still
+    to come. ``held_before`` is what they held before that ran, since by now
+    the column already says otherwise. A perk that was bought and then not
+    granted says nothing at all — a buyer told they have something they
+    haven't got is worse off than one who was told nothing.
 
     Skipped for a buyer already on that tier or better, where the months
     change nothing they can see today.
@@ -152,16 +195,28 @@ def announce(user, purchase) -> bool:
     product = _match(purchase, perk_products())
     if product is None or not product.has_perk():
         return False
-    held = getattr(user, "membership", None) or "none"
-    if higher_membership(held, product.perk_tier()) == held:
+    tier = product.perk_tier()
+    held = (held_before if held_before is not None
+            else getattr(user, "membership", None)) or "none"
+    if higher_membership(held, tier) == held:
         return False
     now = utcnow()
     starts, until = product.perk_window(purchase.purchased_at or now)
     if until <= now:
         return False
 
-    when = (f"it starts on {starts.strftime('%b %d, %Y')} and runs until"
-            if starts > now else "it is on your account now, until")
+    holds_now = getattr(user, "membership", None) or "none"
+    if starts > now:
+        when = f"it starts on {starts.strftime('%b %d, %Y')} and runs until"
+    elif higher_membership(holds_now, tier) == holds_now:
+        when = "it is on your account now, until"
+    else:
+        log.warning(
+            "perk: user %s bought %s for %s months of %s and is still on %s "
+            "— saying nothing rather than promising it",
+            user.id, product.id, product.perk_months(), tier, holds_now,
+        )
+        return False
     body = (f"“{product.title}” came with {perk_summary_for(purchase)} — "
             f"{when} {until.strftime('%b %d, %Y')}.")[:300]
     # Linking a purchase happens more than once — at checkout, at signup, on a

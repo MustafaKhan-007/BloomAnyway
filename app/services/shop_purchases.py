@@ -83,15 +83,16 @@ def sync_membership_perk(purchase, *, downgrade: bool = False) -> bool:
     user = db.session.get(User, user_id)
     if user is None:
         return False
+    held_before = user.membership or "none"
+    changed = reconcile_user(user, downgrade=downgrade)
     if not downgrade:
-        # Before the tier moves, so "you weren't on this already" still reads
-        # off what they held when they bought it.
+        # After the tier has moved, so what the buyer is told is what they got.
         try:
-            announce(user, purchase)
+            announce(user, purchase, held_before=held_before)
         except Exception:
             log.exception("perk: could not tell user %s about their membership",
                           user_id)
-    return reconcile_user(user, downgrade=downgrade)
+    return changed
 
 
 def upsert_shop_purchase(
