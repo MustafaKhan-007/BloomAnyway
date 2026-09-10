@@ -287,6 +287,18 @@ def reconcile_user(user: User, downgrade: bool = False,
 
     manual = manual_tier(user)
     if manual:
+        from .perks import months_bought_since
+        if months_bought_since(user, getattr(user, "membership_manual_at", None)):
+            # They paid for membership months after the Studio choice was
+            # made, which answers it the same way paying for a membership
+            # does. Left standing, the buyer is charged for a tier that never
+            # arrives — and told it had.
+            log.info("membership: user %s bought a perk after the studio tier "
+                     "%s — following what they paid for", user.id, manual)
+            user.membership_manual = None
+            user.membership_manual_at = None
+            manual = ""
+    if manual:
         if (user.membership or "none") == manual:
             return False
         user.membership = manual
