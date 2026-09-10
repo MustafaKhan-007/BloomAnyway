@@ -999,6 +999,57 @@
     updateChrome();
   })();
 
+  /* ---- settings: three badges at a time ----
+     Nothing here used to read data-badge-max, so a fourth pick was only
+     turned away by the save that followed — the page came back saying
+     "Saved" with that badge unticked, which looks like the setting refusing
+     to stick. The newest pick always wins; the one it displaces is named. */
+  (function () {
+    var collection = document.querySelector("[data-badge-max]");
+    if (!collection) return;
+    var max = parseInt(collection.getAttribute("data-badge-max"), 10) || 3;
+    var boxes = Array.prototype.slice.call(
+      collection.querySelectorAll('input[name="badges_display"]'));
+    if (!boxes.length) return;
+
+    var note = document.createElement("p");
+    note.className = "field-help badge-collection__count";
+    note.setAttribute("role", "status");
+    collection.parentNode.insertBefore(note, collection.nextSibling);
+
+    var picked = boxes.filter(function (box) { return box.checked; });
+
+    var nameOf = function (box) {
+      var row = box.closest(".badge-collection__row");
+      var title = row ? row.querySelector("strong") : null;
+      return title ? title.textContent.trim() : "one of them";
+    };
+    var say = function (displaced) {
+      var count = picked.length + " of " + max + " showing";
+      note.textContent = displaced
+        ? count + " \u2014 " + displaced + " stepped aside."
+        : count + ".";
+    };
+
+    boxes.forEach(function (box) {
+      box.addEventListener("change", function () {
+        var displaced = "";
+        if (box.checked) {
+          picked.push(box);
+          while (picked.length > max) {
+            var out = picked.shift();
+            out.checked = false;
+            displaced = nameOf(out);
+          }
+        } else {
+          picked = picked.filter(function (other) { return other !== box; });
+        }
+        say(displaced);
+      });
+    });
+    say("");
+  })();
+
   /* ---- My space library filters ---- */
   (function () {
     var bar = document.querySelector("[data-lib-filters]");

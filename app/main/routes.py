@@ -73,16 +73,35 @@ def _collect_profile_links(form):
     return links
 
 
+BADGE_DISPLAY_MAX = 3
+BADGE_DISPLAY_MAX_WORD = "three"
+
+
 def _valid_badge_choices(keys):
-    """Keep up to 3 chosen badge categories the member has actually earned."""
+    """Badge categories to show, capped, plus the ones that had to give way.
+
+    Over the cap it is the badge they have just ticked that stays. Keeping
+    the first three down the page instead dropped exactly that one, and the
+    page came back saying "Saved" with their choice missing — which reads as
+    the setting refusing to save at all.
+    """
     earned = {b["cat"] for b in earned_badges(current_user)}
-    out = []
+    wanted = []
     for key in keys:
-        if key in CATEGORIES and key in earned and key not in out:
-            out.append(key)
-        if len(out) >= 3:
-            break
-    return out
+        if key in CATEGORIES and key in earned and key not in wanted:
+            wanted.append(key)
+    if len(wanted) <= BADGE_DISPLAY_MAX:
+        return wanted, []
+    held = set(current_user.displayed_badges())
+    # New picks first, then the badges they were already showing from the
+    # bottom up — the same one the page steps aside when it can run, so both
+    # ways of saving take the same badge down.
+    kept = set(([k for k in wanted if k not in held]
+                + [k for k in reversed(wanted) if k in held])[:BADGE_DISPLAY_MAX])
+    # Page order among the ones that stay, so the profile doesn't reshuffle.
+    return ([k for k in wanted if k in kept],
+            [k for k in wanted if k not in kept])
+
 
 def _spotlight_context():
     """Creator of the Month + Reel of the Week, straight from site settings."""
@@ -1954,7 +1973,15 @@ def update_profile():
                 links, request.form.get("creator_instagram") or "",
                 limit=PROFILE_LINK_MAX)
         current_user.set_links(links)
-    current_user.set_displayed_badges(_valid_badge_choices(request.form.getlist("badges_display")))
+    badges, gave_way = _valid_badge_choices(request.form.getlist("badges_display"))
+    current_user.set_displayed_badges(badges)
+    if gave_way:
+        names = [CATEGORIES[k]["name"] for k in gave_way]
+        stepped = names[0] if len(names) == 1 else (
+            ", ".join(names[:-1]) + " and " + names[-1])
+        flash(f"Your profile shows {BADGE_DISPLAY_MAX_WORD} badges at a time, "
+              f"so {stepped} {'has' if len(names) == 1 else 'have'} "
+              f"stepped aside.", "info")
 
     if request.form.get("remove_avatar") == "1":
         current_user.avatar_data = None
