@@ -128,6 +128,26 @@
         {% endfor %}
       </ul>
       {% endif %}
+      {% if stripe_webhook.ignored_type %}
+      <p class="field-help studio-dash-exact__pay-warn">
+        <strong>Stripe is sending {{ stripe_webhook.ignored_type }}</strong>, which
+        this site doesn't read. Sales sent only that way won't appear here. In
+        Stripe &rarr; Developers &rarr; Webhooks, add
+        <strong>checkout.session.completed</strong> to this endpoint's events.
+        Anything already paid for is safe &mdash; use Sync purchases below.
+      </p>
+      {% elif not stripe_webhook.ever %}
+      <p class="field-help studio-dash-exact__pay-warn">
+        <strong>No Stripe webhook has ever reached this site.</strong> Until one
+        does, a sale only appears after a sync. Check the endpoint URL and
+        signing secret in Stripe &rarr; Developers &rarr; Webhooks.
+      </p>
+      {% else %}
+      <p class="field-help">
+        Last heard from Stripe: {{ stripe_webhook.last_type }},
+        {{ stripe_webhook.last_at|when('%b %d at %H:%M') }}.
+      </p>
+      {% endif %}
       <div class="studio-dash-exact__pay-actions">
         <a class="btn btn--secondary btn--sm" href="{{ url_for('main.courses') }}">Open Courses &amp; Guides</a>
         {% if stripe_configured %}

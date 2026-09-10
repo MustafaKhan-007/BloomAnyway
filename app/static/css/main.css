@@ -8502,6 +8502,12 @@ a.at-handle:hover { text-decoration: underline; }
 .studio-dash-exact__pay-actions {
   display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px;
 }
+/* Stripe taking payments the site never hears about is the one failure that
+   looks like nothing at all, so it is the one thing on this card that shouts. */
+.studio-dash-exact__pay-warn {
+  margin: 12px 0 0; padding: 10px 12px; border-radius: 10px;
+  border: 1px solid #e0b4b4; background: #fdf2f2; color: #7a2020;
+}
 .studio-trending {
   display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 12px;
   margin: 14px 0 0; padding: 10px 14px; border-radius: 12px;

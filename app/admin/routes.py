@@ -200,6 +200,7 @@ def dashboard():
         support_occupancy=stats.support_occupancy(),
         founder_days=stats.founder_days_remaining(),
         stripe_configured=pay.configured(),
+        stripe_webhook=pay.webhook_health(),
         challenge_on_sale=challenge_service.course() is not None,
     )
 
