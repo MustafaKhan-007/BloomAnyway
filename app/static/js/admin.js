@@ -1172,6 +1172,16 @@
         panel.setAttribute("hidden", "");
       }
       link.setAttribute("aria-expanded", opening ? "true" : "false");
+      // On a phone each member is a tall card, so what opens does so well
+      // below the name that was tapped — off the screen entirely. "nearest"
+      // leaves a panel that is already in view where it is.
+      if (opening && panel.scrollIntoView) {
+        try {
+          panel.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        } catch (err) {
+          panel.scrollIntoView(false);
+        }
+      }
     });
   })();
 
