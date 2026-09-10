@@ -454,6 +454,125 @@ ok("$0 checkout creates paid order",
 ok("$0 checkout creates shop purchase",
    zero_shop is not None and zero_shop.status == "pending_link")
 
+# --- Stripe announces one sale three ways; any of them has to land ----------
+# Which of them an endpoint sends is a checkbox in the Stripe dashboard, and
+# one set up on the payment events rather than the checkout one meant every
+# sale sat plainly in Stripe and appeared nowhere here.
+def _raw_event(event_type, obj, evt):
+    body = json.dumps({"id": evt, "object": "event", "type": event_type,
+                       "data": {"object": obj}}).encode()
+    return client.post("/webhooks/stripe", data=body, headers=_stripe_headers(body))
+
+
+_sale_meta = {"price_id": "prod_begin_again"}
+r = _raw_event("payment_intent.succeeded", {
+    "id": "pi_alone", "object": "payment_intent", "amount": 4900,
+    "amount_received": 4900, "currency": "usd", "status": "succeeded",
+    "receipt_email": "PiBuyer@Example.com", "metadata": _sale_meta,
+}, "evt_pi_alone")
+with app.app_context():
+    _pi_order = Order.query.filter_by(ls_order_id="pi_alone").first()
+ok("A PaymentIntent on its own registers the sale",
+   r.status_code == 200 and _pi_order is not None and _pi_order.status == "paid"
+   and _pi_order.buyer_email == "pibuyer@example.com"
+   and _pi_order.product_id is not None,
+   f"HTTP {r.status_code}, order {_pi_order}")
+
+r = _raw_event("charge.succeeded", {
+    "id": "ch_alone", "object": "charge", "amount": 4900,
+    "amount_captured": 4900, "paid": True, "currency": "usd",
+    "status": "succeeded", "payment_intent": "pi_from_charge",
+    "billing_details": {"email": "chbuyer@example.com"}, "metadata": _sale_meta,
+}, "evt_ch_alone")
+with app.app_context():
+    _ch_order = Order.query.filter_by(ls_order_id="pi_from_charge").first()
+ok("So does a charge, recorded against the payment behind it",
+   r.status_code == 200 and _ch_order is not None and _ch_order.status == "paid"
+   and _ch_order.buyer_email == "chbuyer@example.com",
+   f"HTTP {r.status_code}, order {_ch_order}")
+
+# A charge Stripe has not actually taken the money for is not a sale.
+r = _raw_event("charge.succeeded", {
+    "id": "ch_unpaid", "object": "charge", "amount": 4900, "paid": False,
+    "currency": "usd", "payment_intent": "pi_unpaid",
+    "billing_details": {"email": "nope@example.com"}, "metadata": _sale_meta,
+}, "evt_ch_unpaid")
+with app.app_context():
+    ok("An unpaid charge is not recorded as one",
+       Order.query.filter_by(ls_order_id="pi_unpaid").first() is None)
+
+# All three for the same sale. The three carry the same PaymentIntent, which
+# is what an order is keyed on, so they have to land on one row and not three.
+_trio = _payment_payload("pi_trio", "trio@example.com", "prod_begin_again",
+                         product_name="Begin Again")
+client.post("/webhooks/stripe", data=_trio, headers=_stripe_headers(_trio))
+_raw_event("payment_intent.succeeded", {
+    "id": "pi_trio", "object": "payment_intent", "amount": 4900,
+    "amount_received": 4900, "currency": "usd", "status": "succeeded",
+    "receipt_email": "trio@example.com", "metadata": _sale_meta,
+}, "evt_trio_pi")
+_raw_event("charge.succeeded", {
+    "id": "ch_trio", "object": "charge", "amount": 4900, "paid": True,
+    "amount_captured": 4900, "currency": "usd", "payment_intent": "pi_trio",
+    "billing_details": {"email": "trio@example.com"}, "metadata": _sale_meta,
+}, "evt_trio_ch")
+with app.app_context():
+    _trio_orders = Order.query.filter_by(ls_order_id="pi_trio").all()
+    _trio_shop = ShopPurchase.query.filter_by(
+        lemon_squeezy_order_id="pi_trio").all()
+ok("One sale announced all three ways is still one sale",
+   len(_trio_orders) == 1 and len(_trio_shop) == 1,
+   f"{len(_trio_orders)} orders, {len(_trio_shop)} shelf rows")
+
+# A paid event with nobody's address on it used to answer Stripe with a 500,
+# and Stripe replays the payload it already sent — so the address was never
+# coming and the sale was dropped once the retries ran out.
+r = _raw_event("payment_intent.succeeded", {
+    "id": "pi_nameless", "object": "payment_intent", "amount": 4900,
+    "amount_received": 4900, "currency": "usd", "status": "succeeded",
+    "metadata": _sale_meta,
+}, "evt_nameless")
+with app.app_context():
+    _nameless = Order.query.filter_by(ls_order_id="pi_nameless").first()
+ok("A payment with no address on it is recorded rather than lost",
+   r.status_code == 200 and _nameless is not None
+   and _nameless.status == "paid",
+   f"HTTP {r.status_code}, order {_nameless}")
+
+# An endpoint pointed at events nothing here reads is the failure that looks
+# like nothing at all: Stripe shows a column of 200s and the site shows no
+# sale. Studio is where that gets said.
+r = _raw_event("payment_intent.requires_action", {
+    "id": "pi_waiting", "object": "payment_intent", "amount": 4900,
+    "currency": "usd", "status": "requires_action",
+}, "evt_unread")
+with app.app_context():
+    _health = pay.webhook_health()
+ok("An event about money that nothing here reads is written down",
+   r.status_code == 200 and (r.get_json() or {}).get("status") == "ignored"
+   and _health["ignored_type"] == "payment_intent.requires_action",
+   f"got {_health}")
+ok("And Studio says so, with what to change in Stripe",
+   "payment_intent.requires_action" in admin.get("/admin/").get_data(as_text=True)
+   and "checkout.session.completed"
+   in admin.get("/admin/").get_data(as_text=True))
+# Something Stripe sends that has nothing to do with money is not an alarm.
+_raw_event("customer.created", {"id": "cus_x", "object": "customer"},
+           "evt_harmless")
+with app.app_context():
+    ok("Something that isn't about money isn't raised as though it were",
+       pay.webhook_health()["ignored_type"] == "payment_intent.requires_action")
+_again = _payment_payload("pi_heard", "heard@example.com", "prod_begin_again")
+client.post("/webhooks/stripe", data=_again, headers=_stripe_headers(_again))
+with app.app_context():
+    _health = pay.webhook_health()
+ok("A sale coming through the endpoint clears the warning",
+   not _health["ignored_type"] and _health["ever"]
+   and _health["last_type"] == "checkout.session.completed",
+   f"got {_health}")
+ok("And the dashboard goes back to simply saying when Stripe last called",
+   "Last heard from Stripe" in admin.get("/admin/").get_data(as_text=True))
+
 # purchase auto-links when that email signs up / logs in
 with app.app_context():
     from app.models import User as _U
