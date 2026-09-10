@@ -336,7 +336,9 @@ def _buyer_email(data: dict) -> str:
     billing = data.get("billing_details") or {}
     if isinstance(billing, dict) and billing.get("email"):
         return str(billing["email"]).strip().lower()
-    for key in ("customer_email", "email", "billing_email"):
+    # receipt_email is where a PaymentIntent keeps it, and a PaymentIntent is
+    # one of the ways a purchase is announced.
+    for key in ("customer_email", "email", "billing_email", "receipt_email"):
         raw = data.get(key)
         if raw:
             return str(raw).strip().lower()
@@ -451,6 +453,53 @@ def enrich_checkout_session(obj: dict) -> dict:
     except Exception:
         log.exception("stripe: failed to hydrate checkout session %s", sid)
         return obj
+
+
+def enrich_payment_intent(data: dict, payment_intent_id: str | None) -> dict:
+    """Fill in what a PaymentIntent/Charge alone can't say, from its session.
+
+    Our own checkouts copy the whole metadata onto the PaymentIntent, so those
+    arrive knowing what was bought. A Payment Link or a charge raised in the
+    Stripe dashboard doesn't, and the only place the line items live is the
+    Checkout Session. Best effort: a payment recorded without a product still
+    beats one nobody here ever knew about.
+    """
+    pid = (payment_intent_id or "").strip()
+    if not pid:
+        return data
+    if data.get("product_cart") and data.get("customer_email"):
+        return data
+    try:
+        from flask import has_app_context
+        if not has_app_context():
+            return data
+        if current_app.config.get("TESTING") or not configured():
+            return data
+    except RuntimeError:
+        return data
+    try:
+        _configure_stripe()
+        found = stripe.checkout.Session.list(payment_intent=pid, limit=1)
+        rows = list(getattr(found, "data", None) or [])
+        if not rows:
+            return data
+        session = _as_dict(stripe.checkout.Session.retrieve(
+            _stripe_id(rows[0]) or "", expand=["line_items"]))
+    except Exception:
+        log.exception("stripe: could not find the session behind %s", pid)
+        return data
+    from_session = _session_to_payment_data(session)
+    merged = dict(data)
+    if not merged.get("product_cart") and from_session.get("product_cart"):
+        merged["product_cart"] = from_session["product_cart"]
+    if not merged.get("customer_email") and from_session.get("customer_email"):
+        merged["customer_email"] = from_session["customer_email"]
+        merged["customer"] = {"email": from_session["customer_email"]}
+    combined = dict(from_session.get("metadata") or {})
+    combined.update({k: v for k, v in (merged.get("metadata") or {}).items() if v})
+    merged["metadata"] = combined
+    log.info("stripe: read the session behind %s for what it was for", pid)
+    return merged
 
 
 def invoice_subscription_id(invoice) -> str:
@@ -643,6 +692,44 @@ def stripe_event_to_internal(event_type: str, obj: dict) -> tuple[str | None, di
             "product_cart": [{"product_id": price_id, "quantity": 1}] if price_id else [],
             "metadata": meta_out,
         }
+    if event_type in ("payment_intent.succeeded", "charge.succeeded"):
+        # Stripe announces one purchase three ways, and which of them an
+        # endpoint is subscribed to is a checkbox in the Stripe dashboard. A
+        # site listening only for checkout.session.completed answers the other
+        # two with a shrug and a 200: the money is plainly there in Stripe and
+        # nothing here ever hears about it. All three are keyed on the
+        # PaymentIntent, so whichever arrives first records the order and the
+        # rest land on the same row.
+        meta = obj.get("metadata") if isinstance(obj.get("metadata"), dict) else {}
+        if event_type == "charge.succeeded":
+            if not obj.get("paid", True):
+                return None, {}
+            pid = _stripe_id(obj.get("payment_intent")) or _stripe_id(obj.get("id"))
+            amount = obj.get("amount_captured")
+            if not amount:
+                amount = obj.get("amount") or 0
+        else:
+            pid = _stripe_id(obj.get("id"))
+            amount = obj.get("amount_received")
+            if amount is None:
+                amount = obj.get("amount") or 0
+        data = {
+            "payment_id": str(pid or ""),
+            "total_amount": amount or 0,
+            "currency": (obj.get("currency") or "usd").upper(),
+            "customer": {"email": _buyer_email(obj)},
+            "customer_email": _buyer_email(obj),
+            "product_cart": [],
+            "metadata": dict(meta or {}),
+        }
+        price_id = _first_price_id({"metadata": dict(meta or {})})
+        if price_id:
+            data["product_cart"] = [{"product_id": str(price_id), "quantity": 1}]
+        data = enrich_payment_intent(data, pid)
+        if not data.get("payment_id"):
+            log.warning("stripe: %s with no id to record it under", event_type)
+            return None, data
+        return "payment.succeeded", data
     if event_type in ("charge.refunded", "charge.refund.updated"):
         pi = _stripe_id(obj.get("payment_intent"))
         return "payment.refunded", {
@@ -793,6 +880,36 @@ def sync_recent_payments(*, days: int = 60, max_pages: int = 3) -> dict:
         "imported": imported,
         "checked": checked,
         "errors": errors,
+    }
+
+
+def webhook_health() -> dict:
+    """Is Stripe actually talking to us, and are we listening to the right thing?
+
+    An endpoint pointed at events nothing here reads fails invisibly: Stripe
+    shows a column of 200s, the site shows no sale, and neither of them
+    mentions the other. This is what the dashboard says about that.
+    """
+    from datetime import datetime
+
+    from .settings import get_setting
+
+    def when(key: str):
+        raw = (get_setting(key) or "").strip()
+        if not raw:
+            return None
+        try:
+            return datetime.fromisoformat(raw)
+        except ValueError:
+            return None
+
+    last_at = when("stripe_last_webhook_at")
+    return {
+        "ever": last_at is not None,
+        "last_at": last_at,
+        "last_type": (get_setting("stripe_last_webhook_type") or "").strip(),
+        "ignored_type": (get_setting("stripe_ignored_event_type") or "").strip(),
+        "ignored_at": when("stripe_ignored_event_at"),
     }
 
 
@@ -1280,9 +1397,20 @@ def handle_payment_event(event_type: str, data: dict) -> Order | None:
 
     if not email and status in ("paid", "failed"):
         if status == "paid":
-            raise ValueError("customer email missing from paid payment")
-        log.warning("stripe: payment.failed missing customer email (%s)", payment_id)
-        return None
+            # Raising here answered Stripe with a 500, and Stripe replays the
+            # same payload it already sent — so the address was never going to
+            # turn up on a later attempt and the sale was dropped for good
+            # once the retries ran out. Recorded against the payment id
+            # instead: an order the owner has to put an address on is a job,
+            # a payment nobody here ever heard of is a loss.
+            log.error(
+                "stripe: paid payment %s has no customer email — recording it "
+                "unattributed so it is not lost", payment_id,
+            )
+        else:
+            log.warning("stripe: payment.failed missing customer email (%s)",
+                        payment_id)
+            return None
 
     prior = Order.query.filter_by(ls_order_id=str(payment_id)).first()
     send_receipt = status == "paid" and (prior is None or prior.status != "paid")
