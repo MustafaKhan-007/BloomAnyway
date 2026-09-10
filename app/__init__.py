@@ -235,6 +235,7 @@ def create_app(config_class=None):
     app.jinja_env.globals["countdown"] = countdown_tag
 
     from .services import badges as badges_service
+    from .services.reel_reviews import week_range_label
     from .services.support_groups import meeting_display_title
 
     app.jinja_env.globals.update(
@@ -243,6 +244,8 @@ def create_app(config_class=None):
         # What a session is called wherever it's listed: the circle, the topic,
         # or the founder a 1:1 was booked with.
         session_title=meeting_display_title,
+        # A week written as the days it covers, so it can't read as one date.
+        week_span=week_range_label,
     )
 
     @app.context_processor

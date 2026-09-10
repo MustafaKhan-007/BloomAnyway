@@ -8,7 +8,7 @@
       <p class="eyebrow">One a day</p>
       <h1>Reel reviews</h1>
       <p class="field-help" style="margin: 6px 0 0; max-width: 62ch;">
-        Week of {{ week_key.strftime('%b %d, %Y') }} · today is
+        {{ week_span(week_key) }} · today is
         {{ today.strftime('%A, %b %d') }} in Atlanta. Members enter one reel
         each; you review <strong>one a day</strong>, seven over the week.
         Monday starts a fresh round and clears whatever you didn't get to.

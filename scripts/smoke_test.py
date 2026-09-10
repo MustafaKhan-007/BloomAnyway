@@ -3144,6 +3144,22 @@ with app.app_context():
     ok("Entries are keyed to the Monday of Atlanta's week",
        reel_svc.current_week_key() == reel_svc.week_monday(reel_svc.atlanta_today())
        and reel_svc.current_week_key().weekday() == 0)
+# That Monday is the key, not the wording. Naming it on the page read as a
+# date that had already gone to anybody looking on a Thursday.
+with app.app_context():
+    _mon = reel_svc.current_week_key()
+    ok("A week is written as the days it covers",
+       reel_svc.week_range_label(date(2026, 9, 7)) == "Sep 7 \u2013 13"
+       and reel_svc.week_range_label(date(2026, 9, 28)) == "Sep 28 \u2013 Oct 4",
+       f"got {reel_svc.week_range_label(date(2026, 9, 7))!r}")
+    _span, _lone_monday = (reel_svc.week_range_label(_mon),
+                           _mon.strftime("%b %d, %Y"))
+_hub_week = client.get("/watch").get_data(as_text=True)
+ok("And that is what the Content Hub says, on its own no longer",
+   _span in _hub_week and _lone_monday not in _hub_week)
+ok("Studio says it the same way",
+   _span in admin.get("/admin/reel-reviews").get_data(as_text=True)
+   and _span in admin.get("/admin/spotlight").get_data(as_text=True))
 with app.app_context():
     import os as _os
     stored = ReelReviewApplication.query.first()
