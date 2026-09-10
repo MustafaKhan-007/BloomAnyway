@@ -187,7 +187,7 @@
     <section class="admin-panel studio-card">
       <h2>This week's Reel of the Week entries ({{ reel_entries|length }})</h2>
       <p class="field-help" style="margin-top: 0;">
-        Week of {{ reel_week.strftime('%b %d, %Y') }}. Creator and Full Bloom
+        {{ week_span(reel_week) }}. Creator and Full Bloom
         members enter one reel each, {{ min_shares }} shares or more. Featuring
         one fills in the fields below and opens entering again straight away,
         so the spotlight after it is open to everybody &mdash; including the

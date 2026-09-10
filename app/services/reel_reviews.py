@@ -40,6 +40,22 @@ def current_week_key() -> date:
     return week_monday()
 
 
+def week_range_label(week: date | None = None) -> str:
+    """A week said as the span it is: "Sep 7 – 13", or "Sep 28 – Oct 4".
+
+    Naming only the Monday reads as a stale date to anybody looking at the
+    page on a Thursday — the question it got asked was why the page was
+    talking about the 7th when today was the 10th. The span answers that
+    without anyone having to know which day a week starts on here.
+    """
+    week = week or current_week_key()
+    end = week + timedelta(days=6)
+    if week.month == end.month:
+        return f"{week.strftime('%b')} {week.day} \u2013 {end.day}"
+    return (f"{week.strftime('%b')} {week.day} \u2013 "
+            f"{end.strftime('%b')} {end.day}")
+
+
 def application_for(user_id: int, week: date | None = None) -> ReelReviewApplication | None:
     week = week or current_week_key()
     return ReelReviewApplication.query.filter_by(user_id=user_id, week_key=week).first()
