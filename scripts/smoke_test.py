@@ -8819,6 +8819,49 @@ try:
        in admin.post("/admin/send-challenge-welcome", data={"email": "nope"},
                      follow_redirects=True).get_data(as_text=True)
        and not _letters)
+
+    # The welcome is claimed against the order before it is sent, so two
+    # webhooks can't both welcome somebody. Keeping that claim when the send
+    # then failed was the worst of both: the buyer had nothing, and the one
+    # tool for putting it right refused on the grounds it had already gone.
+    _sending_works = {"yet": False}
+
+    def _catch_or_fail(to, subject, text, html_body=None, template_id=None,
+                       params=None, sender=None, attachments=None):
+        if template_id == 30 and not _sending_works["yet"]:
+            return False
+        _letters.append({"to": to, "subject": subject, "text": text,
+                         "template_id": template_id, "params": params or {}})
+        return True
+
+    _mailer.send_email = _catch_or_fail
+    _unlucky = _bought("pi_challenge_r3_3", "unlucky@example.com")
+    ok("A receipt still arrives when the welcome can't be sent",
+       _unlucky == ["Your Bloom Anyway receipt"], f"sent {_unlucky}")
+    with app.app_context():
+        _uo = Order.query.filter_by(ls_order_id="pi_challenge_r3_3").first()
+        ok("And a welcome that never went is not written down as sent",
+           _uo is not None and _uo.welcome_sent_at is None,
+           f"got {getattr(_uo, 'welcome_sent_at', 'no order')!r}")
+
+    _sending_works["yet"] = True      # whatever was wrong has been put right
+    _letters.clear()
+    _mended = admin.post("/admin/send-challenge-welcome",
+                         data={"email": "unlucky@example.com"},
+                         follow_redirects=True)
+    ok("So Studio can still reach somebody the failure left out",
+       "Sent the challenge welcome" in _mended.get_data(as_text=True)
+       and any(m["template_id"] == 30 and m["to"] == "unlucky@example.com"
+               for m in _letters),
+       f"{flashes(_mended)} / sent {[m['to'] for m in _letters]}")
+    _letters.clear()
+    ok("And once it has gone, it still can't go twice",
+       "already had the challenge welcome"
+       in admin.post("/admin/send-challenge-welcome",
+                     data={"email": "unlucky@example.com"},
+                     follow_redirects=True).get_data(as_text=True)
+       and not _letters)
+    _mailer.send_email = _catch_letters
     _studio_dash = admin.get("/admin/").get_data(as_text=True)
     ok("The send sits with the other missed-purchase tools in Studio",
        "Challenge welcome missing?" in _studio_dash)
