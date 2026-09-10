@@ -3456,6 +3456,25 @@ with app.app_context():
        sub.share_count == 412 and sub.has_raw_video()
        and sub.week_key == rotw_svc.current_week_key())
 
+# On a phone both weekly panels are folded away and the card above unfolds
+# the one it points at. Reel of the Week's card used to point at a panel
+# nothing ever unfolded, so tapping it did nothing at all.
+_hub_body = client.get("/watch").get_data(as_text=True)
+ok("Both Content Hub cards are wired to the panel they point at",
+   _hub_body.count("data-reveal-rotw") >= 3
+   and '"#reel-of-week" data-reveal-rotw' in _hub_body
+   and '"#reel-review" data-reveal-rotw' in _hub_body)
+ok("And both panels answer to it",
+   'id="reel-review" data-rotw-panel' in _hub_body
+   and 'id="reel-of-week" data-rotw-panel' in _hub_body)
+_hub_js = client.get("/static/js/main.js").get_data(as_text=True)
+ok("The tap unfolds whichever panel the card names",
+   "[data-reveal-rotw]" in _hub_js and "[data-rotw-panel]" in _hub_js
+   and "is-revealed" in _hub_js)
+_hub_css = client.get("/static/css/main.css").get_data(as_text=True)
+ok("Which is what the handheld rule waits for",
+   ".hub-exact__rotw:not(.is-revealed)" in _hub_css)
+
 r = admin.get("/admin/spotlight")
 sbody = r.get_data(as_text=True)
 ok("Studio lists this week's Reel of the Week entries",
