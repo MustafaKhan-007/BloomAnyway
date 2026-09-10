@@ -2442,6 +2442,7 @@ html.is-page-loading { cursor: progress; }
 .badge-collection__row.is-locked { opacity: 0.55; }
 .badge-collection__row.is-locked .badge { filter: grayscale(0.85) drop-shadow(0 1px 2px rgba(43,38,34,0.15)); }
 .badge-collection__meta { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; }
+.badge-collection__count { margin: 10px 0 0; }
 .badge-collection__meta .checkline {
   margin: 6px 0 0;
   width: 11.5rem;
