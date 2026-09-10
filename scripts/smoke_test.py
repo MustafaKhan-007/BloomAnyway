@@ -5798,6 +5798,9 @@ try:
         name, email = mailer_mod._parse_mail_from("Bloom Anyway <hello@example.com>")
         bad_key_hint = mailer_mod._brevo_error_hint(401, '{"message":"Key not found"}')
         domain_hint = mailer_mod._brevo_error_hint(400, '{"message":"Invalid sender"}')
+        tpl_hint = mailer_mod._brevo_error_hint(
+            400, '{"code":"invalid_parameter",'
+                 '"message":"templateId: value is not valid"}')
     ok("Brevo API key is normalized",
        cleaned == "xkeysib-abc123" and quoted == "xkeysib-xyz-key")
     ok("MAIL_FROM wrapping quotes are stripped",
@@ -5808,6 +5811,64 @@ try:
        "BREVO_API_KEY" in bad_key_hint)
     ok("Brevo 400 hint mentions verified sender",
        "verified" in domain_hint.lower())
+    # Read as a sender problem, this sent owners to check a verified domain
+    # that was never what Brevo was complaining about.
+    ok("A template Brevo hasn't got is reported as a template, not a sender",
+       "template" in tpl_hint.lower() and "verified" not in tpl_hint.lower(),
+       f"got {tpl_hint!r}")
+
+    # Every one of these emails is written out in full before a template is
+    # reached for, so a template the account hasn't got costs the design and
+    # nothing else. It used to cost the whole email.
+    _posted = []
+
+    class _BrevoSays:
+        def __init__(self, status, text):
+            self.status_code, self.text = status, text
+
+    def _no_templates(url, json=None, headers=None, timeout=None):
+        _posted.append(json)
+        if json.get("templateId"):
+            return _BrevoSays(400, '{"code":"invalid_parameter",'
+                                   '"message":"templateId: value is not valid"}')
+        return _BrevoSays(201, '{"messageId":"<ok>"}')
+
+    _real_post = mailer_mod.requests.post
+    _real_from = app.config["MAIL_FROM"]
+    mailer_mod.requests.post = _no_templates
+    app.config["MAIL_FROM"] = "Bloom Anyway <hello@bloomanyway.online>"
+    try:
+        with app.app_context():
+            _welcome_went = mailer_mod.send_challenge_welcome(
+                "buyer@example.com", product_name="2-Month Creator Challenge")
+        _welcome_posts = list(_posted)
+        _posted.clear()
+        with app.app_context():
+            _receipt_went = mailer_mod.send_order_receipt(
+                "buyer@example.com", order_id="R-9", product_name="Steady Guide",
+                amount="$19", order_date="Sep 10, 2026",
+                attachments=[{"name": "guide.pdf", "data": b"%PDF-1.4\n"}])
+        _receipt_posts = list(_posted)
+    finally:
+        mailer_mod.requests.post = _real_post
+        app.config["MAIL_FROM"] = _real_from
+    ok("A welcome whose template Brevo hasn't got still reaches the buyer",
+       _welcome_went is True and len(_welcome_posts) == 2,
+       f"{len(_welcome_posts)} attempts, sent {_welcome_went}")
+    ok("It arrives plain, carrying the words the template would have dressed",
+       _welcome_posts[0].get("templateId") == 30
+       and "templateId" not in _welcome_posts[1]
+       and _welcome_posts[1]["subject"] == "Welcome to the challenge"
+       and "2-Month Creator Challenge" in _welcome_posts[1]["textContent"]
+       and _welcome_posts[1]["to"][0]["email"] == "buyer@example.com",
+       f"got {_welcome_posts[-1]}")
+    ok("So does a receipt, with the file they paid for still attached",
+       _receipt_went is True
+       and "templateId" not in _receipt_posts[-1]
+       and "R-9" in _receipt_posts[-1]["textContent"]
+       and [a["name"] for a in _receipt_posts[-1].get("attachment") or []]
+       == ["guide.pdf"],
+       f"got {_receipt_posts[-1]}")
 finally:
     if _prev_brevo is not None:
         os.environ["BREVO_API_KEY"] = _prev_brevo
