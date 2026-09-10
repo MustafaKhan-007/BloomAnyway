@@ -8229,6 +8229,12 @@ a.at-handle:hover { text-decoration: underline; }
   padding: 12px 14px; border-radius: 12px;
   background: rgba(61, 20, 49, 0.05); border: 1px solid rgba(61, 20, 49, 0.08);
 }
+.hub-exact__notice--picked {
+  margin-bottom: 16px;
+  background: rgba(199, 154, 65, 0.12); border-color: rgba(199, 154, 65, 0.4);
+}
+.hub-exact__notice--picked p { margin: 0; }
+.hub-exact__notice--picked p + p { margin-top: 4px; }
 .hub-exact__queue { margin-top: 36px; }
 .hub-exact__queue-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
 .hub-exact__queue-item {

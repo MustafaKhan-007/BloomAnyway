@@ -3444,10 +3444,10 @@ with app.app_context():
 
 r = _rotw_post(client)
 ok("Creator member can enter Reel of the Week",
-   "in the running for this week" in r.get_data(as_text=True))
+   "in the running for the next spotlight" in r.get_data(as_text=True))
 r = _rotw_post(client, reel_url="https://www.instagram.com/reel/SHARED200/")
-ok("Second Reel of the Week entry in the same week is blocked",
-   "already entered a reel this week" in r.get_data(as_text=True))
+ok("Second Reel of the Week entry in the same round is blocked",
+   "already in for the next spotlight" in r.get_data(as_text=True))
 with app.app_context():
     sub = ReelSubmission.query.first()
     sub_id = sub.id
@@ -3499,9 +3499,32 @@ with app.app_context():
        ReelSubmission.query.filter_by(featured=True).count() == 1)
     ok("Being featured is written on the member, not just the entry",
        db.session.get(User, sub_author_id).reel_featured_at is not None)
+with app.app_context():
+    ok("Featuring a reel opens the next round of entries",
+       rotw_svc.current_round() == 1
+       and rotw_svc.round_submissions() == []
+       and len(rotw_svc.week_submissions()) == 1)
 hub = client.get("/watch").get_data(as_text=True)
-ok("The member sees their reel made the home page",
-   "featured on the home page" in hub)
+ok("The Content Hub says whose reel is up now",
+   "On the home page now" in hub and "412 shares" in hub)
+ok("The member whose reel won can enter the next one straight away",
+   "Enter Reel of the Week" in hub)
+r = _rotw_post(client, reel_url="https://www.instagram.com/reel/SHARED200/",
+               share_count="255")
+ok("A second entry the same week is fine once a reel has been chosen",
+   "in the running for the next spotlight" in r.get_data(as_text=True))
+with app.app_context():
+    ok("The new entry belongs to the round that just opened",
+       len(rotw_svc.round_submissions()) == 1
+       and rotw_svc.round_submissions()[0].round_key == 1
+       and rotw_svc.submission_for(sub_author_id).share_count == 255)
+r = _rotw_post(client, reel_url="https://www.instagram.com/reel/SHARED300/")
+ok("But still only one entry each per round",
+   "already in for the next spotlight" in r.get_data(as_text=True))
+sbody = admin.get("/admin/spotlight").get_data(as_text=True)
+ok("Studio keeps the whole week's entries, both rounds of them",
+   "This week's Reel of the Week entries (2)" in sbody
+   and "255 shares" in sbody and "412 shares" in sbody)
 r = admin.post("/admin/spotlight", data={"clear_spotlight_reel": "1"},
                follow_redirects=True)
 ok("Clearing Reel of the Week takes it off the home page",
@@ -3519,7 +3542,7 @@ with app.app_context():
     reviewed.week_key = last_week
     unreviewed.week_key = last_week
     reviewed_id = reviewed.id
-    ReelSubmission.query.filter_by(id=sub_id).update({"week_key": last_week})
+    ReelSubmission.query.update({"week_key": last_week})
     db.session.commit()
     cleared = rotw_svc.sweep_old_weeks()
     ok("Monday clears last week's unreviewed reel entries",
@@ -3531,7 +3554,9 @@ with app.app_context():
     ok("The reviewed entry's raw upload is released once it's served its purpose",
        db.session.get(ReelReviewApplication, reviewed_id).disk_name is None)
     ok("Monday clears last week's Reel of the Week entries",
-       cleared["reel_of_week"] == 1 and ReelSubmission.query.count() == 0)
+       cleared["reel_of_week"] == 2 and ReelSubmission.query.count() == 0)
+    ok("Next Monday starts back at the first round",
+       rotw_svc.current_round(rotw_svc.current_week_key() + _td(days=7)) == 0)
     ok("Having been Reel of the Week outlives the entry it came from",
        db.session.get(User, sub_author_id).reel_featured_at is not None)
 ok("The published review is still readable after the clear-out",

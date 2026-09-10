@@ -189,7 +189,9 @@
       <p class="field-help" style="margin-top: 0;">
         Week of {{ reel_week.strftime('%b %d, %Y') }}. Creator and Full Bloom
         members enter one reel each, {{ min_shares }} shares or more. Featuring
-        one fills in the fields below; Monday clears the rest.
+        one fills in the fields below and opens entering again straight away,
+        so the spotlight after it is open to everybody &mdash; including the
+        members listed here. Monday clears the week out.
       </p>
       {% if reel_entries %}
       <div class="reel-entry-list">
@@ -202,6 +204,7 @@
               {{ '{:,}'.format(e.share_count) }} shares &middot;
               {{ e.filename or 'no raw file' }}
               {%- if e.size %} &middot; {{ (e.size / 1024 / 1024)|round(1) }} MB{% endif %}
+              {%- if not e.featured and e.round_key < reel_round %} &middot; entered before the last pick{% endif %}
             </span>
           </div>
           <div class="reel-entry__actions">

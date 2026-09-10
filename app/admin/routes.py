@@ -1944,7 +1944,8 @@ def spotlight():
             spot.mark_slot_saved("reel", filled=True,
                                  end=spot.default_end("reel"))
             who = entry.author.public_name() if entry.author else "That member"
-            flash(f"{who}'s reel is now the Reel of the Week on the home page.",
+            flash(f"{who}'s reel is now the Reel of the Week on the home page. "
+                  "Entering is open again for the spotlight after it.",
                   "success")
             return redirect(url_for("admin.spotlight"))
 
@@ -2033,6 +2034,7 @@ def spotlight():
         slots=spot.spotlight_slots(),
         reel_entries=rotw_svc.week_submissions(),
         reel_week=rotw_svc.current_week_key(),
+        reel_round=rotw_svc.current_round(),
         min_shares=rotw_svc.MIN_SHARES,
     )
 
