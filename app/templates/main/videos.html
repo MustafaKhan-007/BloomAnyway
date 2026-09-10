@@ -108,7 +108,7 @@
       <div class="hub-exact__status" role="status">
         <span class="hub-exact__status-label">This week:</span>
         <span>{{ week_reviews|length }} of {{ reviews_per_week }} reviewed{% if week_key %}
-          · week of {{ week_key.strftime('%b %d, %Y') }}{% endif %}</span>
+          · {{ week_span(week_key) }}{% endif %}</span>
         {% if my_application %}
         <span>· your reel is in</span>
         {% elif can_reel %}
@@ -153,8 +153,7 @@
           {% if can_reel %}
             {% if my_application %}
             <div class="hub-exact__notice">
-              <p>Your reel is in for this week
-                (week of {{ week_key.strftime('%b %d, %Y') }}).
+              <p>Your reel is in for this week ({{ week_span(week_key) }}).
                 Reviews go up one a day.</p>
               <p class="field-help">
                 Your reel: <a href="{{ my_application.reel_url }}" target="_blank" rel="noopener">view on Instagram</a>
@@ -223,11 +222,14 @@
           {% if can_reel %}
             {% if my_reel_submission %}
             <div class="hub-exact__notice">
-              <p>Your reel is in the running for the next spotlight
-                (week of {{ week_key.strftime('%b %d, %Y') }}).</p>
+              {# No week here: an entry waits for the next pick, whenever the
+                 owner makes it, so naming the Monday it was filed under only
+                 read as a date that had already gone. #}
+              <p>Your reel is in the running for the next spotlight.</p>
               <p class="field-help">
                 <a href="{{ my_reel_submission.reel_url }}" target="_blank" rel="noopener">View on Instagram</a>
                 &middot; {{ '{:,}'.format(my_reel_submission.share_count) }} shares
+                &middot; entered {{ my_reel_submission.created_at|when('%b %d') }}
               </p>
             </div>
             {% else %}
