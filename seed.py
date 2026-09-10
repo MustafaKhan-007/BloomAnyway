@@ -178,11 +178,13 @@ def seed():
         if ensure_support_email():
             print(f"Public support email set to {SITE_DEFAULTS['contact_email']}")
 
-        # 7b. Founder launch window — banner on /membership through end of Sept 2026
-        #     (Sept has 30 days; active while founder_price_ends >= today).
-        FOUNDER_ENDS = "2026-09-30"
-        set_setting("founder_price_ends", FOUNDER_ENDS)
-        print(f"Founder pricing ends → {FOUNDER_ENDS}")
+        # 7b. Founder launch window — banner on /membership while
+        #     founder_price_ends >= today. Seeded once, like the support
+        #     address above: this runs on every deploy, so writing the date
+        #     each time meant one picked in Studio only lasted until the next.
+        from app.services.settings import ensure_founder_window
+        if ensure_founder_window():
+            print(f"Founder pricing ends → {SITE_DEFAULTS['founder_price_ends']}")
 
         # 8. Backfill mime types for stored images. Avatar/thumbnail bytes are
         #    deferred columns now, and "do they have one?" is answered from the
