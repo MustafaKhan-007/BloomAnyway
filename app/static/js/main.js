@@ -1050,6 +1050,122 @@
     say("");
   })();
 
+  /* ---- settings: finding one timezone among six hundred ----
+     A native select is the right control — it is the one the phone knows how
+     to open — but scrolling to Karachi through every region there is takes
+     longer than anyone will spend. This narrows what the select holds; it
+     never changes what is chosen, so filtering can't quietly save a
+     different zone than the one on screen. */
+  (function () {
+    var finder = document.querySelector("[data-tz-find]");
+    var select = document.getElementById("settings-tz");
+    if (!finder || !select) return;
+    var input = finder.querySelector('input[type="search"]');
+    var count = finder.querySelector("[data-tz-find-count]");
+    if (!input) return;
+
+    var slice = Array.prototype.slice;
+    var haystack = function (text, value) {
+      return (text + " " + value).toLowerCase().replace(/[_\/]/g, " ");
+    };
+    var groups = slice.call(select.querySelectorAll("optgroup")).map(function (g) {
+      return {
+        label: g.label,
+        options: slice.call(g.querySelectorAll("option")).map(function (o) {
+          return {
+            value: o.value,
+            label: o.textContent.trim(),
+            hay: haystack(o.textContent, o.value)
+          };
+        })
+      };
+    });
+    if (!groups.length) return;
+    var total = groups.reduce(function (n, g) { return n + g.options.length; }, 0);
+
+    var sole = "";
+
+    var makeGroup = function (label, options, chosen) {
+      var group = document.createElement("optgroup");
+      group.label = label;
+      options.forEach(function (opt) {
+        var el = document.createElement("option");
+        el.value = opt.value;
+        el.textContent = opt.label;
+        if (opt.value === chosen) el.selected = true;
+        group.appendChild(el);
+      });
+      return group;
+    };
+
+    var render = function () {
+      var terms = input.value.toLowerCase().split(/\s+/).filter(Boolean);
+      var chosen = select.value;
+      var frag = document.createDocumentFragment();
+      var matches = [];
+      var hasChosen = false;
+      groups.forEach(function (group) {
+        var hits = group.options.filter(function (opt) {
+          if (!terms.every(function (t) { return opt.hay.indexOf(t) > -1; })) {
+            return false;
+          }
+          // Common repeats a handful of zones that also sit under their
+          // region. Harmless in a list of six hundred, but two identical
+          // lines out of three reads as a fault, so a search shows each
+          // zone once — under the first group that offers it.
+          if (terms.length && matches.indexOf(opt.value) > -1) return false;
+          if (opt.value === chosen) hasChosen = true;
+          matches.push(opt.value);
+          return true;
+        });
+        if (hits.length) frag.appendChild(makeGroup(group.label, hits, chosen));
+      });
+      // Whatever they type, the zone they are on stays in the list: a select
+      // whose choice has been filtered out of it silently becomes a
+      // different choice. It leads, so opening the list still starts where
+      // they are.
+      if (!hasChosen) {
+        var current = null;
+        groups.some(function (group) {
+          return group.options.some(function (opt) {
+            if (opt.value !== chosen) return false;
+            current = opt;
+            return true;
+          });
+        });
+        if (current) {
+          frag.insertBefore(makeGroup("Showing times in now", [current], chosen),
+                            frag.firstChild);
+        }
+      }
+      select.innerHTML = "";
+      select.appendChild(frag);
+      select.value = chosen;
+
+      sole = matches.length === 1 ? matches[0] : "";
+      if (!terms.length) count.textContent = "";
+      else if (!matches.length) count.textContent =
+        "Nothing here matches that \u2014 try a city, a country or UTC+5.";
+      else if (matches.length === 1) count.textContent = "One timezone matches.";
+      else count.textContent = matches.length + " of " + total + " match.";
+    };
+
+    input.addEventListener("input", render);
+    input.addEventListener("search", render);
+    input.addEventListener("keydown", function (e) {
+      if (e.key !== "Enter") return;
+      // Enter here means "that one", not "save": saving on the zone they had
+      // because a search was still open would be a poor trade.
+      e.preventDefault();
+      if (sole) {
+        select.value = sole;
+        render();
+      }
+      select.focus();
+    });
+    finder.hidden = false;
+  })();
+
   /* ---- My space library filters ---- */
   (function () {
     var bar = document.querySelector("[data-lib-filters]");
