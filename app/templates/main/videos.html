@@ -50,7 +50,7 @@
           <p>One a week, reviewed one a day</p>
           <span class="hub-exact__action-link hub-exact__action-link--gold">Submit your reel &rarr;</span>
         </a>
-        <a class="hub-exact__action hub-exact__action--white" href="#reel-of-week">
+        <a class="hub-exact__action hub-exact__action--white" href="#reel-of-week" data-reveal-rotw>
           <h2>Reel of the Week</h2>
           <p>{{ min_shares }}+ shares? Put it up for the home page</p>
           <span class="hub-exact__action-link">Enter your reel &rarr;</span>
@@ -198,29 +198,36 @@
         </div>
       </div>
 
-      <div class="hub-exact__rotw" id="reel-of-week">
+      <div class="hub-exact__rotw" id="reel-of-week" data-rotw-panel>
         <div class="hub-exact__rotw-copy">
           <p class="hub-exact__eyebrow">Home page spotlight</p>
           <h2>Reel of the Week</h2>
           <ul>
             <li>For reels with <strong>{{ min_shares }} shares or more</strong></li>
             <li>Send the Instagram link + the raw video</li>
-            <li><strong>One reel each per week</strong></li>
-            <li>One is featured on the home page; Monday starts again</li>
+            <li><strong>One reel each per round</strong></li>
+            <li>The moment one is chosen, entering opens again for the next</li>
           </ul>
           <p class="field-help">Different from the critique queue &mdash; this one
             is about a reel that travelled, not one you want notes on.</p>
         </div>
         <div class="hub-exact__rotw-form">
+          {% if featured_reel %}
+          <div class="hub-exact__notice hub-exact__notice--picked">
+            <p>On the home page now:
+              <a href="{{ featured_reel.reel_url }}" target="_blank" rel="noopener">{{ featured_reel.author.public_name() if featured_reel.author else 'a member' }}&rsquo;s reel</a>
+              &middot; {{ '{:,}'.format(featured_reel.share_count) }} shares.</p>
+            <p class="field-help">Entering is open again for the one after it.</p>
+          </div>
+          {% endif %}
           {% if can_reel %}
             {% if my_reel_submission %}
             <div class="hub-exact__notice">
-              <p>Your reel is in the running for this week
+              <p>Your reel is in the running for the next spotlight
                 (week of {{ week_key.strftime('%b %d, %Y') }}).</p>
               <p class="field-help">
                 <a href="{{ my_reel_submission.reel_url }}" target="_blank" rel="noopener">View on Instagram</a>
                 &middot; {{ '{:,}'.format(my_reel_submission.share_count) }} shares
-                {% if my_reel_submission.featured %} &middot; <strong>featured on the home page</strong>{% endif %}
               </p>
             </div>
             {% else %}

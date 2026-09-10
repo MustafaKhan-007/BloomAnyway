@@ -2325,19 +2325,26 @@ class ReelReview(db.Model):
 class ReelSubmission(db.Model):
     """A Creator member's entry for the home page Reel of the Week.
 
-    One entry per user per week (``week_key`` = that Monday, Atlanta time).
+    One entry per member per round. A round is the wait for a pick: it opens
+    on Monday (``week_key`` = that Monday, Atlanta time) and again the moment
+    the owner features one, so the next spotlight is open to everybody rather
+    than to whoever hasn't entered yet. ``round_key`` counts them within the
+    week, from 0.
+
     Needs the Instagram link and the raw video, and the member states the
     share count — Instagram gives us no way to check it, so the owner sees
     the number and decides.
     """
     __tablename__ = "reel_submissions"
     __table_args__ = (
-        db.UniqueConstraint("user_id", "week_key", name="uq_reel_sub_user_week"),
+        db.UniqueConstraint("user_id", "week_key", "round_key",
+                            name="uq_reel_sub_user_round"),
     )
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
     week_key = db.Column(db.Date, nullable=False, index=True)
+    round_key = db.Column(db.Integer, nullable=False, default=0, index=True)
     reel_url = db.Column(db.String(500), nullable=False)
     share_count = db.Column(db.Integer, nullable=False, default=0)
     disk_name = db.Column(db.String(64))

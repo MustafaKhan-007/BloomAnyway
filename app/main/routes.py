@@ -2101,9 +2101,10 @@ def videos():
     my_reel = None
     week_key = reel_svc.current_week_key()
     week_reviews = reel_svc.published_reviews_for_week(week_key)
+    reel_round = rotw_svc.current_round(week_key)
     if can_reel:
         my_app = reel_svc.application_for(current_user.id, week_key)
-        my_reel = rotw_svc.submission_for(current_user.id, week_key)
+        my_reel = rotw_svc.submission_for(current_user.id, week_key, reel_round)
     return render_template(
         "main/videos.html", videos=items, tip_total=tip_total,
         can_browse=can_browse,
@@ -2111,6 +2112,8 @@ def videos():
         reviews=reviews, my_application=my_app, week_key=week_key,
         week_reviews=week_reviews, can_reel=can_reel,
         my_reel_submission=my_reel, min_shares=rotw_svc.MIN_SHARES,
+        reel_round=reel_round,
+        featured_reel=rotw_svc.featured_submission(week_key),
         reviews_per_week=reel_svc.REVIEWS_PER_WEEK,
         max_mb=current_app.config.get("REEL_RAW_MAX_MB", 100),
     )
@@ -2182,9 +2185,11 @@ def reel_of_week_submit():
         flash("Reel of the Week is a Creator perk.", "info")
         return redirect(url_for("main.membership"))
     week = rotw_svc.current_week_key()
-    if rotw_svc.submission_for(current_user.id, week):
-        flash("You've already entered a reel this week. "
-              "A fresh round opens every Monday.", "info")
+    reel_round = rotw_svc.current_round(week)
+    if rotw_svc.submission_for(current_user.id, week, reel_round):
+        flash("Your reel is already in for the next spotlight. "
+              "Entering opens again as soon as one is chosen, and every "
+              "Monday.", "info")
         return redirect(back)
 
     reel_url = (request.form.get("reel_url") or "").strip()[:500]
@@ -2217,6 +2222,7 @@ def reel_of_week_submit():
         flash(str(exc), "error")
         return redirect(back)
     row = ReelSubmission(user_id=current_user.id, week_key=week,
+                         round_key=reel_round,
                          reel_url=reel_url, share_count=shares,
                          disk_name=disk_name, filename=fname, mime=mime,
                          size=size)
@@ -2229,7 +2235,7 @@ def reel_of_week_submit():
         log.exception("reel of the week submission failed")
         flash("We couldn't save your entry just now — please try again.", "error")
         return redirect(back)
-    flash("Your reel is in the running for this week's spotlight.", "success")
+    flash("Your reel is in the running for the next spotlight.", "success")
     return redirect(back)
 
 

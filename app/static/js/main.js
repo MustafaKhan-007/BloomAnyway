@@ -1249,19 +1249,35 @@
       });
     }
 
-    /* Content Hub: reveal weekly draw only after Submit your reel */
-    var rotw = document.querySelector("[data-rotw-panel]");
-    if (rotw) {
-      document.querySelectorAll("[data-reveal-rotw]").forEach(function (el) {
-        el.addEventListener("click", function () {
-          if (!isHand()) return;
-          rotw.classList.add("is-revealed");
+    /* Content Hub: the weekly panels are folded away on a handheld, and the
+       card above opens the one it points at. Only the review panel used to
+       be wired up, so "Enter your reel" jumped to a Reel of the Week panel
+       that nothing ever unfolded — the tap did nothing at all. */
+    var openRotw = function (hash) {
+      if (!hash || hash.charAt(0) !== "#" || hash.length < 2) return null;
+      var panel = null;
+      // A hash typed in the address bar need not be a usable selector.
+      try {
+        panel = document.querySelector(hash + "[data-rotw-panel]");
+      } catch (err) {
+        return null;
+      }
+      if (panel) panel.classList.add("is-revealed");
+      return panel;
+    };
+    document.querySelectorAll("[data-reveal-rotw]").forEach(function (el) {
+      el.addEventListener("click", function () {
+        if (!isHand()) return;
+        var panel = openRotw(el.getAttribute("href"));
+        // The jump is decided while the panel is still folded away, so it
+        // lands short. Put it right once the panel is actually there.
+        if (!panel) return;
+        window.requestAnimationFrame(function () {
+          panel.scrollIntoView({ block: "start" });
         });
       });
-      if (window.location.hash === "#reel-review" && isHand()) {
-        rotw.classList.add("is-revealed");
-      }
-    }
+    });
+    if (isHand()) openRotw(window.location.hash);
   })();
 
   /* ---- client-side upload size guard (beats Cloudflare's blank 413) ---- */

@@ -1,8 +1,11 @@
 """Reel of the Week: member entries for the home page spotlight.
 
-Creator and Full Bloom members put forward one reel a week, provided it has
-picked up at least a hundred shares. The owner features one of them; Monday
-clears the rest. Weeks run on Atlanta's clock, same as reel reviews.
+Creator and Full Bloom members put forward one reel a round, provided it has
+picked up at least a hundred shares. A round is the wait for a pick: it opens
+on Monday and again the moment the owner features one, so the reel that goes
+up next week — or later the same week — is open to everybody rather than to
+whoever happened not to have entered yet. Weeks run on Atlanta's clock, same
+as reel reviews, and Monday clears the entries out.
 """
 import logging
 import time
@@ -13,12 +16,16 @@ from flask import current_app
 from ..extensions import db
 from ..models import ReelSubmission, utcnow
 from .reel_reviews import atlanta_today, is_instagram_reel_url, week_monday
-from .settings import set_setting
+from .settings import get_setting, set_setting
 
 log = logging.getLogger(__name__)
 
 #: a reel has to have travelled this far before it can be put forward
 MIN_SHARES = 100
+
+#: which week the round counter below belongs to, and how far it has got
+_ROUND_WEEK_KEY = "reel_round_week"
+_ROUND_NO_KEY = "reel_round_no"
 
 _SWEEP_GAP_SEC = 3600
 _last_sweep_mono = 0.0
@@ -27,12 +34,15 @@ __all__ = [
     "MIN_SHARES",
     "atlanta_today",
     "clear_featured",
+    "current_round",
     "current_week_key",
     "feature",
     "featured_submission",
     "is_instagram_reel_url",
     "maybe_sweep",
+    "open_next_round",
     "purge_old_submissions",
+    "round_submissions",
     "submission_for",
     "sweep_old_weeks",
     "week_submissions",
@@ -43,13 +53,47 @@ def current_week_key() -> date:
     return week_monday(atlanta_today())
 
 
-def submission_for(user_id: int, week: date | None = None) -> ReelSubmission | None:
+def current_round(week: date | None = None) -> int:
+    """Which round of this week is open — 0 until a reel has been featured.
+
+    Read-only: a new week starts at 0 by saying so rather than by writing
+    anything, so no page load has to be the one that notices Monday.
+    """
     week = week or current_week_key()
-    return ReelSubmission.query.filter_by(user_id=user_id, week_key=week).first()
+    if (get_setting(_ROUND_WEEK_KEY) or "") != week.isoformat():
+        return 0
+    try:
+        return max(0, int(get_setting(_ROUND_NO_KEY) or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def open_next_round(week: date | None = None) -> int:
+    """Close the round that just produced a pick and open the one after it."""
+    week = week or current_week_key()
+    nxt = current_round(week) + 1
+    set_setting(_ROUND_WEEK_KEY, week.isoformat())
+    set_setting(_ROUND_NO_KEY, str(nxt))
+    log.info("Reel of the week: round %s open for the week of %s.", nxt, week)
+    return nxt
+
+
+def submission_for(user_id: int, week: date | None = None,
+                   round_no: int | None = None) -> ReelSubmission | None:
+    """This member's entry in the round that is open (or one named)."""
+    week = week or current_week_key()
+    if round_no is None:
+        round_no = current_round(week)
+    return ReelSubmission.query.filter_by(
+        user_id=user_id, week_key=week, round_key=round_no).first()
 
 
 def week_submissions(week: date | None = None):
-    """This week's entries, the featured one first, then most shares."""
+    """Everything entered this week, the featured one first, then most shares.
+
+    Every round of it: the owner is choosing from what the week has brought
+    in, and an entry that lost one round is still a reel she can put up.
+    """
     week = week or current_week_key()
     return (ReelSubmission.query
             .filter_by(week_key=week)
@@ -59,6 +103,14 @@ def week_submissions(week: date | None = None):
             .all())
 
 
+def round_submissions(week: date | None = None, round_no: int | None = None):
+    """Just the entries waiting on the round that is open."""
+    week = week or current_week_key()
+    if round_no is None:
+        round_no = current_round(week)
+    return [row for row in week_submissions(week) if row.round_key == round_no]
+
+
 def featured_submission(week: date | None = None) -> ReelSubmission | None:
     week = week or current_week_key()
     return ReelSubmission.query.filter_by(week_key=week, featured=True).first()
@@ -66,6 +118,12 @@ def featured_submission(week: date | None = None) -> ReelSubmission | None:
 
 def feature(submission: ReelSubmission) -> None:
     """Put this entry on the home page, replacing whatever was there.
+
+    Choosing one ends the round it was entered in and opens the next, so
+    everybody can put a reel forward for the spotlight after this one — the
+    member who just won, and the ones who entered and didn't. Waiting for
+    Monday instead left the rest of the week closed to everybody who had
+    already had their go.
 
     The spotlight still reads from site settings, so featuring writes through
     to them — that keeps the hand-typed fallback working unchanged.
@@ -83,6 +141,8 @@ def feature(submission: ReelSubmission) -> None:
     if who:
         set_setting("reel_description", f"By {who} · {submission.share_count:,} shares")
     db.session.commit()
+    # Last, with the pick safely recorded: from here everybody may enter again.
+    open_next_round(submission.week_key)
 
 
 def clear_featured(week: date | None = None) -> None:
