@@ -214,6 +214,15 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="field">
           <label for="settings-tz">Show times in</label>
+          {# Six hundred zones is a long way to scroll on a phone. Hidden
+             until the script that makes it work is running. #}
+          <div class="tz-find" data-tz-find hidden>
+            <label class="visually-hidden" for="settings-tz-find">Find a timezone</label>
+            <input type="search" id="settings-tz-find" autocomplete="off"
+                   placeholder="Find a city, country or UTC offset"
+                   aria-controls="settings-tz">
+            <p class="field-help tz-find__count" data-tz-find-count role="status"></p>
+          </div>
           <select name="timezone" id="settings-tz">
             {% for group in tz_groups %}
             <optgroup label="{{ group.label }}">
