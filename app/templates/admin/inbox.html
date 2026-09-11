@@ -1,6 +1,18 @@
 {% extends "admin/base_admin.html" %}
 {% block title %}Inbox{% endblock %}
 
+{# Said out loud rather than left for somebody to notice: a section that is
+   only showing part of what it has is a page that looks finished and isn't. #}
+{% macro rest_of_it(section) -%}
+  {% set more = held_back.get(section, 0) %}
+  {% if more > 0 %}
+  <p class="field-help" style="margin: 10px 0 0;">
+    Newest first &mdash; {{ more }} older
+    {{ 'one is' if more == 1 else 'ones are' }} not on this page.
+  </p>
+  {% endif %}
+{%- endmacro %}
+
 {% block content %}
 <div class="studio-page">
   <div class="page-head">
@@ -12,18 +24,27 @@
         content reports, and peer-session flags in one place. Every owner is
         emailed a copy of each contact message as it arrives.
       </p>
+      <p class="field-help" style="margin: 6px 0 0; max-width: 62ch;">
+        The number on each tab is how many are still waiting on you. Replying
+        to one, or marking it reviewed, takes it off the count &mdash; it stays
+        on the tab, and under <strong>All</strong>, to read back later.
+      </p>
     </div>
   </div>
 
   <nav class="filter-tabs" style="margin: 0 0 24px;" aria-label="Inbox filters">
-    <a href="{{ url_for('admin.inbox', filter='all') }}" class="{{ 'active' if filter == 'all' }}">All</a>
+    <a href="{{ url_for('admin.inbox', filter='all') }}" class="{{ 'active' if filter == 'all' }}">All ({{ counts.waiting }})</a>
     <a href="{{ url_for('admin.inbox', filter='messages') }}" class="{{ 'active' if filter == 'messages' }}">Messages ({{ counts.messages }})</a>
     <a href="{{ url_for('admin.inbox', filter='feedback') }}" class="{{ 'active' if filter == 'feedback' }}">Feedback ({{ counts.feedback }})</a>
     <a href="{{ url_for('admin.inbox', filter='complaint') }}" class="{{ 'active' if filter == 'complaint' }}">Complaints ({{ counts.complaint }})</a>
     <a href="{{ url_for('admin.inbox', filter='error') }}" class="{{ 'active' if filter == 'error' }}">Error reports ({{ counts.error }})</a>
+    {# No number of its own: what is waiting under here is exactly what Open
+       holds, and the same figure twice in a row reads as two of something. #}
     <a href="{{ url_for('admin.inbox', filter='reports') }}" class="{{ 'active' if filter == 'reports' }}">Content reports</a>
     <a href="{{ url_for('admin.inbox', filter='open') }}" class="{{ 'active' if filter == 'open' }}">Open ({{ counts.reports_open }})</a>
-    <a href="{{ url_for('admin.inbox', filter='resolved') }}" class="{{ 'active' if filter == 'resolved' }}">Resolved ({{ counts.reports_resolved }})</a>
+    {# No number: everything under here has already been dealt with, so a
+       count of what is waiting would read (0) for good. #}
+    <a href="{{ url_for('admin.inbox', filter='resolved') }}" class="{{ 'active' if filter == 'resolved' }}">Resolved</a>
   </nav>
 
   {% if message_rows %}
@@ -60,6 +81,7 @@
         {% endfor %}
       </tbody>
     </table>
+    {{ rest_of_it('messages') }}
   </section>
   {% endif %}
 
@@ -103,6 +125,7 @@
         {% endfor %}
       </tbody>
     </table>
+    {{ rest_of_it('feedback') }}
   </section>
   {% endif %}
 
@@ -201,6 +224,7 @@
       </li>
       {% endfor %}
     </ul>
+    {{ rest_of_it('reports') }}
   </section>
   {% endif %}
 
