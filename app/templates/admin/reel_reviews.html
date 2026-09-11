@@ -5,12 +5,13 @@
 <div class="studio-page">
   <div class="page-head">
     <div>
-      <p class="eyebrow">One a day</p>
+      <p class="eyebrow">At your own pace</p>
       <h1>Reel reviews</h1>
       <p class="field-help" style="margin: 6px 0 0; max-width: 62ch;">
         {{ week_span(week_key) }} · today is
         {{ today.strftime('%A, %b %d') }} in Atlanta. Members enter one reel
-        each; you review <strong>one a day</strong>, seven over the week.
+        each; you publish <strong>as many as you like</strong>, whenever you
+        like &mdash; seven a week is the aim, not a limit.
         Monday starts a fresh round and clears whatever you didn't get to.
       </p>
     </div>
@@ -19,7 +20,11 @@
   <section class="admin-panel studio-card reel-week">
     <div class="reel-week__counts">
       <div class="reel-week__stat">
-        <span class="reel-week__n">{{ progress.done }}<span class="reel-week__of">/{{ progress.target }}</span></span>
+        {# The "/7" is there to pace a week that's still short of the aim.
+           Once the aim is met it comes off rather than turning into "9/7",
+           which reads as a number that has gone wrong rather than a good
+           week. #}
+        <span class="reel-week__n">{{ progress.done }}{% if progress.left %}<span class="reel-week__of">/{{ progress.aim }}</span>{% endif %}</span>
         <span class="reel-week__label">Reviewed this week</span>
       </div>
       <div class="reel-week__stat">
@@ -27,14 +32,15 @@
         <span class="reel-week__label">Still waiting</span>
       </div>
       <div class="reel-week__stat">
-        <span class="reel-week__n">{{ 'Done' if progress.today_done else 'Open' }}</span>
-        <span class="reel-week__label">Today</span>
+        <span class="reel-week__n">{{ progress.today }}</span>
+        <span class="reel-week__label">Out today</span>
       </div>
     </div>
-    {% if today_review %}
+    {% if today_reviews %}
     <p class="field-help" style="margin: 14px 0 0;">
-      Today's review is out: <strong>{{ today_review.title }}</strong>.
-      You can still edit it, but the next new one goes up tomorrow.
+      Out today:
+      {%- for r in today_reviews %} <strong>{{ r.title }}</strong>{{ "," if not loop.last }}{% endfor %}.
+      Publish another whenever you want one.
     </p>
     {% endif %}
   </section>
@@ -42,15 +48,11 @@
   <section class="admin-panel studio-card">
     <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
       <h2 style="margin:0;">This week's entries ({{ applicants|length }})</h2>
-      {% if not progress.today_done %}
       <form method="post" action="{{ url_for('admin.reel_reviews_pick') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button class="btn btn--primary btn--sm" type="submit"
                 {% if not progress.waiting %}disabled{% endif %}>Pick one at random</button>
       </form>
-      {% else %}
-      <span class="field-help" style="margin:0;">Today's review is done</span>
-      {% endif %}
     </div>
 
     {% if applicants %}
@@ -86,10 +88,6 @@
         {% if is_live %}
           <p class="field-help" style="margin: 12px 0 0;">
             Published as <strong>{{ a.review.title }}</strong>. Use Unpublish below to edit and republish.
-          </p>
-        {% elif progress.today_done %}
-          <p class="field-help" style="margin: 12px 0 0;">
-            Waiting — today's review is already out. This one can go up tomorrow.
           </p>
         {% else %}
         <details class="reel-applicant__fold"{% if a.selected %} open{% endif %}>

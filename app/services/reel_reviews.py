@@ -1,7 +1,8 @@
 """Weekly reel-review queue.
 
-Members enter one reel a week. Owners review one a day — seven over the week —
-and the slate is wiped every Monday so a fresh round starts clean.
+Members enter one reel a week. Owners work through the entries at whatever
+pace suits them — seven a week is the aim, not a ration — and the slate is
+wiped every Monday so a fresh round starts clean.
 
 Weeks and days run on Atlanta's clock, not the server's, so "Monday" and
 "today" mean the same thing to the owner wherever the box happens to live.
@@ -19,7 +20,9 @@ log = logging.getLogger(__name__)
 #: Atlanta is US Eastern; the zone handles daylight saving for us.
 ATLANTA_TZ = ZoneInfo("America/New_York")
 
-#: one review a day, so a full week is seven
+#: the week's aim, at a review a day. Nothing enforces it in either
+#: direction: an owner who has the time for nine puts out nine, and a quiet
+#: week stops wherever it stops.
 REVIEWS_PER_WEEK = 7
 
 
@@ -86,30 +89,34 @@ def published_reviews_for_week(week: date | None = None):
             .all())
 
 
-def review_on(day: date | None = None) -> ReelReview | None:
-    """The review already published on that Atlanta day, if any."""
+def reviews_on(day: date | None = None) -> list[ReelReview]:
+    """Everything published on that Atlanta day, newest first.
+
+    This used to answer "is the day's one review out yet?", and the Studio
+    refused a second while it was. Nothing is owed a day's wait, though —
+    somebody who sits down and gets through six of them has done six days of
+    good, not five days of queue-jumping. So the day is counted, not spent.
+    """
     day = day or atlanta_today()
     return (ReelReview.query
             .filter(ReelReview.review_date == day,
                     ReelReview.published.is_(True))
-            .first())
-
-
-def day_is_done(day: date | None = None) -> bool:
-    """True once today's one review has gone out."""
-    return review_on(day) is not None
+            .order_by(ReelReview.created_at.desc())
+            .all())
 
 
 def week_progress(week: date | None = None) -> dict:
-    """How far through the week's seven reviews the owner is."""
+    """How the week is going: what's out, what's waiting, what today holds."""
     week = week or current_week_key()
     done = len(published_reviews_for_week(week))
     return {
         "done": done,
-        "target": REVIEWS_PER_WEEK,
+        "aim": REVIEWS_PER_WEEK,
+        # How many more would reach the aim. Zero means the aim is met, not
+        # that the week is closed — there is always room for another.
         "left": max(0, REVIEWS_PER_WEEK - done),
         "waiting": len(waiting_applicants(week)),
-        "today_done": day_is_done(),
+        "today": len(reviews_on()),
     }
 
 

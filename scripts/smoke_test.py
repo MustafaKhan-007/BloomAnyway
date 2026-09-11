@@ -3489,9 +3489,19 @@ ok("Owner can pick a random entry to review",
    "is up next" in body)
 ok("The picked entry is highlighted at the top of the queue",
    "reel-applicant--winner" in body and "Up next" in body)
+def _week_stat(html, label):
+    """The figure under one of the Studio's week counters."""
+    for figure, name in re.findall(
+            r'reel-week__n">(.*?)</span>\s*'
+            r'<span class="reel-week__label">([^<]+)</span>', html, re.S):
+        if name.strip() == label:
+            return re.sub(r"<[^>]+>", "", figure).strip()
+    return ""
+
+
 ok("Studio counts the week's progress towards seven",
-   "0<span class=\"reel-week__of\">/7</span>" in body
-   and "Reviewed this week" in body)
+   _week_stat(body, "Reviewed this week") == "0/7",
+   f"got {_week_stat(body, 'Reviewed this week')!r}")
 ok("Entry card offers a single raw-video download",
    body.count("Download raw") == 1 and "Download raw video" not in body)
 with app.app_context():
@@ -3507,8 +3517,8 @@ r = admin.post(f"/admin/reel-reviews/{app_id}/publish", data={
 }, follow_redirects=True)
 ok("Owner can publish a reel review",
    "published to the Content Hub" in r.get_data(as_text=True))
-ok("Publishing says how many are left in the week's seven",
-   "6 left this week" in r.get_data(as_text=True))
+ok("Publishing says where the week has got to",
+   "1 of seven this week" in r.get_data(as_text=True))
 with app.app_context():
     pub = ReelReview.query.order_by(ReelReview.id.desc()).first()
     ok("A published review is stamped with the Atlanta day it went out",
@@ -3623,18 +3633,15 @@ with app.app_context():
     db.session.commit()
 r = admin.get("/admin/reel-reviews")
 abody = r.get_data(as_text=True)
-ok("Studio closes the publish UI once today's review is out",
-   "Today's review is done" in abody
-   and "Write &amp; publish review" not in abody
-   and "Write & publish review" not in abody)
-ok("Studio shows one of seven done for the week",
-   "1<span class=\"reel-week__of\">/7</span>" in abody)
-r = admin.post("/admin/reel-reviews/pick", follow_redirects=True)
-ok("Picking again is blocked once today's review is out",
-   "one a day" in r.get_data(as_text=True).lower())
+ok("Studio names what has gone out today",
+   "Out today:" in abody and "Loved your pacing" in abody)
+ok("Studio shows one of the week's seven done",
+   _week_stat(abody, "Reviewed this week") == "1/7",
+   f"got {_week_stat(abody, 'Reviewed this week')!r}")
 
-# a second member can still enter while today's review is live — the daily cap
-# is the owner's, not theirs
+# A second member enters while today's review is already live. Nothing about
+# the day has been used up by the first: the owner gets through as many as she
+# has the time for, and the members' one-a-week was never the same rule.
 creator2 = app.test_client()
 sent_codes.clear()
 creator2.post("/register", data={"email": "reeler2@example.com", "password": USER_PW,
@@ -3655,21 +3662,80 @@ ok("Another member can still enter while today's review is live",
 with app.app_context():
     other_id = (ReelReviewApplication.query
                 .filter_by(user_id=u2_id).first().id)
+
+abody = admin.get("/admin/reel-reviews").get_data(as_text=True)
+ok("A waiting entry can still be written up today",
+   "Write &amp; publish review" in abody or "Write & publish review" in abody)
+r = admin.post("/admin/reel-reviews/pick", follow_redirects=True)
+ok("And drawing one at random isn't spent for the day either",
+   "is up next" in r.get_data(as_text=True))
 r = admin.post(f"/admin/reel-reviews/{other_id}/publish", data={
-    "title": "Second one today", "body": "Should not go out yet.",
+    "title": "Second one today", "body": "Straight after the first.",
 }, follow_redirects=True)
-ok("A second review on the same day is refused",
-   "one a day" in r.get_data(as_text=True).lower())
+ok("A second review on the same day goes out",
+   "published to the Content Hub" in r.get_data(as_text=True))
 with app.app_context():
-    ok("The refused second review was never created",
-       ReelReview.query.filter_by(application_id=other_id).count() == 0)
+    _second = ReelReview.query.filter_by(application_id=other_id).first()
+    ok("And it is really there", _second is not None)
+    ok("Both of the day's reviews are counted, not only the first",
+       len(reel_svc.reviews_on()) == 2)
+    _second_id = _second.id
+abody = admin.get("/admin/reel-reviews").get_data(as_text=True)
+ok("Studio counts two out today rather than calling the day done",
+   _week_stat(abody, "Out today") == "2",
+   f"got {_week_stat(abody, 'Out today')!r}")
 
 r = client.get("/watch")
 cbody = r.get_data(as_text=True)
 ok("Published reel reviews show on Content Hub for Creator members",
    "Loved your pacing" in cbody)
 ok("Content Hub counts the week's reviews rather than closing the round",
-   "of 7 reviewed" in cbody and "Hang tight" not in cbody)
+   "2 reviewed" in cbody and "Hang tight" not in cbody)
+ok("And doesn't hold them to a number they can go past",
+   "of 7 reviewed" not in cbody)
+
+# Past the week's seven, which is an aim rather than a ration. Six more go
+# out on top of the two already up.
+with app.app_context():
+    _spree = []
+    for _n in range(6):
+        _u = User(email=f"spree{_n}@example.com", membership="creator",
+                  email_verified_at=utcnow())
+        _u.set_password(USER_PW)
+        db.session.add(_u)
+        db.session.flush()
+        _app_row = ReelReviewApplication(
+            user_id=_u.id, week_key=reel_svc.current_week_key(),
+            reel_url=f"https://www.instagram.com/reel/SPREE{_n}/", size=1)
+        db.session.add(_app_row)
+        db.session.flush()
+        db.session.add(ReelReview(application_id=_app_row.id,
+                                  title=f"Spree review {_n}", body="Good.",
+                                  published=True,
+                                  review_date=reel_svc.atlanta_today()))
+        _spree.append((_u.id, _app_row.id))
+    db.session.commit()
+    ok("Eight in a week is allowed, and counted as eight",
+       reel_svc.week_progress()["done"] == 8)
+abody = admin.get("/admin/reel-reviews").get_data(as_text=True)
+ok("Past the aim the counter drops the /7 instead of reading 8/7",
+   _week_stat(abody, "Reviewed this week") == "8",
+   f"got {_week_stat(abody, 'Reviewed this week')!r}")
+ok("And the week is still open for another",
+   "Pick one at random" in abody)
+with app.app_context():
+    for _uid, _aid in _spree:
+        db.session.delete(db.session.get(ReelReviewApplication, _aid))
+        db.session.delete(db.session.get(User, _uid))
+    db.session.commit()
+
+# Back to one review and one entry waiting, which is what the Monday
+# clear-out further down is written against.
+r = admin.post(f"/admin/reel-reviews/review/{_second_id}/delete",
+               follow_redirects=True)
+with app.app_context():
+    ok("Deleting the second puts its entry back in the queue",
+       db.session.get(ReelReviewApplication, other_id).review is None)
 
 # the review opens on its own page: full write-up + a properly sized player
 long_review = ("Your hook lands inside the first second and the caption carries "
@@ -3683,7 +3749,7 @@ r = admin.post(f"/admin/reel-reviews/{app_id}/publish", data={
 ok("Owner can attach a video to a published review",
    "published to the Content Hub" in r.get_data(as_text=True))
 with app.app_context():
-    rev_row = ReelReview.query.order_by(ReelReview.id.desc()).first()
+    rev_row = ReelReview.query.filter_by(application_id=app_id).first()
     review_id = rev_row.id
     ok("Review video is stored for playback", bool(rev_row.review_disk_name))
 
@@ -3955,8 +4021,8 @@ with app.app_context():
     back = db.session.get(ReelReviewApplication, doomed_app_id)
     ok("The member's entry survives and is waiting again",
        back is not None and back.selected is False and back.review is None)
-    ok("Today's slot frees up once the review is deleted",
-       reel_svc.day_is_done() is False)
+    ok("Nothing is left out today once the review is deleted",
+       reel_svc.reviews_on() == [])
 ok("The deleted review's page is gone",
    client.get(f"/watch/reviews/{review_id}").status_code == 404)
 ok("Studio no longer lists the deleted review",

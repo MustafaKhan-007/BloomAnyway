@@ -2172,7 +2172,7 @@ def reel_review_request():
         log.exception("reel review application failed")
         flash("We couldn't save your entry just now — please try again.", "error")
         return redirect(url_for("main.videos") + "#reviews")
-    flash("Your reel is in for this week. Reviews go up one a day — "
+    flash("Your reel is in for this week. Reviews go up through the week — "
           "keep an eye on the Content Hub.", "success")
     return redirect(url_for("main.videos") + "#reviews")
 

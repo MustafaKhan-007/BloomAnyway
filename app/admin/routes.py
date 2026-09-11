@@ -3669,17 +3669,13 @@ def reel_reviews():
                            reviews=published,
                            progress=reel_svc.week_progress(week),
                            today=reel_svc.atlanta_today(),
-                           today_review=reel_svc.review_on(),
+                           today_reviews=reel_svc.reviews_on(),
                            max_mb=current_app.config["MAX_VIDEO_MB"])
 
 
 @bp.route("/reel-reviews/pick", methods=["POST"])
 @admin_required
 def reel_reviews_pick():
-    if reel_svc.day_is_done():
-        flash("Today's review is already out — one a day. "
-              "The next one can go up tomorrow.", "info")
-        return redirect(url_for("admin.reel_reviews"))
     chosen = reel_svc.pick_random_applicant()
     if chosen is None:
         flash("Every entry this week has been reviewed already.", "info")
@@ -3732,12 +3728,6 @@ def reel_reviews_raw_download(app_id):
 def reel_reviews_publish(app_id):
     application = db.session.get(ReelReviewApplication, app_id) or abort(404)
     today = reel_svc.atlanta_today()
-    already = reel_svc.review_on(today)
-    # Editing the one that already went out today is fine; a second is not.
-    if already and (application.review is None or already.id != application.review.id):
-        flash("A review already went out today — one a day. "
-              "The next one can go up tomorrow.", "error")
-        return redirect(url_for("admin.reel_reviews"))
     title = (request.form.get("title") or "").strip()[:160]
     body = (request.form.get("body") or "").strip()
     if not title:
@@ -3777,8 +3767,10 @@ def reel_reviews_publish(app_id):
         exclude_id=current_user.id,
     )
     db.session.commit()
-    left = reel_svc.week_progress(application.week_key)["left"]
-    tail = f" {left} left this week." if left else " That's all seven this week."
+    week = reel_svc.week_progress(application.week_key)
+    # Where the week has got to, rather than what is left of an allowance.
+    tail = (f" {week['done']} of seven this week." if week["left"]
+            else f" That's {week['done']} this week.")
     flash("Reel review published to the Content Hub." + _told_suffix(told) + tail,
           "success")
     return redirect(url_for("admin.reel_reviews"))
@@ -3798,18 +3790,12 @@ def reel_reviews_unpublish(review_id):
 @bp.route("/reel-reviews/review/<int:review_id>/publish", methods=["POST"])
 @admin_required
 def reel_reviews_republish(review_id):
-    """Put a hidden review back, as long as today's slot is free."""
+    """Put a hidden review back on the Content Hub."""
     review = db.session.get(ReelReview, review_id) or abort(404)
     if review.published:
         return redirect(url_for("admin.reel_reviews"))
-    today = reel_svc.atlanta_today()
-    already = reel_svc.review_on(today)
-    if already and already.id != review.id:
-        flash("A review already went out today — one a day. "
-              "This one can go back up tomorrow.", "error")
-        return redirect(url_for("admin.reel_reviews"))
     review.published = True
-    review.review_date = today
+    review.review_date = reel_svc.atlanta_today()
     db.session.commit()
     flash("Review is live on the Content Hub again.", "success")
     return redirect(url_for("admin.reel_reviews"))
