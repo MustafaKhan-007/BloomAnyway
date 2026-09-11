@@ -6402,6 +6402,87 @@ ok("Studio inbox resolved shows auto reason",
    r.status_code == 200 and (b"Hostile" in r.data or b"Blocked" in r.data
                              or b"auto-hidden" in r.data))
 
+# "All" has to mean all. One shared cap across the kinds meant the loudest of
+# them pushed the rest off the page, and star ratings are far and away the
+# most common thing left on a site — so what quietly went missing from All
+# was the complaints and the error reports, the two waiting on an answer.
+from app.admin.routes import INBOX_PER_KIND as _CAP  # noqa: E402
+
+with app.app_context():
+    _drowning = [SiteFeedback(kind="feedback", stars=5, body=f"Star note {i}",
+                              page_path="/", status="reviewed",
+                              created_at=utcnow() + timedelta(minutes=i + 1))
+                 for i in range(_CAP)]
+    db.session.add_all(_drowning)
+    db.session.commit()
+    _flood_ids = [row.id for row in _drowning]
+_all_body = admin.get("/admin/inbox").get_data(as_text=True)
+ok("A pile of star ratings can't push the complaints off All",
+   "Checkout felt" in _all_body, "the complaint was crowded out")
+ok("Nor the error reports", "huge video" in _all_body)
+ok("And the newest star ratings are still there too",
+   f"Star note {_CAP - 1}" in _all_body)
+ok("A section holding older ones back says so instead of looking complete",
+   "not on this page" in _all_body,
+   "the page looked complete while holding rows back")
+with app.app_context():
+    for _fid in _flood_ids:
+        db.session.delete(db.session.get(SiteFeedback, _fid))
+    db.session.commit()
+
+
+def _chip(html, label):
+    """What the filter tab for ``label`` reads, brackets and all."""
+    nav = html.split('aria-label="Inbox filters"', 1)[-1].split("</nav>", 1)[0]
+    for chip in re.findall(r">([^<>]+)</a>", nav):
+        if chip.strip().startswith(label):
+            return chip.strip()
+    return ""
+
+
+def _inbox_waiting():
+    """Everything anywhere in the inbox that nobody has dealt with yet."""
+    from app.models import ContentReport as _CR
+    with app.app_context():
+        return (_CM.query.filter_by(status="new").count()
+                + SiteFeedback.query.filter_by(status="new").count()
+                + _CR.query.filter_by(status="open").count())
+
+
+# A number that only ever grows says nothing about whether there is anything
+# to do. Every one of these is what is still waiting, so a tab reading 36 when
+# all 36 were answered weeks ago can't happen.
+with app.app_context():
+    _waiting_cx = SiteFeedback.query.filter_by(kind="complaint",
+                                               status="new").count()
+    _all_cx = SiteFeedback.query.filter_by(kind="complaint").count()
+    ok("There are answered complaints as well as waiting ones, to tell apart",
+       _all_cx > _waiting_cx, f"{_waiting_cx} of {_all_cx}")
+_nav = admin.get("/admin/inbox").get_data(as_text=True)
+ok("The complaints tab counts the ones still waiting, not every one there is",
+   _chip(_nav, "Complaints") == f"Complaints ({_waiting_cx})",
+   f"got {_chip(_nav, 'Complaints')!r}, {_all_cx} exist")
+ok("Resolved carries no number, since nothing under it is waiting",
+   _chip(_nav, "Resolved") == "Resolved")
+
+with app.app_context():
+    _next_cx = SiteFeedback.query.filter_by(kind="complaint",
+                                            status="new").first()
+    _next_cx_id, _next_cx_body = _next_cx.id, _next_cx.body
+r = admin.post(f"/admin/inbox/feedback/{_next_cx_id}/reviewed",
+               data={"filter": "complaint"}, follow_redirects=True)
+_nav = admin.get("/admin/inbox").get_data(as_text=True)
+ok("Marking one reviewed takes it off the count",
+   _chip(_nav, "Complaints") == f"Complaints ({_waiting_cx - 1})",
+   f"got {_chip(_nav, 'Complaints')!r}")
+ok("But leaves it on the page to read back",
+   _next_cx_body in _nav
+   and _next_cx_body in admin.get(
+       "/admin/inbox?filter=complaint").get_data(as_text=True))
+ok("All counts everything waiting across the whole inbox",
+   _chip(_nav, "All") == f"All ({_inbox_waiting()})",
+   f"got {_chip(_nav, 'All')!r}, want {_inbox_waiting()}")
+
 rep_client = app.test_client()
 rep_client.post("/login", data={"email": "reporter-user@example.com", "password": USER_PW})
 r = rep_client.get(f"/forums/p/{clean_id}")

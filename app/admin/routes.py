@@ -19,7 +19,7 @@ from sqlalchemy.orm import joinedload
 
 from ..extensions import db
 from ..models import (Announcement, ContactMessage, ContentReport, DRIP_MODES,
-                      FaqItem, ForumComment,
+                      FEEDBACK_KINDS, FaqItem, ForumComment,
                       ForumPost, MEMBERSHIPS, MEMBERSHIP_LABELS, MarketplaceListing,
                       MembershipPlan,
                       PRODUCT_KINDS,
@@ -3086,6 +3086,22 @@ def badges():
 
 # ============================ FEEDBACK INBOX =================================
 
+#: How many of any one kind the page will draw. A cap keeps a long-running
+#: inbox from rendering thousands of rows, but it is applied per kind rather
+#: than to the page as a whole: one shared limit meant the loudest kind
+#: pushed the others off "All" entirely. Star ratings are far and away the
+#: most common thing left on a site, so what went missing was the complaints
+#: and error reports — the two that are actually waiting on an answer.
+INBOX_PER_KIND = 100
+
+
+def _newest_first(*groups):
+    """One list, newest first, out of several already-sorted groups."""
+    merged = [row for group in groups for row in group]
+    merged.sort(key=lambda row: row.created_at, reverse=True)
+    return merged
+
+
 @bp.route("/inbox")
 @admin_required
 def inbox():
@@ -3096,11 +3112,12 @@ def inbox():
     if filt not in allowed:
         filt = "all"
 
+    show_messages = filt in ("all", "messages")
     message_rows = []
-    if filt in ("all", "messages"):
+    if show_messages:
         message_rows = (ContactMessage.query
                         .order_by(ContactMessage.created_at.desc())
-                        .limit(100).all())
+                        .limit(INBOX_PER_KIND).all())
 
     feedback_q = (SiteFeedback.query.options(joinedload(SiteFeedback.author))
                   .order_by(SiteFeedback.created_at.desc()))
@@ -3111,20 +3128,47 @@ def inbox():
     show_reports = filt in ("all", "reports", "open", "resolved")
 
     feedback_rows = []
-    if show_feedback:
-        q = feedback_q
-        if filt in ("feedback", "complaint", "error"):
-            q = q.filter_by(kind=filt)
-        feedback_rows = q.limit(100).all()
+    if filt in ("feedback", "complaint", "error"):
+        feedback_rows = feedback_q.filter_by(kind=filt).limit(INBOX_PER_KIND).all()
+    elif show_feedback:
+        feedback_rows = _newest_first(*(
+            feedback_q.filter_by(kind=kind).limit(INBOX_PER_KIND).all()
+            for kind in FEEDBACK_KINDS))
 
+    settled = ("resolved", "dismissed")
     report_rows = []
+    if filt == "open":
+        report_rows = reports_q.filter_by(status="open").limit(INBOX_PER_KIND).all()
+    elif filt == "resolved":
+        report_rows = (reports_q.filter(ContentReport.status.in_(settled))
+                       .limit(INBOX_PER_KIND).all())
+    elif show_reports:
+        # Same reasoning as the feedback kinds: a pile of settled reports must
+        # not be able to hide an open one that nobody has looked at.
+        report_rows = _newest_first(
+            reports_q.filter_by(status="open").limit(INBOX_PER_KIND).all(),
+            reports_q.filter(ContentReport.status.in_(settled))
+            .limit(INBOX_PER_KIND).all())
+
+    # A cap that keeps quiet about itself is the same bug as the one above,
+    # wearing a hat: the page looks complete and isn't. Each section says so
+    # when it is holding something back, so "this is everything" is only ever
+    # claimed when it's true.
+    held_back = {}
+    if show_messages:
+        held_back["messages"] = ContactMessage.query.count() - len(message_rows)
+    if show_feedback:
+        total = SiteFeedback.query
+        if filt in FEEDBACK_KINDS:
+            total = total.filter_by(kind=filt)
+        held_back["feedback"] = total.count() - len(feedback_rows)
     if show_reports:
-        q = reports_q
+        total = ContentReport.query
         if filt == "open":
-            q = q.filter_by(status="open")
+            total = total.filter_by(status="open")
         elif filt == "resolved":
-            q = q.filter(ContentReport.status.in_(("resolved", "dismissed")))
-        report_rows = q.limit(100).all()
+            total = total.filter(ContentReport.status.in_(settled))
+        held_back["reports"] = total.count() - len(report_rows)
 
     # Attach target snippets for studio display
     enriched = []
@@ -3151,18 +3195,30 @@ def inbox():
                 snippet = " · ".join(bits)
         enriched.append({"report": r, "target": target, "snippet": snippet})
 
+    # Every number on this page is what is still waiting, not how much has
+    # ever come in. A total only ever grows, so it says nothing about whether
+    # there is anything to do — and a tab reading 36 when all 36 were answered
+    # weeks ago is a tab nobody trusts. Replying marks a thing reviewed, so
+    # both ways of dealing with one take it off the count.
+    waiting_feedback = dict(
+        db.session.query(SiteFeedback.kind, func.count(SiteFeedback.id))
+        .filter(SiteFeedback.status == "new")
+        .group_by(SiteFeedback.kind).all())
     counts = {
         "messages": ContactMessage.query.filter_by(status="new").count(),
-        "feedback": SiteFeedback.query.filter_by(kind="feedback").count(),
-        "complaint": SiteFeedback.query.filter_by(kind="complaint").count(),
-        "error": SiteFeedback.query.filter_by(kind="error").count(),
+        "feedback": waiting_feedback.get("feedback", 0),
+        "complaint": waiting_feedback.get("complaint", 0),
+        "error": waiting_feedback.get("error", 0),
         "reports_open": ContentReport.query.filter_by(status="open").count(),
-        "reports_resolved": ContentReport.query.filter(
-            ContentReport.status.in_(("resolved", "dismissed"))).count(),
     }
+    # The one number for "is my inbox clear?", which is the question the page
+    # gets opened to answer.
+    counts["waiting"] = (counts["messages"] + sum(waiting_feedback.values())
+                         + counts["reports_open"])
     return render_template(
         "admin/inbox.html", filter=filt, feedback_rows=feedback_rows,
         report_rows=enriched, message_rows=message_rows, counts=counts,
+        held_back=held_back,
         reply_to={row.id: feedback_reply_to(row) for row in feedback_rows},
     )
 
