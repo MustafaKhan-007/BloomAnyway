@@ -12,9 +12,8 @@ from ..models import MarketplaceListing, ReelReview, Video, utcnow
 #: so an afternoon reel review doesn't cut a morning tip's day short.
 DROP_HOURS = 24
 
-#: Most cards the hero strip will carry at once, newest first. Reel reviews are
-#: capped at one a day and tips are published by hand, so this is headroom
-#: rather than a limit anyone should meet.
+#: Most cards the hero strip will carry at once, newest first. Reviews go out
+#: as fast as they get written, so a busy afternoon can reach this.
 MAX_DROPS = 4
 
 
@@ -25,32 +24,40 @@ def content_hub_drops(limit: int = MAX_DROPS) -> list[dict]:
     leaves 24 hours after it went up rather than when the newest one does.
     """
     since = utcnow() - timedelta(hours=DROP_HOURS)
-    drops = []
-    for tip in (Video.query
-                .filter(Video.published.is_(True), Video.created_at >= since)
-                .order_by(Video.created_at.desc())
-                .limit(limit).all()):
-        drops.append({
-            "kind": "tip",
-            "label": "New in the Content Hub",
-            "title": tip.title,
-            "at": tip.created_at,
-            "url": url_for("main.watch", video_id=tip.id),
-        })
-    for review in (ReelReview.query
-                   .filter(ReelReview.published.is_(True),
-                           ReelReview.created_at >= since)
-                   .order_by(ReelReview.created_at.desc())
-                   .limit(limit).all()):
-        drops.append({
-            "kind": "reel",
-            "label": "New reel review",
-            "title": review.title,
-            "at": review.created_at,
-            "url": url_for("main.reel_review", review_id=review.id),
-        })
-    drops.sort(key=lambda drop: drop["at"], reverse=True)
-    return drops[:limit]
+    tips = [{
+        "kind": "tip",
+        "label": "New in the Content Hub",
+        "title": tip.title,
+        "at": tip.created_at,
+        "url": url_for("main.watch", video_id=tip.id),
+    } for tip in (Video.query
+                  .filter(Video.published.is_(True), Video.created_at >= since)
+                  .order_by(Video.created_at.desc())
+                  .limit(limit).all())]
+    reviews = [{
+        "kind": "reel",
+        "label": "New reel review",
+        "title": review.title,
+        "at": review.created_at,
+        "url": url_for("main.reel_review", review_id=review.id),
+    } for review in (ReelReview.query
+                     .filter(ReelReview.published.is_(True),
+                             ReelReview.created_at >= since)
+                     .order_by(ReelReview.created_at.desc())
+                     .limit(limit).all())]
+
+    # The newest of each kind takes its place before the rest compete for what
+    # is left over. Nothing rations reviews any more, so an afternoon spent
+    # writing five of them would otherwise fill the strip on its own and take
+    # the day's written tip off the home page altogether.
+    kept = [group[0] for group in (tips, reviews) if group]
+    for drop in sorted(tips[1:] + reviews[1:],
+                       key=lambda drop: drop["at"], reverse=True):
+        if len(kept) >= limit:
+            break
+        kept.append(drop)
+    kept.sort(key=lambda drop: drop["at"], reverse=True)
+    return kept[:limit]
 
 
 def content_hub_groups(limit: int = MAX_DROPS) -> list[dict]:

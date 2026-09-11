@@ -2262,7 +2262,8 @@ class ReelReviewApplication(db.Model):
     """A Creator member's weekly request for a reel review.
 
     One entry per user per week (``week_key`` = that Monday, Atlanta time).
-    Owners review one entry a day; Monday clears whatever wasn't reached.
+    Owners get through as many as they like; Monday clears whatever wasn't
+    reached.
     """
     __tablename__ = "reel_review_applications"
     __table_args__ = (
@@ -2304,7 +2305,7 @@ class ReelReview(db.Model):
     review_mime = db.Column(db.String(120))
     review_filename = db.Column(db.String(255))
     published = db.Column(db.Boolean, nullable=False, default=True)
-    #: the Atlanta day this went out, so one a day can be enforced and counted
+    #: the Atlanta day this went out, so a day's worth can be counted
     review_date = db.Column(db.Date, index=True)
     created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
 
