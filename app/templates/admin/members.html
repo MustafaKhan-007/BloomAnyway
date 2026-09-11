@@ -23,8 +23,16 @@
       </form>
       <a class="btn btn--secondary btn--sm"
          href="{{ url_for('admin.members_audit', membership=membership_filter or none) }}">Where tiers come from</a>
+      {# The export takes the tier and the search along with it, so the button
+         says which list it is about to hand over. Nothing here used to admit
+         that, and "Export emails" on the Creator tab reads like all of them. #}
       <a class="btn btn--secondary btn--sm"
-         href="{{ url_for('admin.members_export_csv', q=q or none, membership=membership_filter or none) }}">Export emails (CSV)</a>
+         href="{{ url_for('admin.members_export_csv', q=q or none, membership=membership_filter or none) }}">
+        {%- if q %}Export these results (CSV)
+        {%- elif membership_filter %}Export {{ membership_labels.get(membership_filter, membership_filter) }} emails (CSV)
+        {%- else %}Export emails (CSV)
+        {%- endif -%}
+      </a>
     </div>
   </div>
 

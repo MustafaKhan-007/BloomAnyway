@@ -3279,6 +3279,52 @@ csv_body = admin.get("/admin/members/export.csv").get_data(as_text=True)
 ok("Stand-ins are left out of the email export",
    "demo.invalid" not in csv_body and "quietmaya" not in csv_body)
 
+# What the export hands over is whatever the members page was showing at the
+# time — the tier chip and the search box both come along for the ride.
+import csv as _csv
+
+
+def _export(**params):
+    """The export as a list of rows, plus the name it downloads under."""
+    resp = admin.get("/admin/members/export.csv", query_string=params)
+    rows = list(_csv.reader(io.StringIO(resp.get_data(as_text=True).lstrip("\ufeff"))))
+    return resp, rows[1:]
+
+
+_r, _all_rows = _export()
+_r, _creator_rows = _export(membership="creator")
+ok("Export follows the tier the page is on",
+   _creator_rows and all(row[4] == "Creator" for row in _creator_rows),
+   f"tiers in the file: {sorted({row[4] for row in _creator_rows})}")
+ok("A tier's export is a cut of the whole list, not the whole list",
+   len(_creator_rows) < len(_all_rows),
+   f"{len(_creator_rows)} of {len(_all_rows)}")
+ok("The file says which tier it holds",
+   "bloom-anyway-creator-" in _r.headers.get("Content-Disposition", ""),
+   _r.headers.get("Content-Disposition"))
+
+_needle = _creator_rows[0][0].split("@")[0]
+_r, _searched = _export(membership="creator", q=_needle)
+ok("Export carries the search box too",
+   _searched and len(_searched) < len(_all_rows)
+   and all(_needle in row[0].lower() or _needle in row[3].lower()
+           for row in _searched),
+   f"{len(_searched)} row(s) for {_needle!r}")
+ok("A searched export is named apart from the whole tier",
+   "creator-search-" in _r.headers.get("Content-Disposition", ""),
+   _r.headers.get("Content-Disposition"))
+
+_r, _bogus = _export(membership="nonsense")
+ok("A tier nobody has exports everyone rather than nobody",
+   len(_bogus) == len(_all_rows))
+
+r = admin.get("/admin/members?membership=full_bloom")
+ok("The export button on a tier tab says which tier",
+   "Export Full Bloom emails (CSV)" in r.get_data(as_text=True))
+r = admin.get("/admin/members")
+ok("The export button with nothing filtered stays plain",
+   "Export emails (CSV)" in r.get_data(as_text=True))
+
 r = admin.get("/admin/members")
 ok("Studio marks a stand-in in the members list",
    "stand-in" in r.get_data(as_text=True)

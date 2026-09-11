@@ -2684,9 +2684,17 @@ def members_export_csv():
         joined = m.created_at.strftime("%Y-%m-%d") if m.created_at else ""
         rows.append([email, first, last, name, tier, joined])
 
+    # Whatever the page was showing is what comes down, so the file says which
+    # that was. Exporting Creator and then Free used to hand you two files
+    # called the same thing, and nothing in either one told them apart.
+    scope = "members"
+    if membership in MEMBERSHIPS:
+        scope = MEMBERSHIP_LABELS[membership].lower().replace(" ", "-")
+    if q:
+        scope += "-search"
     stamp = utcnow().strftime("%Y%m%d")
     return _csv_response(
-        f"bloom-anyway-members-{stamp}.csv",
+        f"bloom-anyway-{scope}-{stamp}.csv",
         ["Email", "First Name", "Last Name", "Full Name", "Membership", "Joined"],
         rows,
     )
