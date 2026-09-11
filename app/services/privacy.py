@@ -253,14 +253,8 @@ def _detach_and_purge_user_rows(user: User, *, tombstone_id: int) -> None:
 
     # Reel of the Week entries go entirely — a featured reel already lives in
     # site settings, so nothing on the home page depends on the row.
-    for entry in ReelSubmission.query.filter_by(user_id=uid).all():
-        if entry.disk_name:
-            try:
-                from . import reel_uploads
-                reel_uploads.delete(entry.disk_name)
-            except Exception:
-                log.exception("close_account: could not remove reel upload")
-        db.session.delete(entry)
+    ReelSubmission.query.filter_by(user_id=uid).delete(
+        synchronize_session=False)
 
     # Nullable analytics / feedback links.
     ShopPurchase.query.filter_by(user_id=uid).update(

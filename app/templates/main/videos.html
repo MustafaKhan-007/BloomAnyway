@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Content Hub — {{ site.site_title }}{% endblock %}
 
-{# Both entry forms take a raw video, and a raw phone export is routinely
-   bigger than one request may carry, so both send it up in slices first. #}
+{# A review request takes a raw video, and a raw phone export is routinely
+   bigger than one request may carry, so it goes up in slices first. #}
 {% macro reel_upload_attrs() -%}
 data-reel-upload
   data-upload-begin="{{ url_for('main.reel_upload_begin') }}"
@@ -216,7 +216,7 @@ data-reel-upload
           <h2>Reel of the Week</h2>
           <ul>
             <li>For reels with <strong>{{ min_shares }} shares or more</strong></li>
-            <li>Send the Instagram link + the raw video</li>
+            <li>Send the Instagram link and the share count</li>
             <li><strong>One reel each per round</strong></li>
             <li>The moment one is chosen, entering opens again for the next</li>
           </ul>
@@ -246,11 +246,11 @@ data-reel-upload
               </p>
             </div>
             {% else %}
-            <form class="stack-form" method="post" action="{{ url_for('main.reel_of_week_submit') }}"
-                  enctype="multipart/form-data"
-                  data-max-upload-mb="{{ max_mb }}"
-                  data-max-upload-input="raw_video"
-                  {{ reel_upload_attrs() }}>
+            {# The link and the number, nothing else. This reel is already
+               posted and doing well — the point is the one on Instagram, so
+               asking for the file it was cut from was asking for a big
+               upload that nobody was ever going to watch. #}
+            <form class="stack-form" method="post" action="{{ url_for('main.reel_of_week_submit') }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <h3>Enter Reel of the Week</h3>
               <label>Instagram reel link
@@ -262,16 +262,10 @@ data-reel-upload
                        placeholder="{{ min_shares }}">
               </label>
               <p class="field-help">From your Instagram insights. {{ min_shares }} minimum.</p>
-              <label>Raw video file
-                <input type="file" name="raw_video" accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm" required>
-              </label>
-              <p class="field-help">Up to {{ max_upload_label }} (MP4, MOV or WEBM).</p>
-              <ul class="chunk-up__list" data-reel-progress hidden></ul>
               <label class="checkline">
                 <input type="checkbox" name="confirm_shares" value="1" required>
                 <span>That share count is accurate.</span>
               </label>
-              <p class="field-help flash flash--error" data-upload-error hidden role="alert"></p>
               <button class="btn btn--primary" type="submit">Enter my reel</button>
             </form>
             {% endif %}

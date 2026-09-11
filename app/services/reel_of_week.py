@@ -153,26 +153,21 @@ def clear_featured(week: date | None = None) -> None:
 
 
 def purge_old_submissions(before: date | None = None) -> int:
-    """Drop entries from finished weeks and their raw uploads.
+    """Drop entries from finished weeks.
 
     The featured reel already lives in site settings by then, so nothing on
-    the home page depends on these rows surviving.
+    the home page depends on these rows surviving. An entry is a link and a
+    number, so there is nothing on the disk to go with it.
     """
     before = before or current_week_key()
-    stale = (ReelSubmission.query
-             .filter(ReelSubmission.week_key < before)
-             .all())
-    if not stale:
+    dropped = (ReelSubmission.query
+               .filter(ReelSubmission.week_key < before)
+               .delete(synchronize_session=False))
+    if not dropped:
         return 0
-    from . import reel_uploads
-
-    for row in stale:
-        if row.disk_name:
-            reel_uploads.delete(row.disk_name)
-        db.session.delete(row)
     db.session.commit()
-    log.info("Reel of the week: cleared %s entries from past weeks.", len(stale))
-    return len(stale)
+    log.info("Reel of the week: cleared %s entries from past weeks.", dropped)
+    return dropped
 
 
 def sweep_old_weeks() -> dict:

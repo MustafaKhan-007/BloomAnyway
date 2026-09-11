@@ -3414,9 +3414,12 @@ with app.app_context():
     _reel_up.delete(_first_file)
 
 _hub_form = client.get("/watch").get_data(as_text=True)
-ok("Both entry forms know where to send the slices",
-   _hub_form.count("data-reel-upload") == 2
+ok("The review entry form knows where to send the slices",
+   _hub_form.count("data-reel-upload") == 1
    and "/watch/reel-upload/begin" in _hub_form)
+ok("And Reel of the Week, which asks for no file, carries none of it",
+   "data-reel-upload"
+   not in _hub_form.split('id="reel-of-week"', 1)[-1])
 
 _big_reel = minimal_mp4 + (b"reel-bytes" * 5000)
 r = client.post("/watch/reel-upload/begin",
@@ -3432,6 +3435,15 @@ for _i in range(0, len(_big_reel), 4096):
                     content_type="multipart/form-data")
 ok("Every slice is taken and counted back",
    r.status_code == 200 and (r.get_json() or {}).get("received") == len(_big_reel))
+r = client.post("/watch/review-request", data={
+    "reel_url": "https://www.instagram.com/reel/TESTREEL3/",
+    "upload_id": "nonesuch.mp4", "upload_name": "gone.mp4",
+}, follow_redirects=True)
+ok("A request pointing at an upload that vanished says so rather than failing quietly",
+   "start it again" in r.get_data(as_text=True))
+with app.app_context():
+    ok("And nothing was filed for it",
+       ReelReviewApplication.query.count() == 0)
 r = client.post("/watch/review-request", data={
     "reel_url": "https://www.instagram.com/reel/TESTREEL1/",
     "upload_id": _reel_upload_id, "upload_name": "export.mp4",
@@ -3462,13 +3474,6 @@ r = client.post("/watch/reel-upload/nonesuch.mp4/chunk",
                 data={"chunk": (io.BytesIO(b"orphan"), "part")},
                 content_type="multipart/form-data")
 ok("Slices for an upload nobody started are refused", r.status_code == 400)
-r = client.post("/watch/reel-of-week", data={
-    "reel_url": "https://www.instagram.com/reel/TESTREEL3/",
-    "share_count": "412", "confirm_shares": "1",
-    "upload_id": "nonesuch.mp4", "upload_name": "gone.mp4",
-}, follow_redirects=True)
-ok("And an entry pointing at one says so rather than failing quietly",
-   "start it again" in r.get_data(as_text=True))
 r = banclient.post("/watch/reel-upload/begin",
                    json={"filename": "sneaky.mp4", "size": 4096})
 ok("A member without the perk can't send a reel up either", r.status_code == 403)
@@ -3802,10 +3807,8 @@ _rotw = {"reel_url": "https://www.instagram.com/reel/SHARED100/",
 
 
 def _rotw_post(cl, **over):
-    data = dict(_rotw, **over)
-    data["raw_video"] = (io.BytesIO(minimal_mp4), "shared.mp4")
-    return cl.post("/watch/reel-of-week", data=data,
-                   content_type="multipart/form-data", follow_redirects=True)
+    return cl.post("/watch/reel-of-week", data=dict(_rotw, **over),
+                   follow_redirects=True)
 
 
 r = _rotw_post(banclient)
@@ -3818,16 +3821,9 @@ ok("A reel under 100 shares is turned away",
 r = _rotw_post(client, reel_url="https://example.com/not-a-reel")
 ok("Reel of the Week needs a real Instagram reel link",
    "instagram.com/reel" in r.get_data(as_text=True))
-r = client.post("/watch/reel-of-week", data={
-    **_rotw, "raw_video": (io.BytesIO(minimal_mp4), "shared.mp4"),
-    "confirm_shares": "",
-}, content_type="multipart/form-data", follow_redirects=True)
+r = _rotw_post(client, confirm_shares="")
 ok("The share count has to be confirmed before it counts",
    "confirm the share count" in r.get_data(as_text=True))
-r = client.post("/watch/reel-of-week", data=dict(_rotw),
-                content_type="multipart/form-data", follow_redirects=True)
-ok("Reel of the Week needs the raw video, not just the link",
-   "Upload the raw video" in r.get_data(as_text=True))
 with app.app_context():
     ok("None of the refused entries were saved",
        ReelSubmission.query.count() == 0)
@@ -3850,9 +3846,22 @@ with app.app_context():
     sub = ReelSubmission.query.first()
     sub_id = sub.id
     sub_author_id = sub.user_id
-    ok("The entry keeps the share count and the raw video",
-       sub.share_count == 412 and sub.has_raw_video()
+    ok("The entry keeps the share count and the week it went in",
+       sub.share_count == 412
        and sub.week_key == rotw_svc.current_week_key())
+
+# The reel being entered is already posted and travelling, so the file it was
+# cut from was a big upload nobody was ever going to open. The form doesn't
+# ask for one, and the row has nowhere to put one.
+_rotw_form = client.get("/watch").get_data(as_text=True).split(
+    'id="reel-of-week"', 1)[-1]
+ok("Entering asks for a link and a number, not a video file",
+   'name="raw_video"' not in _rotw_form
+   and "Send the Instagram link and the share count" in _rotw_form,
+   "the entry form still wants a file")
+ok("An entry has no raw video to speak of",
+   not hasattr(ReelSubmission, "disk_name")
+   and not hasattr(ReelSubmission, "has_raw_video"))
 
 # On a phone both weekly panels are folded away and the card above unfolds
 # the one it points at. Reel of the Week's card used to point at a panel
@@ -3878,11 +3887,10 @@ sbody = r.get_data(as_text=True)
 ok("Studio lists this week's Reel of the Week entries",
    "This week's Reel of the Week entries (1)" in sbody
    and "412 shares" in sbody and "Feature this one" in sbody)
-r = admin.get(f"/admin/spotlight/reel/{sub_id}/raw")
-ok("Owner can download an entrant's raw video",
-   r.status_code == 200
-   and "attachment" in (r.headers.get("Content-Disposition") or "").lower()
-   and len(r.data) > 0)
+ok("Studio offers the reel itself, with no raw file to download",
+   "Open reel" in sbody and "Download raw" not in sbody)
+ok("The way to download one is gone rather than left broken",
+   admin.get(f"/admin/spotlight/reel/{sub_id}/raw").status_code == 404)
 r = admin.post("/admin/spotlight", data={"feature_reel": str(sub_id)},
                follow_redirects=True)
 ok("Owner can feature an entry as Reel of the Week",
