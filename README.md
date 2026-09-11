@@ -217,8 +217,10 @@ Everything else is optional or auto-managed:
   Content Hub videos. Resize it in the Render dashboard before loading a course
   up with hour-long videos.
 - **Raw reels take the same road.** Members upload a raw video with every reel
-  review request and Reel of the Week entry, and a phone export is routinely
-  past the 100 MB wall too, so the browser slices it and posts the pieces to
+  review request — not with a Reel of the Week entry, which is a link and a
+  share count, because that reel is already posted and doing well. A phone
+  export is routinely past the 100 MB wall too, so the browser slices it and
+  posts the pieces to
   `/watch/reel-upload/{begin,chunk,abort}`; the entry form then carries the id
   of what landed rather than the file. Ceiling is `REEL_RAW_MAX_MB` (default
   2048) with `REEL_CHUNK_MB` (default 8) the slice size; a file arriving whole

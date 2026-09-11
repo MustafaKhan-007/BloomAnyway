@@ -2210,26 +2210,14 @@ def reel_of_week_submit():
     if not request.form.get("confirm_shares"):
         flash("Tick the box to confirm the share count is accurate.", "error")
         return redirect(back)
-    try:
-        landed = reel_up.claim(request.form, request.files)
-    except VideoError as exc:
-        flash(str(exc), "error")
-        return redirect(back)
-    if landed is None:
-        flash("Upload the raw video for your reel too.", "error")
-        return redirect(back)
-    disk_name, mime, fname, size = landed
     row = ReelSubmission(user_id=current_user.id, week_key=week,
                          round_key=reel_round,
-                         reel_url=reel_url, share_count=shares,
-                         disk_name=disk_name, filename=fname, mime=mime,
-                         size=size)
+                         reel_url=reel_url, share_count=shares)
     db.session.add(row)
     try:
         db.session.commit()
     except Exception:
         db.session.rollback()
-        reel_up.delete(disk_name)
         log.exception("reel of the week submission failed")
         flash("We couldn't save your entry just now — please try again.", "error")
         return redirect(back)

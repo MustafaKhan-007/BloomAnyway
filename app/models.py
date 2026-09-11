@@ -2332,9 +2332,10 @@ class ReelSubmission(db.Model):
     than to whoever hasn't entered yet. ``round_key`` counts them within the
     week, from 0.
 
-    Needs the Instagram link and the raw video, and the member states the
-    share count — Instagram gives us no way to check it, so the owner sees
-    the number and decides.
+    Needs the Instagram link, and the member states the share count —
+    Instagram gives us no way to check it, so the owner sees the number and
+    decides. No raw video: the reel being entered is one that is already up
+    and travelling, so the thing being judged is the post itself.
     """
     __tablename__ = "reel_submissions"
     __table_args__ = (
@@ -2348,17 +2349,10 @@ class ReelSubmission(db.Model):
     round_key = db.Column(db.Integer, nullable=False, default=0, index=True)
     reel_url = db.Column(db.String(500), nullable=False)
     share_count = db.Column(db.Integer, nullable=False, default=0)
-    disk_name = db.Column(db.String(64))
-    filename = db.Column(db.String(255))
-    mime = db.Column(db.String(120), nullable=False, default="video/mp4")
-    size = db.Column(db.Integer, nullable=False, default=0)
     featured = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
 
     author = db.relationship("User")
-
-    def has_raw_video(self) -> bool:
-        return bool(self.disk_name) or bool(self.size)
 
 
 # --- site-branded images (hero / story teaser uploads) ----------------------

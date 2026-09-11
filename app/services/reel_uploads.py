@@ -24,7 +24,7 @@ import time
 from flask import current_app
 
 from ..extensions import db
-from ..models import ReelReviewApplication, ReelSubmission
+from ..models import ReelReviewApplication
 from .videos import EXT_MIME, VideoError, process_video, sniff_stored
 
 log = logging.getLogger(__name__)
@@ -231,13 +231,18 @@ def sweep_parts(older_than_hours: int = PART_KEEP_HOURS) -> int:
 
 
 def referenced_names() -> set[str]:
-    """Every raw reel file some row still points at."""
+    """Every raw reel file some row still points at.
+
+    Review requests are the only thing that carries one now. Reel of the Week
+    entries used to as well, and the files they named are orphans from the
+    moment that column went, which is what the sweep below is for.
+    """
     names: set[str] = set()
-    for model in (ReelReviewApplication, ReelSubmission):
-        for (disk_name,) in db.session.query(model.disk_name).filter(
-                model.disk_name.isnot(None)).all():
-            if disk_name:
-                names.add(os.path.basename(disk_name))
+    for (disk_name,) in db.session.query(
+            ReelReviewApplication.disk_name).filter(
+            ReelReviewApplication.disk_name.isnot(None)).all():
+        if disk_name:
+            names.add(os.path.basename(disk_name))
     return names
 
 

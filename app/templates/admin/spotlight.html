@@ -202,17 +202,12 @@
             <strong>{{ e.author.public_name() if e.author else 'Member' }}</strong>
             <span class="field-help" style="margin:0;">
               {{ '{:,}'.format(e.share_count) }} shares &middot;
-              {{ e.filename or 'no raw file' }}
-              {%- if e.size %} &middot; {{ (e.size / 1024 / 1024)|round(1) }} MB{% endif %}
+              entered {{ e.created_at|when('%b %d') }}
               {%- if not e.featured and e.round_key < reel_round %} &middot; entered before the last pick{% endif %}
             </span>
           </div>
           <div class="reel-entry__actions">
             <a href="{{ e.reel_url }}" target="_blank" rel="noopener">Open reel</a>
-            {% if e.has_raw_video() %}
-            <a class="btn btn--secondary btn--sm"
-               href="{{ url_for('admin.spotlight_reel_raw', entry_id=e.id) }}">Download raw</a>
-            {% endif %}
             {% if not e.featured %}
             <button class="btn btn--gold btn--sm" type="submit"
                     name="feature_reel" value="{{ e.id }}">Feature this one</button>

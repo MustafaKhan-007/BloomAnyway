@@ -2040,30 +2040,6 @@ def spotlight():
     )
 
 
-@bp.route("/spotlight/reel/<int:entry_id>/raw")
-@admin_required
-def spotlight_reel_raw(entry_id):
-    """Download a Reel of the Week entrant's raw video (Studio only)."""
-    entry = db.session.get(ReelSubmission, entry_id) or abort(404)
-    if not entry.disk_name:
-        flash("That entry has no raw video upload.", "error")
-        return redirect(url_for("admin.spotlight"))
-    found = reel_up.locate(entry.disk_name)
-    if found is None:
-        flash("That entry's raw video is no longer on the server.", "error")
-        return redirect(url_for("admin.spotlight"))
-    directory, disk_name = found
-    resp = send_from_directory(
-        directory, disk_name,
-        mimetype=entry.mime or "application/octet-stream",
-        as_attachment=True,
-        download_name=entry.filename or "reel.mp4",
-        max_age=0,
-    )
-    resp.headers["Cache-Control"] = "private, no-store"
-    return resp
-
-
 # =============================== SETTINGS ====================================
 
 @bp.route("/settings/test-email", methods=["POST"])
