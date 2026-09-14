@@ -189,6 +189,9 @@ class Config:
     SMTP_USER = os.environ.get("SMTP_USER", "")
     SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
     MAIL_FROM = os.environ.get("MAIL_FROM", "Bloom Anyway <hello@localhost>")
+    # The one address everything addressed to "the owners" goes to. Set it on
+    # a staging deploy so test alerts don't land in the real team's inbox.
+    TEAM_EMAIL = os.environ.get("TEAM_EMAIL", "team@bloomanyway.online").strip()
 
     # Cloudflare Turnstile (signup only). Prefer TURNSTILE_SECRET (Spin naming);
     # TURNSTILE_SECRET_KEY is accepted as a legacy alias.

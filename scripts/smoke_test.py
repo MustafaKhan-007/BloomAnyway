@@ -2735,20 +2735,21 @@ ok("But it is kept off the stars, which need no answer",
    re.search(r"data-feedback-reply[^>]*\shidden", _gbody) is not None,
    "the warning starts out showing")
 
-# --- contact form: every owner hears about it, and it lands in the Inbox ----
+# --- contact form: the team inbox hears about it, and it lands in the Inbox -
 from app.models import ContactMessage as _CM
 from app.services import mailer as _mailer
 
+# A second owner account exists from here on. Nothing addressed to "the
+# owners" is copied to it — that mail all goes to one shared address now.
 with app.app_context():
     _second_owner = User(email="coowner@example.com", display_name="Second Owner",
                          is_admin=True, email_verified_at=utcnow())
     _second_owner.set_password(USER_PW)
     db.session.add(_second_owner)
     db.session.commit()
-    _owner_list = _mailer.owner_emails()
-ok("Owner email list covers every owner account",
-   "coowner@example.com" in _owner_list and len(_owner_list) >= 2,
-   f"got {_owner_list}")
+    _team_inbox = _mailer.team_inbox()
+ok("Owner-facing mail has one address rather than one per owner",
+   _team_inbox == "team@bloomanyway.online", _team_inbox)
 
 _contact_mail = []
 _orig_contact_send = _mailer.send_styled_email
@@ -2762,9 +2763,11 @@ _mailer.send_styled_email = _orig_contact_send
 
 ok("Contact form accepts a real message",
    r.status_code == 200 and "hear back soon" in r.get_data(as_text=True))
-ok("Every owner is emailed the contact message",
-   {m["to"] for m in _contact_mail} >= set(_owner_list),
-   f"sent to {[m['to'] for m in _contact_mail]}, owners {_owner_list}")
+ok("The contact message goes to the team inbox and nowhere else",
+   {m["to"] for m in _contact_mail} == {_team_inbox},
+   f"sent to {[m['to'] for m in _contact_mail]}")
+ok("A second owner account doesn't mean a second copy of it",
+   len(_contact_mail) == 1, f"{len(_contact_mail)} copies")
 ok("The contact email carries the sender and their words",
    all("wren@example.com" in (m.get("body") or "")
        and "join a circle mid-month" in (m.get("body") or "")
@@ -3415,8 +3418,14 @@ with app.app_context():
     _span, _lone_monday = (reel_svc.week_range_label(_mon),
                            _mon.strftime("%b %d, %Y"))
 _hub_week = client.get("/watch").get_data(as_text=True)
+# Read off the line that names the week, not the whole page. Timestamps
+# elsewhere are written in full, and on a Monday the day they name is the
+# Monday — which failed this on Mondays only.
+_week_line = re.search(r'hub-exact__status"[^>]*>(.*?)</div>', _hub_week, re.S)
+_week_line = _week_line.group(1) if _week_line else ""
 ok("And that is what the Content Hub says, on its own no longer",
-   _span in _hub_week and _lone_monday not in _hub_week)
+   _span in _week_line and _lone_monday not in _week_line,
+   f"got {_week_line!r}")
 ok("Studio says it the same way",
    _span in admin.get("/admin/reel-reviews").get_data(as_text=True)
    and _span in admin.get("/admin/spotlight").get_data(as_text=True))
@@ -5281,8 +5290,8 @@ with app.app_context():
     sg_svc.dispatch_due_reminders()
     _fresh = _sent_mail[_mail_mark:]
     _booker = db.session.get(User, _buyer_id).public_name()
-    ok("With no address saved for her, the owners are reminded of the 1:1",
-       any(m["to"] == "owner@example.com"
+    ok("With no address saved for her, the team inbox is reminded of the 1:1",
+       any(m["to"] == "team@bloomanyway.online"
            and ("1:1 is tomorrow" in m["subject"]
                 or "1:1 is today" in m["subject"])
            for m in _fresh),
@@ -5355,7 +5364,7 @@ _coach_settings = admin.get("/admin/settings").get_data(as_text=True)
 ok("Studio asks for each founder's address for these reminders",
    'name="saman_coach_email"' in _coach_settings
    and 'name="ayesha_coach_email"' in _coach_settings
-   and "go to every" in _coach_settings)
+   and "team inbox instead" in _coach_settings)
 with app.app_context():
     from app.services.settings import all_settings as _all_settings
     _settings_form = dict(_all_settings())
@@ -5370,6 +5379,10 @@ with app.app_context():
        == (["saman-coach@example.com"], False),
        str(sg_svc.coach_reminder_addresses("Saman")))
     _set_coach("saman_coach_email", "")
+    ok("With the field blank it falls back to the team inbox, not every owner",
+       sg_svc.coach_reminder_addresses("Saman")
+       == (["team@bloomanyway.online"], True),
+       str(sg_svc.coach_reminder_addresses("Saman")))
 
 # A grid column is as wide as its widest child unless it is told it may be
 # narrower. The availability week is eight columns across, so on a phone it
@@ -6856,7 +6869,7 @@ with app.app_context():
     placed = pay.replace_other_memberships(
         "placeable@example.com", keep_order_id="BLIND-NEW",
         keep_subscription_id="sub_placeable_new")
-    ok("A new membership flags the other subscription to the owner, never cancels it",
+    ok("A new membership notes the other subscription, never cancels it",
        placed["cancelled"] == [] and placed.get("flagged") == ["sub_placeable_old"],
        f"got {placed}")
 
@@ -7043,55 +7056,30 @@ with app.app_context():
         app.config["TESTING"] = True
     assert _real_cancel is not None
 
-# Switching plans cancels the old subscription seconds before the new one is
-# paid for, but the local order saying so is still marked paid when the payment
-# lands. Reading the status off Stripe stops the owner being told a member has
-# two live memberships when one of them is already gone.
+# Nobody is written to about a member holding two memberships at once. The
+# mail went out on a local order row that was still marked paid, and switching
+# plans cancels the old subscription seconds before the new one is charged, so
+# what it mostly reported was a switch that had already sorted itself out.
+ok("There is no second-membership email left to send",
+   not hasattr(pay, "_flag_extra_memberships"))
+
 with app.app_context():
-    _subs = {
-        "sub_switched_away": {"id": "sub_switched_away", "status": "canceled"},
-        "sub_second_plan": {"id": "sub_second_plan", "status": "active"},
-        "sub_winding_down": {"id": "sub_winding_down", "status": "active",
-                             "cancel_at_period_end": True},
-    }
-
-    class _FakeLookup:
-        @staticmethod
-        def retrieve(sid, **kw):
-            if sid not in _subs:
-                raise Exception(f"No such subscription: {sid}")
-            return _subs[sid]
-
-    _real_sub = pay.stripe.Subscription
-    _real_conf = pay.configured
-    pay.stripe.Subscription = _FakeLookup
-    pay.configured = lambda: True
-    app.config["TESTING"] = False
-    try:
-        _before = len(_billing_alerts)
-        pay._flag_extra_memberships(
-            "switcher@example.com", "sub_new_plan", ["sub_switched_away"])
-        ok("Switching plans doesn't report the plan just left as a second one",
-           len(_billing_alerts) == _before, f"got {_billing_alerts[_before:]}")
-        pay._flag_extra_memberships(
-            "winding@example.com", "sub_new_plan", ["sub_winding_down"])
-        ok("Nor one that is already set to stop renewing",
-           len(_billing_alerts) == _before, f"got {_billing_alerts[_before:]}")
-        pay._flag_extra_memberships(
-            "stale@example.com", "sub_new_plan", ["sub_long_gone"])
-        ok("Nor a subscription id Stripe has never heard of",
-           len(_billing_alerts) == _before, f"got {_billing_alerts[_before:]}")
-        pay._flag_extra_memberships(
-            "double@example.com", "sub_new_plan",
-            ["sub_second_plan", "sub_switched_away"])
-        ok("But a genuinely live second membership is still reported",
-           len(_billing_alerts) == _before + 1
-           and "more than one membership" in _billing_alerts[-1].lower(),
-           f"got {_billing_alerts[_before:]}")
-    finally:
-        pay.stripe.Subscription = _real_sub
-        pay.configured = _real_conf
-        app.config["TESTING"] = True
+    _before = len(_billing_alerts)
+    db.session.add(Order(
+        ls_order_id="DOUBLE-OLD", buyer_email="double@example.com",
+        ls_variant_id=_mem_price, status="paid", membership_tier="healing",
+        total_cents=900, currency="USD",
+        stripe_subscription_id="sub_double_a"))
+    db.session.commit()
+    _double = pay.replace_other_memberships(
+        "double@example.com", keep_order_id="DOUBLE-NEW",
+        keep_subscription_id="sub_double_b")
+    ok("A second membership subscription sends nothing",
+       len(_billing_alerts) == _before, f"got {_billing_alerts[_before:]}")
+    ok("Though it is still handed back to whoever asked",
+       _double.get("flagged") == ["sub_double_a"], f"got {_double}")
+    ok("And it is still not cancelled on a guess",
+       _double["cancelled"] == [], f"got {_double}")
 
 _alerts = len(_billing_alerts)
 _stripe_event("customer.updated",

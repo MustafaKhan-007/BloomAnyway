@@ -15,7 +15,6 @@ from ..models import (SUPPORT_CIRCLE_SEED, SupportGroupApplication,
                       SupportGroupTopicAlert, User, utcnow)
 from .mailer import (
     absolute_url,
-    owner_emails,
     send_facilitator_booked,
     send_facilitator_cancelled,
     send_one_on_one_booked,
@@ -25,6 +24,7 @@ from .mailer import (
     send_support_group_host_cancelled,
     send_support_group_left,
     send_support_group_reminder,
+    team_inbox,
 )
 from .social_graph import notify
 from .timefmt import (format_local, local_day_bounds, normalize_timezone,
@@ -1540,11 +1540,11 @@ COACH_EMAIL_SETTINGS = {
 
 
 def coach_reminder_addresses(coach: str) -> tuple[list[str], bool]:
-    """Where a founder's own 1:1 reminder goes, and whether the owners got it.
+    """Where a founder's own 1:1 reminder goes, and whether the team got it.
 
     Each founder's address is set in Studio. Without one the reminder goes to
-    the owners rather than nowhere — an hour somebody paid for shouldn't go
-    unattended because a field was left blank.
+    the shared team inbox rather than nowhere — an hour somebody paid for
+    shouldn't go unattended because a field was left blank.
     """
     from .settings import get_setting
 
@@ -1553,7 +1553,7 @@ def coach_reminder_addresses(coach: str) -> tuple[list[str], bool]:
     address = (get_setting(setting) or "").strip() if setting else ""
     if address:
         return [address], False
-    return owner_emails(), True
+    return [team_inbox()], True
 
 
 def _account_for_email(address: str) -> User | None:
@@ -1589,7 +1589,7 @@ def remind_coach(meeting: SupportGroupMeeting) -> int:
     if (meeting.kind or "").strip().lower() != "one_on_one":
         return 0
     coach = normalize_custom_topic(meeting.notes) or ""
-    addresses, to_owners = coach_reminder_addresses(coach)
+    addresses, to_team = coach_reminder_addresses(coach)
     if not addresses:
         return 0
 
@@ -1607,7 +1607,7 @@ def remind_coach(meeting: SupportGroupMeeting) -> int:
         # An hour booked this morning for this evening is not "tomorrow".
         day_word, _timing = _day_word_for_tz(tz, meeting.scheduled_at)
         soon = day_word or "coming up"
-        heading = (f"{label}'s 1:1" if to_owners else "Your 1:1")
+        heading = (f"{label}'s 1:1" if to_team else "Your 1:1")
         body = (
             f"{who} booked an hour with {label}.\n\n"
             f"Date: {day}\n"
