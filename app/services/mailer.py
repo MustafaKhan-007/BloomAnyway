@@ -1353,55 +1353,45 @@ def send_one_on_one_cancelled(
     )
 
 
-def owner_emails() -> list[str]:
-    """Every active owner's address, de-duplicated, oldest account first.
+#: Where anything addressed to "the owners" goes. This used to fan out to
+#: every owner account, which meant the same alert sat in several personal
+#: inboxes at once — each one able to assume somebody else had picked it up —
+#: and an owner who left took that mail with them. One shared address instead,
+#: so there is one copy and it belongs to whoever is on duty.
+TEAM_INBOX = "team@bloomanyway.online"
 
-    Anything addressed to "the owner" goes to all of them — a co-owner who
-    never sees a contact message can't answer it.
+
+def team_inbox() -> str:
+    """The shared address every owner-facing notice is sent to.
+
+    Overridable so a staging deploy doesn't mail the real team.
     """
-    from ..models import User
-    rows = (User.query
-            .filter(User.is_admin.is_(True), User.deleted_at.is_(None))
-            .order_by(User.id)
-            .all())
-    seen: set[str] = set()
-    out: list[str] = []
-    for owner in rows:
-        addr = (owner.email or "").strip().lower()
-        if addr and "@" in addr and addr not in seen:
-            seen.add(addr)
-            out.append(addr)
-    return out
+    raw = os.environ.get("TEAM_EMAIL")
+    if raw is None or not str(raw).strip():
+        try:
+            raw = current_app.config.get("TEAM_EMAIL") or ""
+        except RuntimeError:
+            raw = ""
+    addr = _strip_env_quotes(str(raw)).strip().lower()
+    return addr if "@" in addr else TEAM_INBOX
 
 
-def _owner_email() -> str | None:
-    addrs = owner_emails()
-    return addrs[0] if addrs else None
-
-
-def _send_to_owners(what: str, **kwargs) -> bool:
-    """Send one styled email to every owner. True when they all went out."""
-    addrs = owner_emails()
-    if not addrs:
-        log.warning("No owner account to notify about %s", what)
-        _set_error("No owner account email to notify.")
-        return False
-    sent = 0
-    for addr in addrs:
-        if send_styled_email(addr, **kwargs):
-            sent += 1
-        else:
-            log.warning("Could not email owner %s about %s", addr, what)
-    return sent == len(addrs)
+def _send_to_team(what: str, **kwargs) -> bool:
+    """Send one styled email to the shared owners' inbox."""
+    addr = team_inbox()
+    if send_styled_email(addr, **kwargs):
+        return True
+    log.warning("Could not email %s about %s", addr, what)
+    return False
 
 
 def send_billing_alert(title: str, body: str) -> bool:
-    """Tell the owners about billing that needs to be sorted out in Stripe.
+    """Tell the team about billing that needs to be sorted out in Stripe.
 
     Used when we could not stop a subscription ourselves, so a silent failure
     can't leave someone being charged after they've left.
     """
-    return _send_to_owners(
+    return _send_to_team(
         f"billing: {title}",
         subject=f"Action needed: {title}",
         preview=title,
@@ -1414,7 +1404,7 @@ def send_billing_alert(title: str, body: str) -> bool:
 
 
 def send_contact_notification(name: str, email: str, body: str) -> bool:
-    return _send_to_owners(
+    return _send_to_team(
         f"contact form from {name}",
         subject=f"Contact form: {name}",
         preview=f"New message from {name}",

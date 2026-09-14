@@ -2735,20 +2735,21 @@ ok("But it is kept off the stars, which need no answer",
    re.search(r"data-feedback-reply[^>]*\shidden", _gbody) is not None,
    "the warning starts out showing")
 
-# --- contact form: every owner hears about it, and it lands in the Inbox ----
+# --- contact form: the team inbox hears about it, and it lands in the Inbox -
 from app.models import ContactMessage as _CM
 from app.services import mailer as _mailer
 
+# A second owner account exists from here on. Nothing addressed to "the
+# owners" is copied to it — that mail all goes to one shared address now.
 with app.app_context():
     _second_owner = User(email="coowner@example.com", display_name="Second Owner",
                          is_admin=True, email_verified_at=utcnow())
     _second_owner.set_password(USER_PW)
     db.session.add(_second_owner)
     db.session.commit()
-    _owner_list = _mailer.owner_emails()
-ok("Owner email list covers every owner account",
-   "coowner@example.com" in _owner_list and len(_owner_list) >= 2,
-   f"got {_owner_list}")
+    _team_inbox = _mailer.team_inbox()
+ok("Owner-facing mail has one address rather than one per owner",
+   _team_inbox == "team@bloomanyway.online", _team_inbox)
 
 _contact_mail = []
 _orig_contact_send = _mailer.send_styled_email
@@ -2762,9 +2763,11 @@ _mailer.send_styled_email = _orig_contact_send
 
 ok("Contact form accepts a real message",
    r.status_code == 200 and "hear back soon" in r.get_data(as_text=True))
-ok("Every owner is emailed the contact message",
-   {m["to"] for m in _contact_mail} >= set(_owner_list),
-   f"sent to {[m['to'] for m in _contact_mail]}, owners {_owner_list}")
+ok("The contact message goes to the team inbox and nowhere else",
+   {m["to"] for m in _contact_mail} == {_team_inbox},
+   f"sent to {[m['to'] for m in _contact_mail]}")
+ok("A second owner account doesn't mean a second copy of it",
+   len(_contact_mail) == 1, f"{len(_contact_mail)} copies")
 ok("The contact email carries the sender and their words",
    all("wren@example.com" in (m.get("body") or "")
        and "join a circle mid-month" in (m.get("body") or "")
@@ -5287,8 +5290,8 @@ with app.app_context():
     sg_svc.dispatch_due_reminders()
     _fresh = _sent_mail[_mail_mark:]
     _booker = db.session.get(User, _buyer_id).public_name()
-    ok("With no address saved for her, the owners are reminded of the 1:1",
-       any(m["to"] == "owner@example.com"
+    ok("With no address saved for her, the team inbox is reminded of the 1:1",
+       any(m["to"] == "team@bloomanyway.online"
            and ("1:1 is tomorrow" in m["subject"]
                 or "1:1 is today" in m["subject"])
            for m in _fresh),
@@ -5361,7 +5364,7 @@ _coach_settings = admin.get("/admin/settings").get_data(as_text=True)
 ok("Studio asks for each founder's address for these reminders",
    'name="saman_coach_email"' in _coach_settings
    and 'name="ayesha_coach_email"' in _coach_settings
-   and "go to every" in _coach_settings)
+   and "team inbox instead" in _coach_settings)
 with app.app_context():
     from app.services.settings import all_settings as _all_settings
     _settings_form = dict(_all_settings())
@@ -5376,6 +5379,10 @@ with app.app_context():
        == (["saman-coach@example.com"], False),
        str(sg_svc.coach_reminder_addresses("Saman")))
     _set_coach("saman_coach_email", "")
+    ok("With the field blank it falls back to the team inbox, not every owner",
+       sg_svc.coach_reminder_addresses("Saman")
+       == (["team@bloomanyway.online"], True),
+       str(sg_svc.coach_reminder_addresses("Saman")))
 
 # A grid column is as wide as its widest child unless it is told it may be
 # narrower. The availability week is eight columns across, so on a phone it
