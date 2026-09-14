@@ -3415,8 +3415,14 @@ with app.app_context():
     _span, _lone_monday = (reel_svc.week_range_label(_mon),
                            _mon.strftime("%b %d, %Y"))
 _hub_week = client.get("/watch").get_data(as_text=True)
+# Read off the line that names the week, not the whole page. Timestamps
+# elsewhere are written in full, and on a Monday the day they name is the
+# Monday — which failed this on Mondays only.
+_week_line = re.search(r'hub-exact__status"[^>]*>(.*?)</div>', _hub_week, re.S)
+_week_line = _week_line.group(1) if _week_line else ""
 ok("And that is what the Content Hub says, on its own no longer",
-   _span in _hub_week and _lone_monday not in _hub_week)
+   _span in _week_line and _lone_monday not in _week_line,
+   f"got {_week_line!r}")
 ok("Studio says it the same way",
    _span in admin.get("/admin/reel-reviews").get_data(as_text=True)
    and _span in admin.get("/admin/spotlight").get_data(as_text=True))
