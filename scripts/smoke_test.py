@@ -6862,7 +6862,7 @@ with app.app_context():
     placed = pay.replace_other_memberships(
         "placeable@example.com", keep_order_id="BLIND-NEW",
         keep_subscription_id="sub_placeable_new")
-    ok("A new membership flags the other subscription to the owner, never cancels it",
+    ok("A new membership notes the other subscription, never cancels it",
        placed["cancelled"] == [] and placed.get("flagged") == ["sub_placeable_old"],
        f"got {placed}")
 
@@ -7049,55 +7049,30 @@ with app.app_context():
         app.config["TESTING"] = True
     assert _real_cancel is not None
 
-# Switching plans cancels the old subscription seconds before the new one is
-# paid for, but the local order saying so is still marked paid when the payment
-# lands. Reading the status off Stripe stops the owner being told a member has
-# two live memberships when one of them is already gone.
+# Nobody is written to about a member holding two memberships at once. The
+# mail went out on a local order row that was still marked paid, and switching
+# plans cancels the old subscription seconds before the new one is charged, so
+# what it mostly reported was a switch that had already sorted itself out.
+ok("There is no second-membership email left to send",
+   not hasattr(pay, "_flag_extra_memberships"))
+
 with app.app_context():
-    _subs = {
-        "sub_switched_away": {"id": "sub_switched_away", "status": "canceled"},
-        "sub_second_plan": {"id": "sub_second_plan", "status": "active"},
-        "sub_winding_down": {"id": "sub_winding_down", "status": "active",
-                             "cancel_at_period_end": True},
-    }
-
-    class _FakeLookup:
-        @staticmethod
-        def retrieve(sid, **kw):
-            if sid not in _subs:
-                raise Exception(f"No such subscription: {sid}")
-            return _subs[sid]
-
-    _real_sub = pay.stripe.Subscription
-    _real_conf = pay.configured
-    pay.stripe.Subscription = _FakeLookup
-    pay.configured = lambda: True
-    app.config["TESTING"] = False
-    try:
-        _before = len(_billing_alerts)
-        pay._flag_extra_memberships(
-            "switcher@example.com", "sub_new_plan", ["sub_switched_away"])
-        ok("Switching plans doesn't report the plan just left as a second one",
-           len(_billing_alerts) == _before, f"got {_billing_alerts[_before:]}")
-        pay._flag_extra_memberships(
-            "winding@example.com", "sub_new_plan", ["sub_winding_down"])
-        ok("Nor one that is already set to stop renewing",
-           len(_billing_alerts) == _before, f"got {_billing_alerts[_before:]}")
-        pay._flag_extra_memberships(
-            "stale@example.com", "sub_new_plan", ["sub_long_gone"])
-        ok("Nor a subscription id Stripe has never heard of",
-           len(_billing_alerts) == _before, f"got {_billing_alerts[_before:]}")
-        pay._flag_extra_memberships(
-            "double@example.com", "sub_new_plan",
-            ["sub_second_plan", "sub_switched_away"])
-        ok("But a genuinely live second membership is still reported",
-           len(_billing_alerts) == _before + 1
-           and "more than one membership" in _billing_alerts[-1].lower(),
-           f"got {_billing_alerts[_before:]}")
-    finally:
-        pay.stripe.Subscription = _real_sub
-        pay.configured = _real_conf
-        app.config["TESTING"] = True
+    _before = len(_billing_alerts)
+    db.session.add(Order(
+        ls_order_id="DOUBLE-OLD", buyer_email="double@example.com",
+        ls_variant_id=_mem_price, status="paid", membership_tier="healing",
+        total_cents=900, currency="USD",
+        stripe_subscription_id="sub_double_a"))
+    db.session.commit()
+    _double = pay.replace_other_memberships(
+        "double@example.com", keep_order_id="DOUBLE-NEW",
+        keep_subscription_id="sub_double_b")
+    ok("A second membership subscription sends nothing",
+       len(_billing_alerts) == _before, f"got {_billing_alerts[_before:]}")
+    ok("Though it is still handed back to whoever asked",
+       _double.get("flagged") == ["sub_double_a"], f"got {_double}")
+    ok("And it is still not cancelled on a guess",
+       _double["cancelled"] == [], f"got {_double}")
 
 _alerts = len(_billing_alerts)
 _stripe_event("customer.updated",

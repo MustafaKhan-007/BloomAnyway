@@ -1940,70 +1940,21 @@ def _clear_membership_grace_cancel(sub_id: str) -> bool:
         return False
 
 
-def _flag_extra_memberships(email: str, keep_sub: str, sub_ids: list[str]) -> None:
-    """Tell the owner a member has more than one live membership subscription.
-
-    We never cancel on our own guess — that is how a paying member's billing got
-    cancelled. Subscriptions already set to cancel (a real switch or self-cancel)
-    are left out, so this only speaks up about genuine live duplicates.
-
-    Candidates come partly from local order rows, which say what was true when
-    the row was written, not what is true now. Switching plans cancels the old
-    subscription outright moments before the new one is paid for, so each one
-    is checked against Stripe before the owner is told anything: an outright
-    cancel leaves no cancel-at date to notice it by, only a dead status.
-    """
-    live: list[str] = []
-    for sid in sub_ids:
-        try:
-            _configure_stripe()
-            sub_d = _as_dict(stripe.Subscription.retrieve(sid))
-        except Exception as exc:
-            if "no such subscription" in str(exc).lower():
-                continue  # a stale id from an old order, not a second plan
-            log.warning(
-                "stripe: could not check whether %s is still live (%s)", sid, exc)
-            live.append(sid)
-            continue
-        status = (sub_d.get("status") or "").strip().lower()
-        if status not in ("active", "trialing", "past_due"):
-            continue  # cancelled, expired or never started — nobody is billed
-        if sub_d.get("cancel_at_period_end") or sub_d.get("cancel_at"):
-            continue  # already ending — nothing to flag
-        live.append(sid)
-    if not live:
-        return
-    listed = "\n".join(f"  \u2022 {s}" for s in live)
-    body = (
-        f"{email} now has more than one active membership subscription in "
-        f"Stripe:\n\n{listed}\n\n"
-        f"We kept {keep_sub or 'their newest one'} and did NOT cancel anything "
-        "automatically. If this is a duplicate they shouldn't be paying twice "
-        "for, cancel the extra one in the Stripe dashboard. If they meant to "
-        "switch plans or cancelled themselves, that is handled already and you "
-        "can ignore this."
-    )
-    try:
-        from .mailer import send_billing_alert
-        send_billing_alert("A member has more than one membership", body)
-    except Exception:
-        log.exception("stripe: could not flag extra memberships for %s", email)
-
-
 def replace_other_memberships(
     email: str,
     *,
     keep_order_id: str,
     keep_subscription_id: str | None = None,
 ) -> dict:
-    """On a new membership payment: tidy local orders to the new plan, and FLAG
-    (never cancel) any other live subscription to the owner.
+    """On a new membership payment: tidy local orders to the new plan, and
+    leave any other Stripe subscription strictly alone.
 
     Marks the member's other paid membership Orders ended locally so their tier
-    reflects the plan they just bought, keeps ``keep_order_id`` /
-    ``keep_subscription_id``, and — instead of cancelling other Stripe
-    subscriptions on a guess — emails the owner about them. Real plan switches,
-    self-cancels and account deletions still cancel explicitly, elsewhere.
+    reflects the plan they just bought, and keeps ``keep_order_id`` /
+    ``keep_subscription_id``. Other subscriptions are neither cancelled on a
+    guess nor mailed about — they are noted in the log and returned to the
+    caller. Real plan switches, self-cancels and account deletions still
+    cancel explicitly, elsewhere.
     """
     from sqlalchemy import func
 
@@ -2065,8 +2016,7 @@ def replace_other_memberships(
         order.status = "ended"
         ended += 1
 
-    # Any other live membership subscription is flagged to the owner, not
-    # cancelled — covers duplicates not linked to a local Order id too.
+    # Covers duplicates not linked to a local Order id too.
     if not blind and configured() and not current_app.config.get("TESTING"):
         for sid in _membership_subscription_ids_for_email(email_norm, price_ids):
             if sid and sid != keep_sub:
@@ -2074,9 +2024,11 @@ def replace_other_memberships(
 
     # We never auto-cancel here anymore; keep the key present for callers.
     result["cancelled"] = []
+    # Every membership subscription of theirs that isn't the one just paid
+    # for. Left running, and nobody is written to about it: a second live
+    # subscription is rare, and what the mail mostly caught was a plan switch
+    # or a self-cancel that had already sorted itself out.
     result["flagged"] = sorted(other_subs)
-    if result["flagged"] and configured() and not current_app.config.get("TESTING"):
-        _flag_extra_memberships(email_norm, keep_sub, result["flagged"])
 
     result["orders_ended"] = ended
     if ended or result["flagged"]:
@@ -2084,7 +2036,7 @@ def replace_other_memberships(
         reconcile_email(email_norm, downgrade=True)
         log.info(
             "stripe: new membership for %s ended %s prior local order(s), "
-            "flagged %s other sub(s) for the owner; kept order=%s sub=%s",
+            "left %s other sub(s) alone; kept order=%s sub=%s",
             email_norm, ended, len(result["flagged"]), keep_oid, keep_sub or "-",
         )
     return result
@@ -2605,7 +2557,7 @@ def active_membership_tier_from_stripe(email: str) -> str | None:
     keep_subs = {keep_sid} if keep_sid else set()
     keep_prices = {keep_price} if keep_price else set()
 
-    # Duplicates are reported, never cancelled here. This function answers
+    # Duplicates are logged, never cancelled here. This function answers
     # "what tier is this person on", and gets called on ordinary reads — a
     # reconcile, a page load, the Studio audit. Cancelling from a lookup means
     # billing can stop at a moment nobody asked for anything, which is
@@ -2619,18 +2571,6 @@ def active_membership_tier_from_stripe(email: str) -> str | None:
             "also live: %s) — not cancelling from a lookup",
             email_norm, len(ranked), keep_sid, ", ".join(extras),
         )
-        try:
-            from .mailer import send_billing_alert
-            send_billing_alert(
-                "A member has more than one membership subscription",
-                f"{email_norm} is being billed for {len(ranked)} memberships at "
-                f"once.\n\nTheir tier here follows {keep_sid}. Also live: "
-                + ", ".join(extras)
-                + "\n\nNothing was cancelled automatically. Cancel the extras in "
-                "Stripe once you've checked which one they meant to keep.",
-            )
-        except Exception:
-            log.exception("stripe: could not report duplicate subscriptions")
 
     try:
         _heal_local_membership_orders(
