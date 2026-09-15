@@ -499,19 +499,28 @@
           availH = Math.max(280, pane.clientHeight - padY - chipH - noteH);
         }
         var unscaled = page.getViewport({ scale: 1 });
+        var isLandscape = unscaled.width > unscaled.height;
+        // So the CSS can let a landscape page scroll sideways at Large the
+        // same way a tall page scrolls down.
+        if (root) {
+          root.setAttribute("data-orient", isLandscape ? "landscape" : "portrait");
+        }
         var widthFill = availW / unscaled.width;
-        var contain = Math.min(widthFill, availH / unscaled.height);
+        var heightFill = availH / unscaled.height;
+        var contain = Math.min(widthFill, heightFill);
+        // Large fills the page's reading axis; Small shows the whole page;
+        // Normal sits just under Large. A portrait page reads down its width
+        // (fill the pane, scroll a long page down); a landscape page — a slide
+        // — reads across its height (fill the pane, scroll a wide page over),
+        // where filling the width would only shrink it to the whole-page size.
+        var fill = isLandscape ? heightFill : widthFill;
         var scale;
         if (zoom === "lg") {
-          // As wide as the pane and no wider. A tall page grows past the
-          // bottom and scrolls, which is the point of it; a page wider than
-          // it is tall — a slide — is already this size at Fit, and anything
-          // past it would only cut the sides off with nowhere to scroll to.
-          scale = widthFill;
+          scale = fill;
         } else if (zoom === "sm") {
-          scale = contain * 0.85;
-        } else {
           scale = contain;
+        } else {
+          scale = Math.max(contain, fill * 0.86);
         }
         var viewport = page.getViewport({ scale: scale });
         var cssWidth = Math.floor(viewport.width);
