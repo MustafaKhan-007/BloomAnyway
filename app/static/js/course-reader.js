@@ -499,12 +499,6 @@
           availH = Math.max(280, pane.clientHeight - padY - chipH - noteH);
         }
         var unscaled = page.getViewport({ scale: 1 });
-        var isLandscape = unscaled.width > unscaled.height;
-        // So the CSS can let a landscape page scroll sideways at Large the
-        // same way a tall page scrolls down.
-        if (root) {
-          root.setAttribute("data-orient", isLandscape ? "landscape" : "portrait");
-        }
         var widthFill = availW / unscaled.width;
         var heightFill = availH / unscaled.height;
         // Small shows the whole page (fits both ways, no scrolling). Large
