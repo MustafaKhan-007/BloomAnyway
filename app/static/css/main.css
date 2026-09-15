@@ -1934,8 +1934,13 @@ html.is-page-loading { cursor: progress; }
   padding: clamp(16px, 2.4vw, 28px);
   box-shadow: 0 4px 24px rgba(43, 38, 34, 0.06);
   border: 1px solid rgba(61, 20, 49, 0.06);
-  height: min(78vh, 920px);
-  max-height: min(78vh, 920px);
+  /* Size to the viewport so the reading pane is comfortable on any screen: a
+     floor keeps it usable on short laptops, dvh tracks the real height on
+     phones (where the address bar eats into vh), and a cap stops it from
+     getting unwieldy on big monitors. */
+  height: clamp(340px, 80vh, 960px);
+  height: clamp(340px, 82dvh, 960px);
+  max-height: 90dvh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
