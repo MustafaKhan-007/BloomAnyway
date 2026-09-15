@@ -797,7 +797,7 @@ def join_peer_session(user: User, meeting_id: int
         if not user_can_access_circle(user, meeting.circle):
             return None, "That session isn’t included in your plan."
     elif kind == "facilitator":
-        if not user.is_owner_view() and not user.is_healing():
+        if not user.is_owner_view() and not user.is_healing_track():
             return None, "Facilitator sessions are for Healing & Full Bloom members."
     if not meeting.scheduled_at or meeting.scheduled_at <= utcnow():
         return None, "That session has already started or ended."
