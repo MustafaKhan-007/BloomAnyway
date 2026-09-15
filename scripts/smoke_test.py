@@ -6677,8 +6677,10 @@ ok("Nothing is left of the fields-over-the-page reader",
             "ENABLE_FORMS", "formState", "setupFormSaving")),
    "some of it is still there")
 _css_now = client.get("/static/css/main.css").get_data(as_text=True)
-ok("A wide page scrolls sideways at Large instead of being cut off",
-   'data-orient="landscape"' in _css_now and "overflow-x: auto" in _css_now)
+ok("The PDF pane scrolls when a zoom draws the page past it (Normal too)",
+   ".reader__viewer--fill { overflow: auto; }" in _css_now
+   and "min-height: min-content" in _css_now
+   and "justify-content: safe center" in _css_now)
 ok("Nor of the styling that dressed them",
    "annotationLayer" not in _css_now and "pdf-stack" not in _css_now)
 ok("Nowhere to post answers to any more",
