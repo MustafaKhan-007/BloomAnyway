@@ -58,6 +58,10 @@
   };
 
   var PREF_KEY = "ba-reader-prefs";
+  // Open at "fit width" by default. It fills the reading column on any screen,
+  // so a page is a readable, consistent size on a phone, a laptop, or a big
+  // monitor — where "fit whole page" left the text tiny on small screens.
+  var DEFAULT_ZOOM = "lg";
 
   function setPill() {
     if (!pill) return;
@@ -245,7 +249,7 @@
     root.setAttribute("data-theme", prefs.theme || "light");
     root.setAttribute("data-font", prefs.font || "md");
     root.setAttribute("data-line", prefs.line || "normal");
-    root.setAttribute("data-zoom", prefs.zoom || "md");
+    root.setAttribute("data-zoom", prefs.zoom || DEFAULT_ZOOM);
     if (appearancePanel) {
       appearancePanel.querySelectorAll("[data-theme]").forEach(function (btn) {
         btn.classList.toggle("is-active", btn.getAttribute("data-theme") === (prefs.theme || "light"));
@@ -257,7 +261,7 @@
         btn.classList.toggle("is-active", btn.getAttribute("data-line") === (prefs.line || "normal"));
       });
       appearancePanel.querySelectorAll("[data-zoom]").forEach(function (btn) {
-        btn.classList.toggle("is-active", btn.getAttribute("data-zoom") === (prefs.zoom || "md"));
+        btn.classList.toggle("is-active", btn.getAttribute("data-zoom") === (prefs.zoom || DEFAULT_ZOOM));
       });
     }
     if (typeof state.rerender === "function") state.rerender();
@@ -480,7 +484,7 @@
         // file, so measure the pane the page actually renders into.
         var pane = document.getElementById("reader-viewer")
           || document.getElementById("reader-stage");
-        var zoom = prefs.zoom || "md";
+        var zoom = prefs.zoom || DEFAULT_ZOOM;
         // Fit / Smaller: contain the full page in the pane (no scroll).
         // Larger: fill the pane width so text is readable; scroll vertically if needed.
         var availW = 800;
