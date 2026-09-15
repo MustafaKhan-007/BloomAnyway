@@ -507,20 +507,20 @@
         }
         var widthFill = availW / unscaled.width;
         var heightFill = availH / unscaled.height;
+        // Small shows the whole page (fits both ways, no scrolling). Large
+        // fills the pane — as wide as it for a tall page (scroll down), as tall
+        // as it for a wide slide (scroll across) — whichever axis needs the
+        // bigger scale, so the page is as large as it can be and the overflow
+        // scrolls. Normal sits just under Large.
         var contain = Math.min(widthFill, heightFill);
-        // Large fills the page's reading axis; Small shows the whole page;
-        // Normal sits just under Large. A portrait page reads down its width
-        // (fill the pane, scroll a long page down); a landscape page — a slide
-        // — reads across its height (fill the pane, scroll a wide page over),
-        // where filling the width would only shrink it to the whole-page size.
-        var fill = isLandscape ? heightFill : widthFill;
+        var cover = Math.max(widthFill, heightFill);
         var scale;
         if (zoom === "lg") {
-          scale = fill;
+          scale = cover;
         } else if (zoom === "sm") {
           scale = contain;
         } else {
-          scale = Math.max(contain, fill * 0.86);
+          scale = Math.max(contain, cover * 0.87);
         }
         var viewport = page.getViewport({ scale: scale });
         var cssWidth = Math.floor(viewport.width);
