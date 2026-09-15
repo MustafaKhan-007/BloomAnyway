@@ -2042,6 +2042,16 @@ html.is-page-loading { cursor: progress; }
   align-items: flex-start;
   align-items: safe center;
 }
+/* A landscape page fills the pane's height and can run off the sides, so it
+   scrolls across the same way a tall page scrolls down. Keep the left edge
+   reachable once the page is wider than the pane. */
+.course-reader-page[data-orient="landscape"] .course-reader__pdf-wrap {
+  justify-content: flex-start;
+  justify-content: safe center;
+}
+.course-reader-page[data-zoom="lg"][data-orient="landscape"] .reader__stage {
+  overflow-x: auto;
+}
 .reader__page-chip {
   position: absolute; top: 14px; right: 18px; margin: 0;
   font-size: 12px; font-weight: 700; color: var(--ink-soft);

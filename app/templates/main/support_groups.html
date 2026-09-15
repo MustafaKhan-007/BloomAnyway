@@ -263,7 +263,7 @@
           <div class="sg-upcoming__actions">
             {% if current_user.is_authenticated and m.id in my_meeting_ids %}
             <a class="btn btn--primary btn--sm" href="{{ url_for('main.support_session_room', meeting_id=m.id) }}">Join session</a>
-            {% elif current_user.is_authenticated and (current_user.is_healing() or current_user.is_admin) and spots > 0 %}
+            {% elif current_user.is_authenticated and (current_user.is_healing_track() or current_user.is_admin) and spots > 0 %}
             <form method="post" action="{{ url_for('main.join_support_session', meeting_id=m.id) }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button class="btn btn--secondary btn--sm" type="submit">Save a seat</button>

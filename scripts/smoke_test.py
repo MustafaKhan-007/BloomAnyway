@@ -9429,11 +9429,14 @@ ok("And offers to hand the file to the browser's own reader",
    "Open it in a new tab instead" in _reader_js)
 ok("A LiveCycle form is recognised rather than drawn blank",
    "isPureXfa" in _reader_js and "enableXfa" in _reader_js)
-# A slide is wider than it is tall, so it fills the pane's width at Fit
-# already. Larger used to go past that and cut both sides off a slide, with
-# no sideways scroll to get them back.
-ok("Larger never draws a page wider than the pane it is read in",
-   "scale = widthFill" in _reader_js and "contain * 1.28" not in _reader_js)
+# Small fits the whole page; Large fills the pane on whichever axis needs the
+# bigger scale (a tall page's width, a wide slide's height) via the cover
+# scale, so it can run past one edge on purpose — and the overflow scrolls
+# rather than being cut off with no way back.
+ok("Small fits the whole page and Large fills the pane by the cover scale",
+   "cover = Math.max(widthFill, heightFill)" in _reader_js
+   and "scale = cover" in _reader_js
+   and "scale = contain" in _reader_js)
 ok("And the line under the page counts as room the page hasn't got",
    "course-reader__pdf-note" in _reader_js and "noteH" in _reader_js)
 
@@ -9446,6 +9449,8 @@ ok("Nothing is left of the fields-over-the-page reader",
             "ENABLE_FORMS", "formState", "setupFormSaving")),
    "some of it is still there")
 _css_now = client.get("/static/css/main.css").get_data(as_text=True)
+ok("A wide page scrolls sideways at Large instead of being cut off",
+   'data-orient="landscape"' in _css_now and "overflow-x: auto" in _css_now)
 ok("Nor of the styling that dressed them",
    "annotationLayer" not in _css_now and "pdf-stack" not in _css_now)
 ok("Nowhere to post answers to any more",
