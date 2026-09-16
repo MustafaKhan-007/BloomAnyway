@@ -1028,7 +1028,7 @@ def send_support_group_booked(
 ) -> bool:
     """Send Brevo template (#11) when a peer support-group seat is saved.
 
-    Params: GROUP_TOPIC, SESSION_DATE, SESSION_TIME.
+    Params: GROUP_TOPIC, HOST_NAME, SESSION_DATE, SESSION_TIME, BUTTON_URL.
     """
     template_id = _int_config("BREVO_TEMPLATE_SUPPORT_BOOKED", 11) or None
     topic = (group_topic or "").strip() or "your support session"
@@ -1051,10 +1051,16 @@ def send_support_group_booked(
     if not template_id:
         return send_email(to, subject, text)
 
+    # HOST_NAME and BUTTON_URL were missing here, so the template's "Join
+    # session" button (params.BUTTON_URL) had no link and the host showed as
+    # blank ("hosted by ."). BUTTON_URL is the member's in-site room link,
+    # which opens the waiting room and then the call for this exact meeting.
     params = {
         "GROUP_TOPIC": topic,
+        "HOST_NAME": host,
         "SESSION_DATE": day,
         "SESSION_TIME": time_s,
+        "BUTTON_URL": url,
     }
     return send_email(
         to,
@@ -1154,7 +1160,7 @@ def send_support_group_host_cancelled(
 ) -> bool:
     """Send Brevo template (#14) when a host cancels a peer support session.
 
-    Params: GROUP_TOPIC, SESSION_DATE.
+    Params: GROUP_TOPIC, SESSION_DATE, BUTTON_URL.
     """
     template_id = _int_config("BREVO_TEMPLATE_SUPPORT_HOST_CANCEL", 14) or None
     topic = (group_topic or "").strip() or "your support session"
@@ -1174,9 +1180,12 @@ def send_support_group_host_cancelled(
     if not template_id:
         return send_email(to, subject, text)
 
+    # A cancelled session has no room to join, so BUTTON_URL is the "find
+    # another session" link — the support-groups page.
     params = {
         "GROUP_TOPIC": topic,
         "SESSION_DATE": day,
+        "BUTTON_URL": url,
     }
     return send_email(
         to,
