@@ -4220,6 +4220,33 @@ ok("Host booking email was sent",
         if "seat is saved" in m["subject"].lower()
         or "booked" in m["subject"].lower()]) >= 1)
 
+# The "Your seat is saved" template's button is params.BUTTON_URL and it names
+# the host with params.HOST_NAME. Both must be handed to the template, or the
+# Join session button has no link and the email reads "hosted by ." — so this
+# checks the real mailer, past the support-group stubs above.
+with app.app_context():
+    from app.services import mailer as _mailer_real
+    _booked_cap = {}
+    _mailer_orig = _mailer_real.send_email
+
+    def _grab(to, subject, text, template_id=None, params=None, **kw):
+        _booked_cap.update(params=params or {})
+        return True
+
+    _mailer_real.send_email = _grab
+    try:
+        _mailer_real.send_support_group_booked(
+            "seat@example.com", group_topic="Digital Product Builders",
+            host_name="Saman", session_date="Wed, Sep 16",
+            session_time="4:00 PM", button_url="/support-groups/meetings/77/room")
+    finally:
+        _mailer_real.send_email = _mailer_orig
+    _booked_params = _booked_cap.get("params") or {}
+ok("Booked email hands the template the meeting link and the host name",
+   _booked_params.get("BUTTON_URL", "").endswith("/support-groups/meetings/77/room")
+   and _booked_params.get("HOST_NAME") == "Saman",
+   f"got {_booked_params}")
+
 # Hosting is one a day. Two on the same day is the thing that's refused —
 # not the second one this fortnight — and the day is theirs, off their own
 # clock, which is why the zone is pinned before any of this is counted.
