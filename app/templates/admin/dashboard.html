@@ -100,26 +100,51 @@
   <div class="studio-dash-exact__money">
     <div class="admin-panel studio-card studio-dash-exact__revenue">
       <h2>Payments (30 days)</h2>
-      {% if cards.revenue %}
-      <p class="studio-card__metric">{{ cards.revenue }}</p>
-      {% else %}
-      <p class="studio-card__metric">$0</p>
-      {% endif %}
-      {% if cards.revenue_note %}<p class="field-help">{{ cards.revenue_note }}</p>{% endif %}
-      {% if trending_product %}
-      <p class="studio-trending" role="status">
-        <span class="studio-trending__mark" aria-hidden="true">↑</span>
-        <strong>{{ trending_product.label }}</strong>
-        <span class="field-help">{{ trending_product.sales }} sale{{ '' if trending_product.sales == 1 else 's' }} in {{ trending_product.window_days }} days</span>
-      </p>
-      {% endif %}
-      {% if cards.top_products %}
-      <ul class="field-help" style="margin: 10px 0 0; padding-left: 18px;">
-        {% for row in cards.top_products %}
-        <li>{{ row.title }} — {{ row.orders }} sale{{ '' if row.orders == 1 else 's' }}</li>
-        {% endfor %}
-      </ul>
-      {% endif %}
+      {% set pay = cards.pay_split %}
+      <div class="pay-split">
+        <div class="pay-split__half">
+          <p class="pay-split__label">Products</p>
+          <p class="studio-card__metric">{{ pay.products.amount }}</p>
+          <p class="field-help">{{ pay.products.count }} one-time sale{{ '' if pay.products.count == 1 else 's' }} in {{ pay.days }} days</p>
+          {% if trending_product %}
+          <p class="studio-trending" role="status">
+            <span class="studio-trending__mark" aria-hidden="true">↑</span>
+            <strong>{{ trending_product.label }}</strong>
+            <span class="field-help">{{ trending_product.sales }} sale{{ '' if trending_product.sales == 1 else 's' }} in {{ trending_product.window_days }} days</span>
+          </p>
+          {% endif %}
+          {% if cards.top_products %}
+          <ul class="field-help pay-split__list">
+            {% for row in cards.top_products %}
+            <li>{{ row.title }} — {{ row.orders }} sale{{ '' if row.orders == 1 else 's' }}</li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+        </div>
+        <div class="pay-split__half">
+          <p class="pay-split__label">Subscriptions</p>
+          <p class="studio-card__metric">{{ pay.subscriptions.amount }}</p>
+          <p class="field-help">{{ pay.subscriptions.count }} membership payment{{ '' if pay.subscriptions.count == 1 else 's' }} in {{ pay.days }} days</p>
+          {% if pay.subscriptions.by_tier %}
+          <ul class="field-help pay-split__list">
+            {% for t in pay.subscriptions.by_tier %}
+            <li>{{ t.label }} — {{ t.amount }}</li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+          {% if pay.subscriptions.annual %}
+          <p class="field-help pay-split__meta">Annual {{ pay.subscriptions.annual }} · Monthly {{ pay.subscriptions.monthly }}</p>
+          {% endif %}
+          {% set mem = pay.subscriptions.members %}
+          {% if mem %}
+          <p class="field-help pay-split__meta">
+            {{ mem.paying }} paying{% if mem.perk %} · {{ mem.perk }} on a free course perk{% endif %}{% if mem.comped %} · {{ mem.comped }} comped{% endif %}{% if mem.unexplained %} · {{ mem.unexplained }} to check{% endif %}
+          </p>
+          <p class="field-help pay-split__note">Memberships given free with a product perk don&rsquo;t add to this — that money is counted under Products.</p>
+          {% endif %}
+        </div>
+      </div>
+      <p class="field-help pay-split__total">Total collected: <strong>{{ pay.total }}</strong> in {{ pay.days }} days</p>
       {% if cards.traffic_sources %}
       <p class="field-help" style="margin-top: 12px;"><strong>Traffic sources</strong></p>
       <ul class="field-help" style="margin: 4px 0 0; padding-left: 18px;">

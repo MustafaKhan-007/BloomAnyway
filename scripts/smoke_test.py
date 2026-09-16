@@ -10351,6 +10351,25 @@ with app.app_context():
     ok("A paid membership order grants the tier",
        _ptier("canceller@example.com") == "creator")
 
+    # The Payments split routes a membership payment to Subscriptions, and a
+    # one-time sale to Products — the two halves that make up total revenue.
+    _split_paid = _stats.revenue_split(3650)
+    _subs_count = _split_paid["subscriptions"]["count"]
+    ok("A membership payment lands under Subscriptions (by tier), not Products",
+       _subs_count >= 1
+       and "creator" in [t["tier"] for t in _split_paid["subscriptions"]["by_tier"]])
+    _prod_before = _split_paid["products"]["count"]
+    _oneoff = Order(ls_order_id="ONEOFF-1", buyer_email="oneoff@example.com",
+                    total_cents=4200, currency="USD", status="paid")
+    db.session.add(_oneoff)
+    db.session.commit()
+    _split2 = _stats.revenue_split(3650)
+    ok("A one-time sale lands under Products, and Subscriptions is unchanged",
+       _split2["products"]["count"] == _prod_before + 1
+       and _split2["subscriptions"]["count"] == _subs_count)
+    db.session.delete(_oneoff)
+    db.session.commit()
+
     _paid_order.status = "ended"
     db.session.commit()
     _rev_ended = _stats.payment_insights(3650)["revenue"]

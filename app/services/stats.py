@@ -1,4 +1,5 @@
 """Dashboard statistics, computed from the local database only."""
+import logging
 from datetime import date, datetime, time, timedelta
 
 from sqlalchemy import func, or_
@@ -9,6 +10,8 @@ from ..models import (COLLECTED_ORDER_STATUSES, ForumPost, MarketplaceListing,
                       MembershipPlan, Order, PageView, Product, ShopPurchase,
                       SiteFeedback, User, Video, VisitEvent)
 from . import support_groups as sg_svc
+
+log = logging.getLogger(__name__)
 
 #: Who counts as a member here. Studio's stand-in accounts are furniture, not
 #: people, so they stay out of every number an owner reads for a decision.
@@ -189,6 +192,123 @@ def payment_insights(days: int = 30) -> dict:
     }
 
 
+def _membership_price_tiers() -> dict[str, str]:
+    """Map every membership plan's Stripe/Lemon price id → its tier.
+
+    Built once so an order whose ``membership_tier`` was never stamped (an older
+    row, a renewal invoice) can still be recognised as a subscription by the
+    price it was billed on — monthly *and* annual ids both point at the tier.
+    """
+    from .memberships import _PAID_TIERS
+    out: dict[str, str] = {}
+    for plan in MembershipPlan.query.all():
+        if plan.tier not in _PAID_TIERS:
+            continue
+        for key in (plan.stripe_price_id, plan.stripe_price_id_annual,
+                    plan.ls_variant_id):
+            k = (key or "").strip()
+            if k:
+                out[k] = plan.tier
+    return out
+
+
+def _annual_price_ids() -> set[str]:
+    ids: set[str] = set()
+    for plan in MembershipPlan.query.all():
+        k = (plan.stripe_price_id_annual or "").strip()
+        if k:
+            ids.add(k)
+    return ids
+
+
+def revenue_split(days: int = 30) -> dict:
+    """Split collected revenue into one-time products and memberships.
+
+    Both halves add up to the total the ledger collected in the window. Amounts
+    are summed from what was actually charged on each order, so founder vs
+    regular pricing, the different tiers, and monthly vs annual all fall out of
+    the real numbers rather than an assumed price. Memberships handed out as a
+    free perk with a product never create a paid order, so they are naturally
+    absent from subscription revenue — the money for that sale sits on the
+    products side, where it was earned, and is counted once.
+    """
+    from ..models import MEMBERSHIP_LABELS
+
+    start = _dt(date.today() - timedelta(days=days - 1))
+    orders = _exclude_test_sales(
+        Order.query.filter(Order.status.in_(COLLECTED_ORDER_STATUSES),
+                           Order.created_at >= start)).all()
+
+    price_tier = _membership_price_tiers()
+    annual_ids = _annual_price_ids()
+
+    total_cents = 0
+    sub_cents = 0
+    sub_count = 0
+    prod_count = 0
+    tier_cents: dict[str, int] = {}
+    annual_cents = 0
+    monthly_cents = 0
+    for o in orders:
+        amount = int(o.total_cents or 0)
+        total_cents += amount
+        variant = (o.ls_variant_id or "").strip()
+        tier = (o.membership_tier or "").strip().lower()
+        if tier not in ("healing", "creator", "full_bloom"):
+            tier = price_tier.get(variant, "")
+        if tier in ("healing", "creator", "full_bloom"):
+            sub_cents += amount
+            sub_count += 1
+            tier_cents[tier] = tier_cents.get(tier, 0) + amount
+            if variant and variant in annual_ids:
+                annual_cents += amount
+            else:
+                monthly_cents += amount
+        else:
+            prod_count += 1
+    product_cents = total_cents - sub_cents
+    product_count = max(0, len(orders) - sub_count)
+
+    tier_rows = [
+        {"tier": t, "label": MEMBERSHIP_LABELS.get(t, t.replace("_", " ").title()),
+         "amount": _money(tier_cents[t])}
+        for t in ("healing", "creator", "full_bloom")
+        if tier_cents.get(t)
+    ]
+
+    # Who currently holds a paid tier and why — so the free perks that bring in
+    # no money are visible next to the members who are actually paying.
+    members = {}
+    try:
+        from . import membership_audit
+        counts = membership_audit.audit().get("counts", {})
+        members = {
+            "paying": int(counts.get("order", 0)),
+            "perk": int(counts.get("perk", 0)),
+            "comped": int(counts.get("manual", 0)) + int(counts.get("owner", 0)),
+            "unexplained": int(counts.get("unexplained", 0)),
+        }
+    except Exception:
+        log.exception("revenue_split: membership composition failed")
+
+    return {
+        "days": days,
+        "total": _money(total_cents),
+        "products": {
+            "amount": _money(product_cents),
+            "count": product_count,
+        },
+        "subscriptions": {
+            "amount": _money(sub_cents),
+            "count": sub_count,
+            "by_tier": tier_rows,
+            "annual": _money(annual_cents) if annual_cents else None,
+            "monthly": _money(monthly_cents) if monthly_cents else None,
+            "members": members,
+        },
+    }
+
+
 def dashboard_cards() -> dict:
     """Community metrics shown on the Studio dashboard."""
     today = date.today()
@@ -223,6 +343,7 @@ def dashboard_cards() -> dict:
     ).scalar() or 0
     pay = payment_insights(30)
     return {
+        "pay_split": revenue_split(30),
         "forum_posts": posts_30d,
         "forum_posts_24h": posts_24h,
         "engagement_pct": engagement,

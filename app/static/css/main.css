@@ -8557,6 +8557,28 @@ a.at-handle:hover { text-decoration: underline; }
 @media (min-width: 800px) {
   .studio-dash-exact__money { grid-template-columns: 1.15fr 0.85fr 0.85fr; }
 }
+/* Payments card, split into one-time products vs recurring memberships. */
+.pay-split {
+  display: grid; gap: 16px; grid-template-columns: 1fr; margin: 4px 0 6px;
+}
+@media (min-width: 520px) {
+  .pay-split { grid-template-columns: 1fr 1fr; }
+  .pay-split__half + .pay-split__half {
+    border-left: 1px solid rgba(61, 20, 49, 0.12); padding-left: 16px;
+  }
+}
+.pay-split__label {
+  margin: 0; font-size: 11px; font-weight: 800; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--ink-soft);
+}
+.pay-split .studio-card__metric { font-size: 1.5rem; margin: 2px 0 4px; }
+.pay-split__list { margin: 8px 0 0; padding-left: 18px; }
+.pay-split__meta { margin: 8px 0 0; }
+.pay-split__note { margin: 6px 0 0; font-style: italic; }
+.pay-split__total {
+  margin: 2px 0 10px; padding-top: 10px;
+  border-top: 1px solid rgba(61, 20, 49, 0.10);
+}
 .studio-dash-exact__founder {
   background: linear-gradient(160deg, #4A154B 0%, #3d1431 100%) !important;
   color: #faf5ee; border: 0 !important;
