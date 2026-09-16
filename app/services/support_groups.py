@@ -356,6 +356,21 @@ def user_selected_on_meeting(user_id: int, meeting_id: int
             .first())
 
 
+def user_seat_on_meeting(user_id: int, meeting_id: int
+                         ) -> SupportGroupApplication | None:
+    """Any seat this user holds on the meeting, whatever its status.
+
+    A live/upcoming seat is ``selected``; completing a session turns it into
+    ``attended`` and cancelling into ``cancelled``. This is what tells whether
+    someone belongs on a *finished* session's wrap page, since ``selected`` no
+    longer matches once the room has closed.
+    """
+    return (SupportGroupApplication.query
+            .filter_by(user_id=user_id, meeting_id=meeting_id)
+            .order_by(SupportGroupApplication.id.desc())
+            .first())
+
+
 def sessions_hosted_on(user_id: int, when: datetime,
                        tz_name: str | None = None) -> list[SupportGroupMeeting]:
     """Peer sessions this person already hosts on the day ``when`` falls on.
@@ -1792,7 +1807,13 @@ def _notify_seats(meeting: SupportGroupMeeting, *, kind: str,
         else:
             continue
 
-        notify(user.id, kind="support_group", body=note[:300],
+        # A cancelled session has nothing to join, so it shows as a plain
+        # "View" alert (to the support-groups page) rather than a "Join
+        # session" button that would only lead away from any meeting.
+        note_kind = ("support_group_alert"
+                     if kind in ("cancelled", "cancelled_draft")
+                     else "support_group")
+        notify(user.id, kind=note_kind, body=note[:300],
                actor_id=actor_id, url=join_url)
         if kind == "booked":
             _send_booked_email(meeting, user)

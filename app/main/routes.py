@@ -2951,21 +2951,35 @@ def support_session_room(meeting_id):
     from ..services import daily as daily_svc
 
     meeting = db.session.get(SupportGroupMeeting, meeting_id) or abort(404)
+
+    # A finished session belongs on its wrap page. Route this *before* the
+    # live-room seat gate: completing a session turns a seat from "selected"
+    # into "attended", so a member who attended no longer matches the gate and
+    # a stale "Join session" notification would otherwise bounce them to the
+    # generic list instead of the meeting they were part of.
+    session_over = meeting.status == "completed" or (
+        meeting.status == "scheduled" and meeting.scheduled_at
+        and sg_svc.meeting_phase(meeting) == "ended")
+    if session_over:
+        was_seated = (current_user.is_admin or sg_svc.user_seat_on_meeting(
+            current_user.id, meeting.id) is not None)
+        if not was_seated:
+            flash("Save a seat on that session before joining the room.", "error")
+            return redirect(url_for("main.support_groups_page"))
+        # Close it out the first time so Studio stops listing it as open.
+        if meeting.status == "scheduled":
+            try:
+                sg_svc.complete_meeting(meeting)
+            except Exception:
+                log.exception("Could not auto-complete meeting %s", meeting.id)
+        return redirect(url_for("main.support_session_wrap", meeting_id=meeting.id))
+
+    # Upcoming or live: a current seat is required to enter the room.
     seat = sg_svc.user_selected_on_meeting(current_user.id, meeting.id)
     if seat is None and not current_user.is_admin:
         flash("Save a seat on that session before joining the room.", "error")
         return redirect(url_for("main.support_groups_page"))
 
-    # Past live window → wrap (and close the meeting so Studio stops listing it).
-    if meeting.status == "scheduled" and meeting.scheduled_at:
-        if sg_svc.meeting_phase(meeting) == "ended":
-            try:
-                sg_svc.complete_meeting(meeting)
-            except Exception:
-                log.exception("Could not auto-complete meeting %s", meeting.id)
-            return redirect(url_for("main.support_session_wrap", meeting_id=meeting.id))
-    if meeting.status == "completed":
-        return redirect(url_for("main.support_session_wrap", meeting_id=meeting.id))
     if meeting.status != "scheduled" or not meeting.room_url or not meeting.room_name:
         flash("That session isn’t open yet.", "error")
         return redirect(url_for("main.support_groups_page"))
@@ -2974,6 +2988,7 @@ def support_session_room(meeting_id):
     if phase == "waiting":
         return redirect(url_for("main.support_session_waiting", meeting_id=meeting.id))
     if phase == "ended":
+        # Slipped past its end between the checks above and here.
         return redirect(url_for("main.support_session_wrap", meeting_id=meeting.id))
 
     is_host = meeting.scheduled_by_user_id == current_user.id
@@ -3162,17 +3177,12 @@ def support_session_wrap(meeting_id):
     from ..services import support_groups as sg_svc
 
     meeting = db.session.get(SupportGroupMeeting, meeting_id) or abort(404)
-    seat = sg_svc.user_selected_on_meeting(current_user.id, meeting.id)
-    # Also allow wrap after cancel/complete if they were seated (selected seats gone).
-    if seat is None and not current_user.is_admin:
-        # Fall back: any historical seat on this meeting for this user.
-        from ..models import SupportGroupApplication
-        past = (SupportGroupApplication.query
-                .filter_by(user_id=current_user.id, meeting_id=meeting.id)
-                .first())
-        if past is None:
-            flash("That session wrap isn’t available.", "error")
-            return redirect(url_for("main.support_groups_page"))
+    # Any seat, whatever its status: completing/cancelling a session moves a
+    # seat off "selected", but whoever was in it still belongs on the wrap.
+    if not current_user.is_admin and sg_svc.user_seat_on_meeting(
+            current_user.id, meeting.id) is None:
+        flash("That session wrap isn’t available.", "error")
+        return redirect(url_for("main.support_groups_page"))
 
     peers = sg_svc.wrap_peers(meeting, current_user)
     return render_template(

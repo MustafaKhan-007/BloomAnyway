@@ -4625,7 +4625,8 @@ ok("Reminder email includes in-site Join link",
        for m in _sent_mail))
 
 with app.app_context():
-    notes_before_cancel = Notification.query.filter_by(kind="support_group").count()
+    notes_before_cancel = Notification.query.filter(
+        Notification.kind.in_(("support_group", "support_group_alert"))).count()
 r = admin.post(f"/admin/support-groups/{mid}/cancel", follow_redirects=True)
 ok("Owner can cancel a peer session from Studio",
    "cancelled" in r.get_data(as_text=True).lower())
@@ -4634,12 +4635,53 @@ ok("Cancel emails were sent to seated members",
         if "won't be happening" in m["subject"].lower()
         or "cancelled" in m["subject"].lower()]) >= 2)
 with app.app_context():
-    notes_after = Notification.query.filter_by(kind="support_group").count()
+    notes_after = Notification.query.filter(
+        Notification.kind.in_(("support_group", "support_group_alert"))).count()
     ok("Cancel creates in-app notifications for seated members",
        notes_after >= notes_before_cancel + 2)
+    # A cancelled session has nothing to join, so its notification is a plain
+    # "View" alert to the support-groups page — not a "Join session" button
+    # that would only lead away from any meeting.
+    _cancel_note = (Notification.query
+                    .filter_by(kind="support_group_alert")
+                    .order_by(Notification.id.desc()).first())
+    ok("A cancellation notification points to the page, not a room to join",
+       _cancel_note is not None
+       and "cancelled" in (_cancel_note.body or "").lower()
+       and "/support-groups" in (_cancel_note.href() or "")
+       and "/room" not in (_cancel_note.href() or ""))
     cancelled_seats = SupportGroupApplication.query.filter_by(
         meeting_id=mid, status="cancelled").count()
     ok("Peer cancel marks seats cancelled (no waitlist return)", cancelled_seats == 2)
+
+# A stale "Join session" notification for a session that has since finished must
+# land on that meeting's wrap page — not the generic list — even though the
+# attendee's seat is now "attended" rather than "selected".
+with app.app_context():
+    from app.models import SupportGroupCircle as _SGCircle
+    _wrap_host = User.query.filter_by(email="owner@example.com").first()
+    _wrap_circle = _SGCircle.query.first()
+    _wrap_done = SupportGroupMeeting(
+        circle_id=_wrap_circle.id, capacity=8, kind="peer",
+        scheduled_by_user_id=_wrap_host.id, status="completed",
+        scheduled_at=utcnow() - timedelta(days=1), created_at=utcnow(),
+        zoom_url="https://x.daily.co/wrapdone", zoom_meeting_id="wrapdone")
+    db.session.add(_wrap_done)
+    db.session.commit()
+    _wrap_att = User.query.filter_by(email="stranger@example.com").first()
+    db.session.add(SupportGroupApplication(
+        user_id=_wrap_att.id, circle_id=_wrap_circle.id, meeting_id=_wrap_done.id,
+        message="", status="attended", created_at=utcnow()))
+    db.session.commit()
+    _wrap_done_id = _wrap_done.id
+_att_client = app.test_client()
+_att_client.post("/login", data={"email": "stranger@example.com", "password": USER_PW})
+r = _att_client.get(f"/support-groups/meetings/{_wrap_done_id}/room",
+                    follow_redirects=False)
+ok("A finished session's Join link lands on that meeting's wrap, not the list",
+   r.status_code in (302, 303)
+   and (r.headers.get("Location") or "").endswith(
+       f"/support-groups/meetings/{_wrap_done_id}/wrap"))
 
 # --- member cancels their own 1:1 (refund only 24h+ ahead) -------------------
 def _seat_one_on_one(email, hours_ahead):
