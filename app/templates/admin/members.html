@@ -243,6 +243,29 @@
               across from their name.
             </p>
             {% endif %}
+            {% if grantable_products %}
+            <form method="post" class="member-owns__grant"
+                  action="{{ url_for('admin.member_grant_product', user_id=m.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="q" value="{{ q }}">
+              <input type="hidden" name="membership_filter" value="{{ membership_filter }}">
+              <label class="member-owns__grant-label" for="grant-{{ m.id }}">Give them a product</label>
+              <div class="studio-accent-row">
+                <select id="grant-{{ m.id }}" name="product_id" required>
+                  <option value="">Choose a product&hellip;</option>
+                  {% for gp in grantable_products %}
+                  <option value="{{ gp.id }}">{{ gp.label }}</option>
+                  {% endfor %}
+                </select>
+                <button class="btn btn--secondary btn--sm" type="submit">Give it to them</button>
+              </div>
+              <p class="field-help" style="margin: 6px 0 0;">
+                Free, straight to their My Space &mdash; even something off the
+                shelves. Modules drip from today, and any membership perk it
+                carries is applied.
+              </p>
+            </form>
+            {% endif %}
           </td>
         </tr>
         {% else %}

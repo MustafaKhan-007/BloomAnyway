@@ -108,6 +108,11 @@ def perk_state(user) -> dict:
         if product is None:
             continue
         starts, until = product.perk_window(purchase.purchased_at or now)
+        if until is None:
+            # The product no longer carries a perk (its months/tier were
+            # cleared). Nothing to grant, and nothing to compare against —
+            # skip it rather than crash comparing None to a date.
+            continue
         if until <= now:
             out["expired"] = True
             continue

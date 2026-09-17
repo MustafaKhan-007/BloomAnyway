@@ -7380,6 +7380,70 @@ with app.app_context():
     ok("Told once, not once per webhook",
        _Note.query.filter_by(user_id=dripper.id, kind="membership").count() == 1)
 
+# The owner's worry: does taking a product off the shelves end the free
+# membership it carried? It must not — the perk is owned, and the shelf date
+# only stops new sales.
+with app.app_context():
+    from app.services.memberships import reconcile_user as _reconc
+    _dp = Product.query.filter_by(slug="drip-course").first()
+    _dp.off_shelf_at = utcnow() - timedelta(days=1)
+    db.session.commit()
+    dripper = User.query.filter_by(email="dripper@example.com").first()
+    _reconc(dripper, downgrade=True)
+    db.session.commit()
+    dripper = User.query.filter_by(email="dripper@example.com").first()
+    ok("Taking a product off the shelves does not end the perk it carried",
+       dripper.membership == "creator", f"got {dripper.membership}")
+
+# Giving a member a product by hand — even one off the shelves — puts it on
+# their shelf, opens in the reader, and applies the perk, with no Stripe sale.
+with app.app_context():
+    from app.services import course_reader as _reader
+    from app.services.shop_purchases import grant_product as _grant
+    _giftee = User(email="giftee@example.com", email_verified_at=utcnow())
+    _giftee.set_password(USER_PW)
+    db.session.add(_giftee)
+    db.session.commit()
+    _dp = Product.query.filter_by(slug="drip-course").first()  # still off-shelf
+    _res = _grant(_giftee, _dp)
+    db.session.commit()
+    _giftee = User.query.filter_by(email="giftee@example.com").first()
+    _grow = ShopPurchase.query.filter_by(user_id=_giftee.id, status="linked").first()
+    _matched = _reader.catalog_product_for_purchase(_grow) if _grow else None
+    ok("Owner can give a member an off-shelf product, perk and all",
+       _res.get("ok") and _dp.is_off_shelf() and _grow is not None
+       and _matched is not None and _matched.id == _dp.id
+       and _reader.owned_purchase(_giftee, _grow.id) is not None
+       and _giftee.membership == "creator",
+       f"{_res} membership={_giftee.membership}")
+    _grant(_giftee, _dp)
+    db.session.commit()
+    ok("Giving the same product again doesn't stack a second copy",
+       ShopPurchase.query.filter_by(user_id=_giftee.id)
+       .filter(ShopPurchase.product_name == _dp.title).count() == 1)
+
+# And by the Members page button, over HTTP.
+with app.app_context():
+    _rgm = User(email="grantme@example.com", email_verified_at=utcnow())
+    _rgm.set_password(USER_PW)
+    db.session.add(_rgm)
+    db.session.commit()
+    _rgm_id = _rgm.id
+    _dp_id = Product.query.filter_by(slug="drip-course").first().id
+r = admin.post(f"/admin/members/{_rgm_id}/grant",
+               data={"product_id": str(_dp_id)}, follow_redirects=True)
+with app.app_context():
+    _rgm = db.session.get(User, _rgm_id)
+    ok("The Members page 'give a product' button grants it and applies the perk",
+       r.status_code == 200
+       and ShopPurchase.query.filter_by(user_id=_rgm_id, status="linked").count() >= 1
+       and _rgm.membership == "creator",
+       f"membership={getattr(_rgm, 'membership', None)}")
+    # Put drip-course back on the shelf for any later reads.
+    _dp = Product.query.filter_by(slug="drip-course").first()
+    _dp.off_shelf_at = None
+    db.session.commit()
+
 # --- a perk that runs to a date, instead of for a number of months ------------
 # "Three months from when they buy" is one way to give membership away. "Until
 # the season closes" is the other, and now the owner picks which.
