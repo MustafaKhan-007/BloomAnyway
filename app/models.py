@@ -148,6 +148,10 @@ class User(UserMixin, db.Model):
     # When that Studio choice was made, so a webhook replayed for an older
     # payment can't undo it.
     membership_manual_at = db.Column(db.DateTime)
+    # Optional expiry for a hand-set tier: past this UTC time the manual grant
+    # lapses and they fall back to whatever they actually pay for (or a perk,
+    # or none). Empty means the grant has no end.
+    membership_manual_until = db.Column(db.DateTime)
 
     # When their reel was first put on the home page. Entries are cleared out
     # every Monday, so being featured is only remembered if it's kept here.

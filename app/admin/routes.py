@@ -2709,9 +2709,22 @@ def set_membership(user_id):
     tier = request.form.get("membership")
     if tier in MEMBERSHIPS:
         from ..services.memberships import set_manual_tier
-        info = set_manual_tier(member, tier)
+        from ..services.timefmt import account_timezone, parse_owner_parts
+        until = None
+        expiry = (request.form.get("expiry_date") or "").strip()
+        if expiry and tier != "none":
+            until = parse_owner_parts(
+                expiry, (request.form.get("expiry_time") or "").strip() or "23:59",
+                account_timezone(current_user))
+            if until is None:
+                flash("That expiry date didn't look right, so the membership "
+                      "was set with no end.", "info")
+        info = set_manual_tier(member, tier, until=until)
         db.session.commit()
         msg = f"{member.public_name()} \u2192 {member.membership_label()}."
+        if info.get("until"):
+            from ..services.timefmt import format_local
+            msg += f" Ends {format_local(info['until'], '%b %d, %Y')}."
         if info["revoked"]:
             msg += " Their paid membership was cancelled in Stripe."
         flash(msg, "success")
@@ -2730,6 +2743,85 @@ def set_membership(user_id):
         membership=request.form.get("membership_filter") or None,
     )
     return redirect(next_url)
+
+
+@bp.route("/members/bulk-membership", methods=["POST"])
+@admin_required
+def bulk_membership():
+    """Set the same tier (with an optional expiry) for a pasted list of emails.
+
+    Only addresses that already have a Bloom account are changed — the rest are
+    reported back so the owner knows who was skipped and why.
+    """
+    import re as _re
+    from ..services.memberships import set_manual_tier
+    from ..services.timefmt import (account_timezone, format_local,
+                                    parse_owner_parts)
+
+    back = url_for("admin.members")
+    tier = (request.form.get("membership") or "").strip().lower()
+    if tier not in MEMBERSHIPS:
+        flash("Pick which membership to give them.", "error")
+        return redirect(back)
+
+    raw = request.form.get("emails") or ""
+    # Split on anything that isn't part of an address, then keep the plausible.
+    seen: set[str] = set()
+    emails: list[str] = []
+    for token in _re.split(r"[\s,;]+", raw):
+        addr = token.strip().lower()
+        if addr and "@" in addr and addr not in seen:
+            seen.add(addr)
+            emails.append(addr)
+    if not emails:
+        flash("Paste at least one email address.", "error")
+        return redirect(back)
+
+    until = None
+    expiry = (request.form.get("expiry_date") or "").strip()
+    if expiry and tier != "none":
+        until = parse_owner_parts(
+            expiry, (request.form.get("expiry_time") or "").strip() or "23:59",
+            account_timezone(current_user))
+        if until is None:
+            flash("That expiry date didn't look right, so these were set with "
+                  "no end.", "info")
+
+    done = 0
+    no_account: list[str] = []
+    skipped_owner = 0
+    billing_warns = 0
+    for addr in emails:
+        member = (User.query
+                  .filter(func.lower(User.email) == addr, User.deleted_at.is_(None))
+                  .first())
+        if member is None:
+            no_account.append(addr)
+            continue
+        if member.is_admin:
+            skipped_owner += 1
+            continue
+        info = set_manual_tier(member, tier, until=until)
+        if info.get("ok"):
+            done += 1
+        if info.get("errors"):
+            billing_warns += 1
+    db.session.commit()
+
+    label = MEMBERSHIP_LABELS.get(tier, tier)
+    ends = f" until {format_local(until, '%b %d, %Y')}" if until else ""
+    parts = [f"Set {done} account{'' if done == 1 else 's'} to {label}{ends}."]
+    if no_account:
+        shown = ", ".join(no_account[:8]) + (" and more" if len(no_account) > 8 else "")
+        parts.append(f"{len(no_account)} had no Bloom account and were skipped "
+                     f"({shown}).")
+    if skipped_owner:
+        parts.append(f"{skipped_owner} owner account(s) left as Full Bloom.")
+    if billing_warns:
+        parts.append(f"{billing_warns} had a paid membership Stripe didn't "
+                     "confirm cancelling — check those in Stripe.")
+    flash(" ".join(parts), "success" if done else "info")
+    return redirect(back)
 
 
 @bp.route("/members/<int:user_id>/owns/<int:purchase_id>/remove",

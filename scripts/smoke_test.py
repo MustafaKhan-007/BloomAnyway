@@ -1949,6 +1949,52 @@ with app.app_context():
     new_tier = User.query.filter_by(email="free@example.com").first().membership
 ok("Owner can grant a membership", new_tier == "healing", f"got {new_tier}")
 
+# A hand-set tier can carry an expiry date; past it, the grant lapses back to
+# whatever they actually pay for.
+_grant_expiry = (datetime.utcnow() + timedelta(days=30)).strftime("%Y-%m-%d")
+admin.post(f"/admin/members/{free_uid}/membership",
+           data={"membership": "creator", "expiry_date": _grant_expiry},
+           follow_redirects=True)
+with app.app_context():
+    _fu = db.session.get(User, free_uid)
+    ok("Owner can grant a membership with an end date",
+       _fu.membership == "creator" and _fu.membership_manual == "creator"
+       and _fu.membership_manual_until is not None,
+       f"got {_fu.membership}/{_fu.membership_manual}/{_fu.membership_manual_until}")
+    from app.services.memberships import reconcile_user as _rc_exp
+    _fu.membership_manual_until = datetime.utcnow() - timedelta(minutes=1)
+    db.session.commit()
+    _rc_exp(_fu, downgrade=True)
+    db.session.commit()
+    _fu = db.session.get(User, free_uid)
+    ok("A hand-set membership lapses once its end date passes",
+       _fu.membership == "none" and _fu.membership_manual is None
+       and _fu.membership_manual_until is None,
+       f"got {_fu.membership}/{_fu.membership_manual}")
+
+# Bulk: paste a list of emails + a tier (+ optional expiry). Only addresses
+# with a Bloom account change; the rest are reported back.
+_bulk_expiry = (datetime.utcnow() + timedelta(days=60)).strftime("%Y-%m-%d")
+r = admin.post("/admin/members/bulk-membership",
+               data={"membership": "creator", "expiry_date": _bulk_expiry,
+                     "emails": "free@example.com, ghost-not-here@example.com"},
+               follow_redirects=True)
+with app.app_context():
+    _fu = db.session.get(User, free_uid)
+    ok("Bulk grant sets tier + expiry for real accounts and skips the rest",
+       r.status_code == 200 and _fu.membership == "creator"
+       and _fu.membership_manual == "creator"
+       and _fu.membership_manual_until is not None
+       and "had no Bloom account" in r.get_data(as_text=True),
+       f"got {_fu.membership}/{_fu.membership_manual}")
+    # Restore Healing (no expiry) — later tests rely on free@example.com being
+    # a Healing member.
+    _fu.membership = "healing"
+    _fu.membership_manual = "healing"
+    _fu.membership_manual_at = utcnow()
+    _fu.membership_manual_until = None
+    db.session.commit()
+
 # co-owner invites
 from app.services import owners as owners_svc
 r = admin.get("/admin/owners")
