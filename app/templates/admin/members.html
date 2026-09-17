@@ -103,6 +103,46 @@
       </form>
     </details>
 
+    <details class="demo-add">
+      <summary class="demo-add__summary">
+        <span>Grant memberships in bulk</span>
+        <span class="field-help" style="margin:0;">Paste emails, pick a tier</span>
+      </summary>
+      <p class="field-help" style="max-width: 62ch;">
+        Paste email addresses &mdash; one per line, or separated by commas.
+        Each one that already has a Bloom account gets the tier you pick; any
+        without an account are skipped and named back to you. An end date is
+        optional &mdash; leave it empty for no expiry, and on that day the tier
+        drops back to whatever they actually pay for.
+      </p>
+      <form method="post" action="{{ url_for('admin.bulk_membership') }}" class="demo-add__form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="field">
+          <label for="bulk_emails">Email addresses</label>
+          <textarea id="bulk_emails" name="emails" rows="6" required
+                    placeholder="one@example.com&#10;two@example.com"></textarea>
+        </div>
+        <div class="form-row">
+          <div class="field">
+            <label for="bulk_membership">Membership</label>
+            <select id="bulk_membership" name="membership">
+              {% for tier in memberships %}
+              {% if tier != 'none' %}
+              <option value="{{ tier }}" {{ 'selected' if tier == 'creator' }}>{{ membership_labels.get(tier, tier) }}</option>
+              {% endif %}
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label for="bulk_expiry">Ends on (optional)</label>
+            <input type="date" id="bulk_expiry" name="expiry_date">
+            <p class="field-help">Empty means no end.</p>
+          </div>
+        </div>
+        <button class="btn btn--primary btn--sm" type="submit">Grant to everyone listed</button>
+      </form>
+    </details>
+
     <form method="get" class="member-search">
       {% if membership_filter %}
       <input type="hidden" name="membership" value="{{ membership_filter }}">
@@ -164,6 +204,11 @@
             {% if m.membership_is_canceling() %}
             <span class="status-pill status-pill--pending" title="Access continues until period end">
               cancelled, revoked on {{ m.membership_access_end_display() }}
+            </span>
+            {% endif %}
+            {% if m.membership_manual_until %}
+            <span class="status-pill status-pill--pending" title="Hand-set membership expires">
+              ends {{ m.membership_manual_until|localtime('%b %d, %Y') }}
             </span>
             {% endif %}
           </td>
@@ -263,6 +308,34 @@
                 Free, straight to their My Space &mdash; even something off the
                 shelves. Modules drip from today, and any membership perk it
                 carries is applied.
+              </p>
+            </form>
+            {% endif %}
+            {% if not m.is_admin %}
+            <form method="post" class="member-owns__grant"
+                  action="{{ url_for('admin.set_membership', user_id=m.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="q" value="{{ q }}">
+              <input type="hidden" name="membership_filter" value="{{ membership_filter }}">
+              <input type="hidden" name="next"
+                     value="{{ url_for('admin.members', q=q or none, membership=membership_filter or none, open=m.id) }}#member-{{ m.id }}">
+              <label class="member-owns__grant-label" for="mtier-{{ m.id }}">Give a membership with an end date</label>
+              <div class="studio-accent-row">
+                <select id="mtier-{{ m.id }}" name="membership">
+                  {% for tier in memberships %}
+                  <option value="{{ tier }}" {{ 'selected' if m.membership == tier }}>{{ membership_labels.get(tier, tier) }}</option>
+                  {% endfor %}
+                </select>
+                <input type="date" name="expiry_date"
+                       value="{{ m.membership_manual_until|localtime('%Y-%m-%d') if m.membership_manual_until else '' }}"
+                       aria-label="Membership end date">
+                <button class="btn btn--secondary btn--sm" type="submit">Set</button>
+              </div>
+              <p class="field-help" style="margin: 6px 0 0;">
+                Leave the date empty for no end. On the end date the tier drops
+                back to whatever they pay for (or a course perk, or Free).
+                {%- if m.membership_manual_until %} Currently ends
+                {{ m.membership_manual_until|localtime('%b %d, %Y') }}.{% endif %}
               </p>
             </form>
             {% endif %}

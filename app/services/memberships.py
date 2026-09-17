@@ -9,6 +9,7 @@ Source of truth (in order):
 """
 import logging
 import re
+from datetime import datetime
 
 from sqlalchemy import func, or_
 
@@ -146,9 +147,19 @@ def purchased_tier(email: str) -> str:
 
 
 def manual_tier(user: User) -> str:
-    """The tier an owner set by hand in Studio, or "" when following billing."""
+    """The tier an owner set by hand in Studio, or "" when following billing.
+
+    A grant with an expiry date stops counting once that date has passed, so
+    the member falls back to whatever they actually pay for (or a perk, or
+    none) — the same as if the owner had never set it.
+    """
     tier = (getattr(user, "membership_manual", None) or "").strip().lower()
-    return tier if tier in MEMBERSHIPS else ""
+    if tier not in MEMBERSHIPS:
+        return ""
+    until = getattr(user, "membership_manual_until", None)
+    if until is not None and until <= utcnow():
+        return ""
+    return tier
 
 
 def billing_tier(email: str) -> str:
@@ -221,14 +232,17 @@ def revoke_paid_membership(email: str) -> dict:
     return out
 
 
-def set_manual_tier(user: User, tier: str) -> dict:
+def set_manual_tier(user: User, tier: str, until: datetime | None = None) -> dict:
     """Apply an owner-chosen tier from Studio → Members. Caller commits.
 
     Downgrades also stop the billing behind the old tier, and the choice is
     remembered so Stripe sync can't put the member back where they were.
+    ``until`` is an optional UTC expiry: past it the grant lapses and the
+    member falls back to what they pay for. It only applies to a grant that
+    beats what they already have — expiring a tier they get anyway is a no-op.
     """
     out = {"ok": False, "revoked": False, "cancelled": 0,
-           "orders_ended": 0, "errors": []}
+           "orders_ended": 0, "errors": [], "until": None}
     if user is None or tier not in MEMBERSHIPS or user.is_admin:
         return out
 
@@ -250,13 +264,19 @@ def set_manual_tier(user: User, tier: str) -> dict:
     granted = higher_membership(billing, perk_state(user)["tier"] or "none")
     user.membership_manual = None if tier == granted else tier
     user.membership_manual_at = None if user.membership_manual is None else utcnow()
+    # An expiry belongs to a live override; without one there is nothing to
+    # expire, so it is dropped rather than left dangling.
+    user.membership_manual_until = (
+        until if (user.membership_manual and until is not None) else None)
+    out["until"] = user.membership_manual_until
     user.membership = tier
     user.membership_cancel_at = None
     from .listings import enforce_listing_limits
     enforce_listing_limits(user)
     out["ok"] = True
-    log.info("membership: studio set user %s -> %s (granted=%s, manual=%s)",
-             user.id, tier, granted, user.membership_manual or "-")
+    log.info("membership: studio set user %s -> %s (granted=%s, manual=%s, until=%s)",
+             user.id, tier, granted, user.membership_manual or "-",
+             user.membership_manual_until or "-")
     return out
 
 
@@ -284,6 +304,17 @@ def reconcile_user(user: User, downgrade: bool = False,
         # Stand-in accounts have no address Stripe could ever know, so asking
         # would only ever demote the tier the owner picked for them.
         return False
+
+    # A hand-set tier with an expiry that has passed lapses: drop the override
+    # so what follows falls back to billing / perk / none, and clear the stamp
+    # so it isn't mistaken for a live grant later.
+    _until = getattr(user, "membership_manual_until", None)
+    if (user.membership_manual and _until is not None and _until <= utcnow()):
+        log.info("membership: user %s manual tier %s expired at %s — lapsing",
+                 user.id, user.membership_manual, _until)
+        user.membership_manual = None
+        user.membership_manual_at = None
+        user.membership_manual_until = None
 
     manual = manual_tier(user)
     if manual:
@@ -398,6 +429,7 @@ def clear_manual_tier(email: str, paid_at=None) -> bool:
         return False
     user.membership_manual = None
     user.membership_manual_at = None
+    user.membership_manual_until = None
     log.info("membership: cleared studio tier for user %s after payment", user.id)
     return True
 
