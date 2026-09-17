@@ -355,6 +355,73 @@ def shelves_for(user_ids) -> dict[int, list[ShopPurchase]]:
     return out
 
 
+def grant_product(member: User, product) -> dict:
+    """Give a member a product for free — even one that is off the shelves.
+
+    Not a Stripe sale: there is no charge and nothing to reconcile against
+    billing (which is why the owner has no other way to hand it over). It drops
+    a linked purchase dated now, so the reader opens it, drip releases from
+    today the same as any buyer's, and a membership perk the product carries is
+    applied and announced. Idempotent — if it is already on their shelf (even
+    put away), it is restored/kept rather than stacked a second time. The
+    caller commits.
+    """
+    from . import course_reader as reader_svc
+    from .social_graph import notify
+
+    if member is None or product is None or not getattr(member, "id", None):
+        return {"ok": False}
+
+    title = (product.title or "").strip() or "a product"
+
+    # Already theirs? Re-link/restore rather than granting a duplicate.
+    owned = (ShopPurchase.query
+             .filter(ShopPurchase.user_id == member.id,
+                     ShopPurchase.status.in_(("linked", "removed", "pending_link")))
+             .all())
+    existing = None
+    for row in owned:
+        matched = reader_svc.catalog_product_for_purchase(row)
+        if matched is not None and matched.id == product.id:
+            existing = row
+            break
+
+    if existing is not None:
+        was = existing.status
+        existing.status = "linked"
+        existing.user_id = member.id
+        _open_bundle(existing)
+        perk = sync_membership_perk(existing)
+        db.session.flush()
+        return {"ok": True, "already": True, "restored": was != "linked",
+                "name": title, "perk": bool(perk)}
+
+    # A granted row still needs the unique order id and email the column
+    # requires; a "grant-" id keeps it clearly apart from a Stripe order.
+    order_id = f"grant-{product.id}-{member.id}-{int(utcnow().timestamp())}"
+    email = _norm_email(getattr(member, "email", "") or "") or f"user{member.id}@granted.local"
+    variant = (product.stripe_price_id or product.ls_variant_id or "").strip() or None
+    row = ShopPurchase(
+        lemon_squeezy_order_id=order_id,
+        customer_email=email,
+        user_id=member.id,
+        product_name=title[:200],
+        variant_id=variant,
+        purchased_at=utcnow(),
+        status="linked",
+    )
+    db.session.add(row)
+    db.session.flush()
+    _open_bundle(row)
+    perk = sync_membership_perk(row)
+    notify(member.id, kind="course",
+           body=f"You've been given access to \u201c{title}\u201d.",
+           url="/account")
+    log.info("studio: granted product %s (%s) to user %s (perk=%s)",
+             product.id, title, member.id, bool(perk))
+    return {"ok": True, "already": False, "name": title, "perk": bool(perk)}
+
+
 def revoke_purchase(purchase: ShopPurchase) -> dict:
     """Take something off a member's shelf for good, and say so.
 

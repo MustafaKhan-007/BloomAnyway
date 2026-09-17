@@ -2500,8 +2500,31 @@ def members():
                            membership_labels=MEMBERSHIP_LABELS, q=q,
                            membership_filter=membership,
                            shelves=_member_shelves(people), opened=opened,
+                           grantable_products=_grantable_products(),
                            demo_count=demo_accounts.count(),
                            demo_min_password=demo_accounts.MIN_PASSWORD)
+
+
+def _grantable_products() -> list[dict]:
+    """Products an owner can hand to a member, including ones off the shelves.
+
+    Off-shelf products stay grantable on purpose — a member can be given one
+    even though nobody can buy it any more. Test-only items are left out.
+    """
+    rows = (Product.query
+            .filter(Product.status == "published", Product.test_mode.is_(False))
+            .order_by(Product.title.asc())
+            .all())
+    out = []
+    for p in rows:
+        off = p.is_off_shelf()
+        label = p.title or "Untitled"
+        if off:
+            label += " · off the shelves"
+        if p.has_perk():
+            label += f" · {p.perk_offer()}"
+        out.append({"id": p.id, "label": label, "off_shelf": off})
+    return out
 
 
 def _member_shelves(people) -> dict:
@@ -2740,6 +2763,57 @@ def member_purchase_remove(user_id, purchase_id):
                 "opened went with it.") + note
     flash(f"Removed “{result['name']}” from {member.public_name()}'s My Space. "
           f"They've been told.{note}", "success")
+    return redirect(back)
+
+
+@bp.route("/members/<int:user_id>/grant", methods=["POST"])
+@admin_required
+def member_grant_product(user_id):
+    """Give a member a product for free — including one off the shelves.
+
+    Puts it on their shelf dated now, so the reader opens it, drip releases
+    from today, and any membership perk it carries is applied. Not a Stripe
+    sale: nothing is charged.
+    """
+    from ..models import Product
+    from ..services.shop_purchases import grant_product
+
+    member = db.session.get(User, user_id) or abort(404)
+    back = url_for("admin.members",
+                   q=request.form.get("q") or None,
+                   membership=request.form.get("membership_filter") or None,
+                   open=member.id) + f"#member-{member.id}"
+    if member.is_admin:
+        flash("The owner account already has everything.", "info")
+        return redirect(back)
+    try:
+        pid = int(request.form.get("product_id") or 0)
+    except (TypeError, ValueError):
+        pid = 0
+    product = db.session.get(Product, pid) if pid else None
+    if product is None:
+        flash("Pick a product to give them.", "error")
+        return redirect(back)
+
+    result = grant_product(member, product)
+    db.session.commit()
+    if not result.get("ok"):
+        flash("That couldn't be given — try again.", "error")
+        return redirect(back)
+    name = result.get("name") or product.title
+    perk_note = (" Its membership perk was applied too."
+                 if result.get("perk") else "")
+    if result.get("already"):
+        if result.get("restored"):
+            flash(f"“{name}” was put away — it's back on {member.public_name()}'s "
+                  f"shelf now.{perk_note}", "success")
+        else:
+            flash(f"{member.public_name()} already has “{name}”.{perk_note}", "info")
+    else:
+        shelf_note = "" if product.off_shelf_at is None or not product.is_off_shelf() \
+            else " (it's off the shelves, but they've got it)"
+        flash(f"Gave “{name}” to {member.public_name()} — it's in their "
+              f"My Space now{shelf_note}.{perk_note}", "success")
     return redirect(back)
 
 
