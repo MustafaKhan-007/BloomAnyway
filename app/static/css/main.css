@@ -7111,6 +7111,23 @@ a.at-handle:hover { text-decoration: underline; }
   padding-bottom: 10px; border-bottom: 1px solid rgba(61,20,49,0.08);
 }
 .sg-upcoming__item:last-child { border-bottom: 0; padding-bottom: 0; }
+/* A session happening right now, so a member can drop straight in. */
+.sg-upcoming__item--live { border-left: 3px solid #b3123f; padding-left: 10px; }
+.sg-live-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 1px 9px; margin-right: 4px; border-radius: 999px;
+  background: #b3123f; color: #fff; font-size: 11px; font-weight: 800;
+  letter-spacing: 0.04em; text-transform: uppercase; vertical-align: middle;
+}
+.sg-live-badge::before {
+  content: ""; width: 7px; height: 7px; border-radius: 50%;
+  background: #fff; box-shadow: 0 0 0 3px rgba(255,255,255,0.35);
+  animation: sg-live-pulse 1.6s ease-in-out infinite;
+}
+@keyframes sg-live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) {
+  .sg-live-badge::before { animation: none; }
+}
 .sg-upcoming__actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .sg-upcoming__join {
   border-radius: 999px !important;

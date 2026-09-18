@@ -36,14 +36,19 @@
         {% for m in s.sessions %}
         {% set spots = s.session_spots.get(m.id, 0) %}
         {% set seated = s.session_seats.get(m.id, 0) %}
-        <li class="sg-upcoming__item">
+        {% set is_live = s.session_live.get(m.id) %}
+        <li class="sg-upcoming__item{{ ' sg-upcoming__item--live' if is_live }}">
           <div>
-            <strong>{{ m.scheduled_at|when('%a %b %d · %I:%M %p') }}</strong>
+            <strong>
+              {% if is_live %}<span class="sg-live-badge">Live now</span>{% endif %}
+              {{ m.scheduled_at|when('%a %b %d · %I:%M %p') }}
+            </strong>
             <p class="field-help" style="margin:2px 0 0;">
               {% if c.slug.startswith('custom-') and m.notes %}
               <span class="sg-upcoming__topic">{{ m.notes }}</span> ·
               {% endif %}
               {{ seated }}/{{ m.capacity or peer_cap }} seated
+              {% if is_live %} · in progress{% endif %}
               {% if m.host %} · hosted by {{ author_name(m.host) }}{% endif %}
             </p>
           </div>
@@ -59,7 +64,9 @@
             {% elif can_use and spots > 0 %}
             <form method="post" action="{{ url_for('main.join_support_session', meeting_id=m.id) }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button class="btn btn--secondary btn--sm" type="submit">Save seat ({{ spots }} left)</button>
+              <button class="btn {{ 'btn--primary' if is_live else 'btn--secondary' }} btn--sm" type="submit">
+                {% if is_live %}Join now ({{ spots }} left){% else %}Save seat ({{ spots }} left){% endif %}
+              </button>
             </form>
             {% elif spots <= 0 %}
             <span class="sg-card__spots sg-card__spots--full">Full</span>
@@ -252,12 +259,17 @@
         {% for m in facilitator_sessions %}
         {% set spots = facilitator_spots.get(m.id, 0) %}
         {% set seated = facilitator_seats.get(m.id, 0) %}
-        <li class="sg-upcoming__item">
+        {% set is_live = facilitator_live.get(m.id) %}
+        <li class="sg-upcoming__item{{ ' sg-upcoming__item--live' if is_live }}">
           <div>
-            <strong>{{ m.notes or 'Facilitator session' }}</strong>
+            <strong>
+              {% if is_live %}<span class="sg-live-badge">Live now</span>{% endif %}
+              {{ m.notes or 'Facilitator session' }}
+            </strong>
             <p class="field-help" style="margin:2px 0 0;">
               {{ m.scheduled_at|when('%a %b %d · %I:%M %p') }}
               · {{ seated }}/{{ m.capacity or facilitator_cap }} seated
+              {% if is_live %} · in progress{% endif %}
             </p>
           </div>
           <div class="sg-upcoming__actions">
@@ -266,7 +278,7 @@
             {% elif current_user.is_authenticated and (current_user.is_healing_track() or current_user.is_admin) and spots > 0 %}
             <form method="post" action="{{ url_for('main.join_support_session', meeting_id=m.id) }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button class="btn btn--secondary btn--sm" type="submit">Save a seat</button>
+              <button class="btn {{ 'btn--primary' if is_live else 'btn--secondary' }} btn--sm" type="submit">{% if is_live %}Join now{% else %}Save a seat{% endif %}</button>
             </form>
             {% elif spots <= 0 %}
             <span class="field-help">Full</span>
