@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 from ..extensions import db
-from ..models import (ContentReport, ForumComment, ForumCommentLike, ForumPost,
-                      ForumPostLike, Notification)
+from ..models import (ContentReport, ForumComment, ForumCommentLike, ForumImage,
+                      ForumPost, ForumPostLike, Notification)
 
 
 def delete_post(post: ForumPost) -> None:
@@ -12,6 +12,13 @@ def delete_post(post: ForumPost) -> None:
         cid for (cid,) in
         db.session.query(ForumComment.id).filter_by(post_id=post.id).all()
     ]
+
+    # Attached images on the post and on any of its comments.
+    ForumImage.query.filter_by(post_id=post.id).delete(synchronize_session=False)
+    if comment_ids:
+        ForumImage.query.filter(
+            ForumImage.comment_id.in_(comment_ids)
+        ).delete(synchronize_session=False)
 
     Notification.query.filter_by(post_id=post.id).delete(synchronize_session=False)
     ContentReport.query.filter_by(target_type="post", target_id=post.id).delete(
@@ -47,6 +54,9 @@ def delete_comment(comment: ForumComment) -> None:
     ]
     all_ids = [comment.id] + reply_ids
 
+    ForumImage.query.filter(
+        ForumImage.comment_id.in_(all_ids)
+    ).delete(synchronize_session=False)
     ContentReport.query.filter(
         ContentReport.target_type == "comment",
         ContentReport.target_id.in_(all_ids),

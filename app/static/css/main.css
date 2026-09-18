@@ -1492,6 +1492,38 @@ html.is-page-loading { cursor: progress; }
   margin-top: 12px;
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
 }
+/* Images attached to a post or comment. */
+.forum-images {
+  margin: 12px 0 0; display: flex; flex-wrap: wrap; gap: 10px;
+}
+.forum-images__item {
+  display: block; border-radius: 12px; overflow: hidden;
+  border: 1px solid rgba(61, 20, 49, 0.12); background: var(--ivory-deep);
+  line-height: 0;
+}
+.forum-images__item img {
+  display: block; width: auto; height: 180px; max-width: 320px;
+  object-fit: cover;
+}
+@media (max-width: 560px) {
+  .forum-images__item img { height: 140px; max-width: 46vw; }
+}
+/* The "Add photos" control on the compose forms. */
+.forum-image-picker {
+  display: inline-flex; align-items: center; flex-wrap: wrap; gap: 8px 12px;
+  margin: 4px 0 12px;
+}
+.forum-image-picker__btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px; border-radius: 999px; cursor: pointer;
+  border: 1.5px solid rgba(90, 49, 88, 0.35); background: #fff;
+  font-size: 14px; font-weight: 700; color: var(--plum-deep);
+}
+.forum-image-picker:hover .forum-image-picker__btn { background: var(--dawn-ivory); }
+.forum-image-picker input[type="file"] {
+  font-size: 13px; color: var(--ink-soft); max-width: 100%;
+}
+.forum-image-picker__hint { margin: 0; }
 
 .comment-form { margin: 16px 0 28px; }
 .comment-list { display: grid; gap: 16px; }

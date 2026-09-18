@@ -846,6 +846,59 @@ with app.app_context():
 ok("Reply-to-a-reply flattens to one level", nested.parent_id == cid,
    f"parent_id={nested.parent_id} expected {cid}")
 
+# members can attach images to a post and to a comment; bad files are skipped
+import io as _io_img
+from PIL import Image as _PILImage
+from app.models import ForumImage as _ForumImage
+
+
+def _png_upload(color=(180, 90, 130)):
+    _b = _io_img.BytesIO()
+    _PILImage.new("RGB", (320, 240), color).save(_b, format="PNG")
+    _b.seek(0)
+    return _b
+
+
+r = client.post("/forums/c/healing/new", data={
+    "title": "Photo from today", "body": "A picture with my words.",
+    "images": [(_png_upload(), "ok.png"), (_io_img.BytesIO(b"nope"), "bad.txt")],
+}, content_type="multipart/form-data", follow_redirects=True)
+ok("Member can post with an image attached",
+   "Photo from today" in r.get_data(as_text=True))
+with app.app_context():
+    _ip = (ForumPost.query.filter_by(title="Photo from today")
+           .order_by(ForumPost.id.desc()).first())
+    _pimgs = _ForumImage.query.filter_by(post_id=_ip.id).all()
+    ok("The image is stored as JPEG and the non-image file is skipped",
+       len(_pimgs) == 1 and _pimgs[0].mime == "image/jpeg", f"got {len(_pimgs)}")
+    _img_id = _pimgs[0].id
+    _ipid = _ip.id
+_iresp = client.get(f"/forums/img/{_img_id}")
+ok("The attached image is served to a member",
+   _iresp.status_code == 200
+   and _iresp.headers.get("Content-Type") == "image/jpeg"
+   and len(_iresp.data) > 0)
+_post_html = client.get(f"/forums/p/{_ipid}").get_data(as_text=True)
+ok("The post page shows the attached image",
+   f"/forums/img/{_img_id}" in _post_html)
+client.post(f"/forums/p/{_ipid}/comment",
+            data={"body": "", "images": [(_png_upload((90, 150, 200)), "c.png")]},
+            content_type="multipart/form-data", follow_redirects=True)
+with app.app_context():
+    _cimg = (_ForumImage.query.filter(_ForumImage.comment_id.isnot(None))
+             .order_by(_ForumImage.id.desc()).first())
+    ok("A comment can be an image on its own, with no text", _cimg is not None)
+_anon_img = app.test_client().get(f"/forums/img/{_img_id}")
+ok("A signed-out visitor can't fetch a community image",
+   _anon_img.headers.get("Content-Type") != "image/jpeg")
+with app.app_context():
+    from app.services.forum_moderation import delete_post as _del_img_post
+    _dp = db.session.get(ForumPost, _ipid)
+    if _dp is not None:
+        _del_img_post(_dp)
+    ok("Deleting a post clears its attached images",
+       _ForumImage.query.filter_by(post_id=_ipid).count() == 0)
+
 # strangers can comment, but only OP (or the comment author) may reply under a comment
 with app.app_context():
     stranger = User(email="stranger@example.com", username="stranger_one",
