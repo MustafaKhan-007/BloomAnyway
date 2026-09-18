@@ -14,7 +14,8 @@ from sqlalchemy.orm import joinedload, selectinload
 
 from ..extensions import db, limiter
 from ..models import (LOOKING_FOR, LOOKING_FOR_SLUGS, ForumCategory, ForumComment,
-                      ForumCommentLike, ForumPost, ForumPostLike, ForumTag)
+                      ForumCommentLike, ForumImage, ForumPost, ForumPostLike,
+                      ForumTag)
 from ..services.moderation import contains_profanity, register_violation
 from . import bp
 
@@ -233,12 +234,18 @@ def create_post(slug):
                      title=title, body=body, anonymous=_wants_anonymous())
     db.session.add(post)
     db.session.flush()
+    from ..services.community_images import attach_images
+    _img_saved, _img_skipped = attach_images(
+        request.files.getlist("images"), user=current_user, post=post)
     from ..services.social_graph import notify_followers_of_post, notify_mentions
     if not post.anonymous:
         notify_followers_of_post(current_user, post)
         notify_mentions(current_user, f"{title}\n{body}", post_id=post.id)
     db.session.commit()
     flash("Posted. Thank you for adding your voice.", "success")
+    if _img_skipped:
+        flash("Some images couldn't be added (max 4, images under 8 MB each).",
+              "info")
     still_ok, exhausted_msg = can_free_post(current_user)
     if not still_ok:
         flash(exhausted_msg, "info")
@@ -329,7 +336,10 @@ def create_comment(post_id):
         return redirect(url_for("forums.post", post_id=post_id))
 
     body = (request.form.get("body") or "").strip()[:4000]
-    if not body:
+    image_files = request.files.getlist("images")
+    has_images = any(f and (getattr(f, "filename", "") or "").strip()
+                     for f in image_files)
+    if not body and not has_images:
         flash("Write a little something first.", "error")
         return redirect(url_for("forums.post", post_id=post_id))
 
@@ -359,10 +369,17 @@ def create_comment(post_id):
                            user_id=current_user.id, body=body,
                            anonymous=_wants_anonymous())
     db.session.add(comment)
+    db.session.flush()
+    from ..services.community_images import attach_images
+    _img_saved, _img_skipped = attach_images(
+        image_files, user=current_user, comment=comment)
     if not comment.anonymous:
         from ..services.social_graph import notify_mentions
         notify_mentions(current_user, body, post_id=post.id)
     db.session.commit()
+    if _img_skipped:
+        flash("Some images couldn't be added (max 4, images under 8 MB each).",
+              "info")
     still_ok, exhausted_msg = can_free_reply(current_user)
     if not still_ok:
         flash(exhausted_msg, "info")
@@ -497,6 +514,34 @@ def delete_own_comment(comment_id):
     if post and not post.hidden:
         return redirect(url_for("forums.post", post_id=post_id) + "#comments")
     return redirect(url_for("forums.index"))
+
+
+@bp.route("/img/<int:image_id>")
+def image(image_id):
+    """Stream a post/comment image. Members only (the before_request gate),
+    and never for content that is hidden or a room the viewer can't see."""
+    from flask import Response
+
+    img = db.session.get(ForumImage, image_id)
+    if img is None or not img.data:
+        abort(404)
+    post = None
+    if img.comment_id:
+        comment = db.session.get(ForumComment, img.comment_id)
+        if comment is None or comment.hidden:
+            abort(404)
+        post = db.session.get(ForumPost, comment.post_id)
+    elif img.post_id:
+        post = db.session.get(ForumPost, img.post_id)
+    if post is None or post.hidden:
+        abort(404)
+    if not _can_access_category(post.category):
+        abort(404)
+
+    resp = Response(bytes(img.data), mimetype=(img.mime or "image/jpeg"))
+    resp.headers["Cache-Control"] = "private, max-age=86400"
+    resp.headers["Content-Length"] = str(len(img.data))
+    return resp
 
 
 def _liked_ids(post_ids, comment_ids):

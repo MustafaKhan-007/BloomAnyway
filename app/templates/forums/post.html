@@ -4,6 +4,29 @@
 {% from "partials/report_toggle.html" import report_toggle %}
 {% block title %}{{ post.title }} — Community — {{ site.site_title }}{% endblock %}
 
+{% macro image_gallery(images) %}
+  {% if images %}
+  <div class="forum-images">
+    {% for im in images %}
+    <a class="forum-images__item" href="{{ url_for('forums.image', image_id=im.id) }}"
+       target="_blank" rel="noopener">
+      <img src="{{ url_for('forums.image', image_id=im.id) }}" alt="Attached image"
+           loading="lazy"
+           {% if im.width and im.height %}width="{{ im.width }}" height="{{ im.height }}"{% endif %}>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+{% endmacro %}
+
+{% macro image_picker(field_id) %}
+  <label class="forum-image-picker" for="{{ field_id }}">
+    <span class="forum-image-picker__btn">📷 Add photos</span>
+    <input id="{{ field_id }}" type="file" name="images" accept="image/*" multiple>
+    <span class="field-help forum-image-picker__hint">Up to 4 · 8 MB each</span>
+  </label>
+{% endmacro %}
+
 {% macro like_button(action_url, count, liked) %}
   {% if can_participate %}
   <form method="post" action="{{ action_url }}" class="like-form">
@@ -49,6 +72,7 @@
     </div>
   </div>
   <div class="forum-body">{{ c.body|mentions }}</div>
+  {{ image_gallery(c.images) }}
   <div class="forum-actions">
     {{ like_button(url_for('forums.like_comment', comment_id=c.id), c.like_count(), c.id in liked_comments) }}
     {% if can_delete_comment %}
@@ -69,11 +93,12 @@
       {% if can_reply %}
       <details class="reply-toggle">
         <summary>Reply</summary>
-        <form method="post" action="{{ url_for('forums.create_comment', post_id=post.id) }}" class="comment-form comment-form--reply">
+        <form method="post" action="{{ url_for('forums.create_comment', post_id=post.id) }}" class="comment-form comment-form--reply" enctype="multipart/form-data">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="parent_id" value="{{ c.id }}">
-          <textarea name="body" rows="2" required maxlength="4000" data-mentions
+          <textarea name="body" rows="2" maxlength="4000" data-mentions
                     placeholder="Reply kindly… type @ to tag someone"></textarea>
+          {{ image_picker('reply-images-' ~ c.id) }}
           <label class="checkline checkline--sm checkline--compose">
             <input type="checkbox" name="anonymous" value="1" {{ 'checked' if anon_default }}>
             Reply anonymously
@@ -117,6 +142,7 @@
         </span>
       </div>
       <div class="forum-body">{{ post.body|mentions }}</div>
+      {{ image_gallery(post.images) }}
       <div class="forum-actions">
         {{ like_button(url_for('forums.like_post', post_id=post.id), post.like_count(), post.id in liked_posts) }}
         {% if current_user.is_authenticated and (current_user.id == post.user_id or current_user.is_admin) %}
@@ -140,13 +166,14 @@
 
     {% if can_participate and not current_user.forum_banned %}
       {% if can_reply %}
-      <form method="post" action="{{ url_for('forums.create_comment', post_id=post.id) }}" class="comment-form">
+      <form method="post" action="{{ url_for('forums.create_comment', post_id=post.id) }}" class="comment-form" enctype="multipart/form-data">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="field">
           <label for="body" class="sr-only">Add a comment</label>
-          <textarea id="body" name="body" rows="3" required maxlength="4000" data-mentions
+          <textarea id="body" name="body" rows="3" maxlength="4000" data-mentions
                     placeholder="Add something kind… type @ to tag someone"></textarea>
         </div>
+        {{ image_picker('comment-images') }}
         <label class="checkline checkline--sm checkline--compose">
           <input type="checkbox" name="anonymous" value="1" {{ 'checked' if anon_default }}>
           Comment anonymously

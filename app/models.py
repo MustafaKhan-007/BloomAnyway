@@ -2071,6 +2071,9 @@ class ForumPost(db.Model):
                                cascade="all, delete-orphan")
     likes = db.relationship("ForumPostLike", backref="post", lazy="dynamic",
                             cascade="all, delete-orphan")
+    images = db.relationship("ForumImage", backref="post", lazy="select",
+                             order_by="ForumImage.id",
+                             cascade="all, delete-orphan")
 
     def display_author(self):
         return "Anonymous" if self.anonymous else self.author.public_name()
@@ -2102,6 +2105,9 @@ class ForumComment(db.Model):
                               cascade="all, delete-orphan")
     likes = db.relationship("ForumCommentLike", backref="comment", lazy="dynamic",
                             cascade="all, delete-orphan")
+    images = db.relationship("ForumImage", backref="comment", lazy="select",
+                             order_by="ForumImage.id",
+                             cascade="all, delete-orphan")
 
     def display_author(self):
         return "Anonymous" if self.anonymous else self.author.public_name()
@@ -2126,6 +2132,30 @@ class ForumCommentLike(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     comment_id = db.Column(db.Integer, db.ForeignKey("forum_comments.id"), nullable=False)
+
+
+class ForumImage(db.Model):
+    """An image a member attached to a community post or comment.
+
+    Kept in the database (like avatars and listing images) so it survives a
+    redeploy, re-encoded to a safe JPEG on the way in. Exactly one of
+    ``post_id`` / ``comment_id`` is set.
+    """
+    __tablename__ = "forum_images"
+
+    id = db.Column(db.Integer, primary_key=True)
+    post_id = db.Column(db.Integer,
+                        db.ForeignKey("forum_posts.id", ondelete="CASCADE"),
+                        index=True)
+    comment_id = db.Column(db.Integer,
+                           db.ForeignKey("forum_comments.id", ondelete="CASCADE"),
+                           index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    data = db.deferred(db.Column(db.LargeBinary, nullable=False))
+    mime = db.Column(db.String(40), nullable=False, default="image/jpeg")
+    width = db.Column(db.Integer)
+    height = db.Column(db.Integer)
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
 
 
 # --- announcements ----------------------------------------------------------

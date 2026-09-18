@@ -122,7 +122,7 @@
         {% if can_post %}
         <details class="new-post fc-compose" {% if request.args.get('compose') %}open{% endif %}>
           <summary class="btn btn--primary btn--sm">Start a conversation</summary>
-          <form method="post" action="{{ url_for('forums.create_post', slug=category.slug) }}" class="new-post__form">
+          <form method="post" action="{{ url_for('forums.create_post', slug=category.slug) }}" class="new-post__form" enctype="multipart/form-data">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="field">
               <label for="title">Title</label>
@@ -165,6 +165,11 @@
               <textarea id="body" name="body" rows="6" required maxlength="8000" data-mentions
                         placeholder="Share what's on your mind. Type @ to tag someone."></textarea>
             </div>
+            <label class="forum-image-picker" for="post-images">
+              <span class="forum-image-picker__btn">📷 Add photos</span>
+              <input id="post-images" type="file" name="images" accept="image/*" multiple>
+              <span class="field-help forum-image-picker__hint">Up to 4 · 8 MB each</span>
+            </label>
             <label class="checkline checkline--compose">
               <input type="checkbox" name="anonymous" value="1" {{ 'checked' if anon_default }}>
               Post anonymously
