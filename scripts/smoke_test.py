@@ -4959,6 +4959,48 @@ with app.app_context():
     _cap_m.capacity = 8
     db.session.commit()
 
+# A session that is already under way is still joinable while a seat is free;
+# one whose live window has closed is not, and only the joinable ones list.
+with app.app_context():
+    from app.models import SupportGroupApplication as _SGA_live
+    from app.models import SupportGroupMeeting as _SGM_live
+    _now_live = utcnow()
+    _dur_live = sg_svc.peer_meeting_minutes()
+
+    def _mk_live_peer(delta_min):
+        _m = _SGM_live(circle_id=heal_cid, capacity=8, kind="peer",
+                       scheduled_by_user_id=wrap_host_id, status="scheduled",
+                       scheduled_at=_now_live + timedelta(minutes=delta_min),
+                       created_at=_now_live, booked_notified_at=_now_live,
+                       zoom_url="https://x.daily.co/live",
+                       zoom_meeting_id="livechk%d" % delta_min)
+        db.session.add(_m)
+        db.session.commit()
+        return _m
+
+    _live_m = _mk_live_peer(-2)
+    _ended_m = _mk_live_peer(-(_dur_live + 5))
+    ok("Phase reads live while under way and ended once past",
+       sg_svc.meeting_phase(_live_m) == "live"
+       and sg_svc.meeting_phase(_ended_m) == "ended")
+    _lj = User.query.filter_by(email="sg-cap@example.com").first()
+    _lrow, _lerr = sg_svc.join_peer_session(_lj, _live_m.id)
+    ok("A member can join a session that's happening right now",
+       _lrow is not None and not _lerr, f"got {_lerr}")
+    _erow, _eerr = sg_svc.join_peer_session(_lj, _ended_m.id)
+    ok("A session that has ended can't be joined",
+       _erow is None and "ended" in (_eerr or "").lower(), f"got {_eerr}")
+    _browse_ids = {m.id for m in
+                   sg_svc.open_peer_sessions_by_circle([heal_cid]).get(heal_cid, [])}
+    ok("A live session is listed to join; an ended one is dropped",
+       _live_m.id in _browse_ids and _ended_m.id not in _browse_ids)
+    _SGA_live.query.filter(
+        _SGA_live.meeting_id.in_([_live_m.id, _ended_m.id])
+    ).delete(synchronize_session=False)
+    for _m in (_live_m, _ended_m):
+        db.session.delete(_m)
+    db.session.commit()
+
 wrap_client = app.test_client()
 wrap_client.post("/login", data={"email": "sg-wrap-peer@example.com", "password": USER_PW})
 r = wrap_client.get(f"/support-groups/meetings/{wrap_mid}/wrap")

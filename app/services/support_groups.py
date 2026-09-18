@@ -289,11 +289,18 @@ def _spots_left(meeting: SupportGroupMeeting, taken: int) -> int:
 
 
 def open_peer_sessions_by_circle(circle_ids) -> dict[int, list[SupportGroupMeeting]]:
-    """Scheduled peer sessions for several topics at once, soonest first."""
+    """Joinable peer sessions for several topics at once, soonest first.
+
+    Includes ones that have already started but are still inside their live
+    window, so someone can drop into a session that is happening right now as
+    long as a seat is free — not only ones that are still to come.
+    """
     ids = list(circle_ids)
     if not ids:
         return {}
     now = utcnow()
+    # Anything that hasn't run past its own length is still joinable.
+    cutoff = now - timedelta(minutes=peer_meeting_minutes())
     rows = (SupportGroupMeeting.query
             .options(joinedload(SupportGroupMeeting.circle),
                      joinedload(SupportGroupMeeting.host))
@@ -302,7 +309,7 @@ def open_peer_sessions_by_circle(circle_ids) -> dict[int, list[SupportGroupMeeti
                 SupportGroupMeeting.kind == "peer",
                 SupportGroupMeeting.status == "scheduled",
                 SupportGroupMeeting.scheduled_at.isnot(None),
-                SupportGroupMeeting.scheduled_at > now,
+                SupportGroupMeeting.scheduled_at > cutoff,
             )
             .order_by(SupportGroupMeeting.scheduled_at.asc())
             .all())
@@ -313,8 +320,14 @@ def open_peer_sessions_by_circle(circle_ids) -> dict[int, list[SupportGroupMeeti
 
 
 def open_facilitator_sessions(limit: int = 20) -> list[SupportGroupMeeting]:
-    """Upcoming Studio-scheduled facilitator sessions (Daily rooms)."""
+    """Studio-scheduled facilitator sessions still open to join (Daily rooms).
+
+    Like the peer list, this keeps a session that is already under way while it
+    is inside its live window, so a member can still take a free seat in one
+    that has just started.
+    """
     now = utcnow()
+    cutoff = now - timedelta(minutes=FACILITATOR_DURATION_MINUTES)
     return (SupportGroupMeeting.query
             .options(joinedload(SupportGroupMeeting.circle),
                      joinedload(SupportGroupMeeting.host))
@@ -322,7 +335,7 @@ def open_facilitator_sessions(limit: int = 20) -> list[SupportGroupMeeting]:
                 SupportGroupMeeting.kind == "facilitator",
                 SupportGroupMeeting.status == "scheduled",
                 SupportGroupMeeting.scheduled_at.isnot(None),
-                SupportGroupMeeting.scheduled_at > now,
+                SupportGroupMeeting.scheduled_at > cutoff,
             )
             .order_by(SupportGroupMeeting.scheduled_at.asc())
             .limit(limit)
@@ -416,10 +429,12 @@ def circle_stats() -> list[dict]:
     by_circle = open_peer_sessions_by_circle([c.id for c in circles])
     taken = seat_counts([m for rows in by_circle.values() for m in rows])
     out = []
+    now = utcnow()
     for c in circles:
         sessions = by_circle.get(c.id, [])
         seats = {m.id: taken.get(m.id, 0) for m in sessions}
         spots = {m.id: _spots_left(m, seats[m.id]) for m in sessions}
+        live = {m.id: meeting_phase(m, now=now) == "live" for m in sessions}
         open_n = len(sessions)
         joinable = sum(1 for n in spots.values() if n > 0)
         seated = sum(seats.values())
@@ -436,13 +451,19 @@ def circle_stats() -> list[dict]:
             "sessions": sessions,
             "session_seats": seats,
             "session_spots": spots,
+            "session_live": live,
             "seated": seated,
         })
     return out
 
 
 def upcoming_for_user(user: User, limit: int = 12) -> list[SupportGroupApplication]:
-    """Selected seats on upcoming peer (or facilitator) sessions."""
+    """Selected seats on peer/facilitator sessions still to come or under way.
+
+    A session the member is seated in stays here while it is live, so they can
+    walk straight into the room from their own list rather than losing it the
+    moment it starts.
+    """
     rows = (SupportGroupApplication.query
             .options(joinedload(SupportGroupApplication.meeting)
                      .joinedload(SupportGroupMeeting.circle),
@@ -452,12 +473,11 @@ def upcoming_for_user(user: User, limit: int = 12) -> list[SupportGroupApplicati
             .limit(40)
             .all())
     out = []
-    now = utcnow()
     for row in rows:
         m = row.meeting
         if m is None or m.status != "scheduled" or not m.scheduled_at:
             continue
-        if m.scheduled_at <= now:
+        if meeting_phase(m) == "ended":
             continue
         out.append(row)
         if len(out) >= limit:
@@ -893,8 +913,14 @@ def join_peer_session(user: User, meeting_id: int
     elif kind == "facilitator":
         if not user.is_owner_view() and not user.is_healing_track():
             return None, "Facilitator sessions are for Healing & Full Bloom members."
-    if not meeting.scheduled_at or meeting.scheduled_at <= utcnow():
-        return None, "That session has already started or ended."
+    # A session is joinable right up until its live window closes — before it
+    # starts (waiting) and while it is happening (live), but not once it has
+    # ended. Someone can drop into one that is under way, seats permitting.
+    phase = meeting_phase(meeting)
+    if phase == "unavailable":
+        return None, "That session isn’t available."
+    if phase == "ended":
+        return None, "That session has already ended."
 
     # Before the capacity check, so someone who already holds a seat is handed
     # it back rather than told the session is full.

@@ -2645,6 +2645,9 @@ def support_groups_page():
     facilitator_seats = {
         m.id: sg_svc.meeting_seat_count(m) for m in facilitator_sessions
     }
+    facilitator_live = {
+        m.id: sg_svc.meeting_phase(m) == "live" for m in facilitator_sessions
+    }
     my_one_on_ones = []
     owner_unlimited = (current_user.is_authenticated
                        and current_user.is_owner_view())
@@ -2675,6 +2678,7 @@ def support_groups_page():
         facilitator_sessions=facilitator_sessions,
         facilitator_spots=facilitator_spots,
         facilitator_seats=facilitator_seats,
+        facilitator_live=facilitator_live,
         facilitator_minutes=sg_svc.FACILITATOR_DURATION_MINUTES,
         facilitator_cap=sg_svc.FACILITATOR_MEETING_CAP,
         my_one_on_ones=my_one_on_ones,
@@ -2908,8 +2912,15 @@ def join_support_session(meeting_id):
     _, err = sg_svc.join_peer_session(current_user, meeting_id)
     if err:
         flash(err, "error")
-    else:
-        flash("You're in — use Join when you're ready for the session.", "success")
+        return redirect(url_for("main.support_groups_page"))
+    # If it is already under way, take them straight into the room instead of
+    # back to the list — they came to join a session that's happening now.
+    from ..models import SupportGroupMeeting
+    meeting = db.session.get(SupportGroupMeeting, meeting_id)
+    if meeting is not None and sg_svc.meeting_phase(meeting) == "live":
+        flash("You're in — the session is live, so here's the room.", "success")
+        return redirect(url_for("main.support_session_room", meeting_id=meeting_id))
+    flash("You're in — use Join when you're ready for the session.", "success")
     return redirect(url_for("main.support_groups_page"))
 
 
