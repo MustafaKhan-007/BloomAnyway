@@ -9,7 +9,7 @@
   <div class="forum-images">
     {% for im in images %}
     <a class="forum-images__item" href="{{ url_for('forums.image', image_id=im.id) }}"
-       target="_blank" rel="noopener">
+       data-lightbox>
       <img src="{{ url_for('forums.image', image_id=im.id) }}" alt="Attached image"
            loading="lazy"
            {% if im.width and im.height %}width="{{ im.width }}" height="{{ im.height }}"{% endif %}>
@@ -20,11 +20,13 @@
 {% endmacro %}
 
 {% macro image_picker(field_id) %}
-  <label class="forum-image-picker" for="{{ field_id }}">
-    <span class="forum-image-picker__btn">📷 Add photos</span>
-    <input id="{{ field_id }}" type="file" name="images" accept="image/*" multiple>
+  <div class="forum-image-picker" data-community-picker>
+    <label class="forum-image-picker__btn" for="{{ field_id }}">📷 Add photos</label>
+    <input id="{{ field_id }}" class="sr-only community-image-input" type="file"
+           name="images" accept="image/*" multiple data-max="4">
     <span class="field-help forum-image-picker__hint">Up to 4 · 8 MB each</span>
-  </label>
+    <div class="forum-image-picker__previews" data-community-previews></div>
+  </div>
 {% endmacro %}
 
 {% macro like_button(action_url, count, liked) %}

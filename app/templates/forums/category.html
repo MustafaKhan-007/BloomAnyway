@@ -165,11 +165,13 @@
               <textarea id="body" name="body" rows="6" required maxlength="8000" data-mentions
                         placeholder="Share what's on your mind. Type @ to tag someone."></textarea>
             </div>
-            <label class="forum-image-picker" for="post-images">
-              <span class="forum-image-picker__btn">📷 Add photos</span>
-              <input id="post-images" type="file" name="images" accept="image/*" multiple>
+            <div class="forum-image-picker" data-community-picker>
+              <label class="forum-image-picker__btn" for="post-images">📷 Add photos</label>
+              <input id="post-images" class="sr-only community-image-input" type="file"
+                     name="images" accept="image/*" multiple data-max="4">
               <span class="field-help forum-image-picker__hint">Up to 4 · 8 MB each</span>
-            </label>
+              <div class="forum-image-picker__previews" data-community-previews></div>
+            </div>
             <label class="checkline checkline--compose">
               <input type="checkbox" name="anonymous" value="1" {{ 'checked' if anon_default }}>
               Post anonymously
