@@ -297,11 +297,12 @@ def sync_all() -> dict:
     if not manages_catalog():
         tally["off"] = True
         return tally
-    rows = (Product.query
-            .filter(Product.status != "archived")
-            .order_by(Product.id)
-            .all())
-    for product in rows:
+    for product in Product.query.order_by(Product.id).all():
+        # Archived products are worth a pass so the archiving reaches Stripe,
+        # but only ones Stripe already knows about. Something taken off the
+        # books here has no business being created there for the first time.
+        if product.status == "archived" and not (product.stripe_product_id or ""):
+            continue
         tally["checked"] += 1
         report = sync_product(product)
         if report["ok"]:
