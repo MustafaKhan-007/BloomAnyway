@@ -41,6 +41,14 @@ services:
         value: "2048"
       - key: REEL_CHUNK_MB
         value: "8"
+      # The owner's own video on a reel review. It keeps, so it lands with the
+      # Content Hub videos above rather than in the swept reel folder. Sent up
+      # in slices, so this cap is not the request body limit — REVIEW_CHUNK_MB
+      # is what has to stay under Cloudflare's ~100 MB.
+      - key: REVIEW_UPLOAD_MAX_MB
+        value: "2048"
+      - key: REVIEW_CHUNK_MB
+        value: "8"
       # Course module content (lesson videos, worksheets) on the media disk,
       # not in Postgres. Studio sends big files up in slices, so this cap is
       # not bound by Cloudflare's ~100 MB request body limit — COURSE_CHUNK_MB

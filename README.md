@@ -231,6 +231,20 @@ Everything else is optional or auto-managed:
   of slices from uploads nobody finished, and of any file no row points at any
   more. It runs opportunistically (hourly at most, off a request) and from
   `/cron/support-groups`.
+- **So does the owner's review video.** A reel review can carry a recording of
+  the owner talking the member through their reel, attached in Studio →
+  Reel reviews. A screen recording of any length is past the 100 MB wall as
+  well, so it goes up in slices to
+  `/admin/reel-reviews/uploads/{begin,chunk,abort}` and the publish form
+  carries the id of what landed; a small one still rides along with the form
+  (capped at `review_uploads.SINGLE_MAX_BYTES`, 90 MB) so the page works with
+  no JavaScript. Ceiling is `REVIEW_UPLOAD_MAX_MB` (default 2048) with
+  `REVIEW_CHUNK_MB` (default 8) the slice size. Unlike a member's raw entry
+  this one is meant to keep, so it lands in `VIDEO_STORAGE_DIR` beside the
+  Content Hub videos — **not** in `REEL_RAW_DIR`, which is emptied weekly and
+  whose sweep only knows about `ReelReviewApplication.disk_name`. It streams
+  from `/watch/reviews/<id>/stream` with Range support, and replacing one
+  deletes the file it replaced.
 - Buyers read them at `/library/<slug>`. Access is gated by `_owns_product`: the
   studio owner (for preview) or anyone with a **paid** order whose email matches
   their account. Non-buyers get a 404 (the reader's existence is hidden).

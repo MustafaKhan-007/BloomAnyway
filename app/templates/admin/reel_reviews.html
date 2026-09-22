@@ -96,8 +96,15 @@
             <span class="reel-applicant__chevron" aria-hidden="true">+</span>
           </summary>
           <div class="reel-applicant__body">
+            {# A recording of you talking through a reel is routinely bigger
+               than one request may carry, so it goes up in slices first and
+               the form sends the id of what landed. #}
             <form method="post" action="{{ url_for('admin.reel_reviews_publish', app_id=a.id) }}"
-                  enctype="multipart/form-data" class="stack-form">
+                  enctype="multipart/form-data" class="stack-form"
+                  data-review-upload
+                  data-upload-begin="{{ url_for('admin.reel_review_upload_begin') }}"
+                  data-upload-chunk="{{ url_for('admin.reel_review_upload_chunk', upload_id='UPLOAD_ID') }}"
+                  data-upload-abort="{{ url_for('admin.reel_review_upload_abort', upload_id='UPLOAD_ID') }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <div class="field" style="margin-bottom: 12px;">
                 <label for="title-{{ a.id }}">Review title</label>
@@ -113,6 +120,11 @@
                 <label for="video-{{ a.id }}">Review video (optional)</label>
                 <input type="file" id="video-{{ a.id }}" name="review_video"
                        accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm">
+                <p class="field-help">Up to {{ max_upload_label }} (MP4, MOV or WEBM).
+                  Big files go up in pieces before you publish, so give it a
+                  moment to finish.</p>
+                <ul class="chunk-up__list" data-review-progress hidden></ul>
+                <p class="field-help flash flash--error" data-upload-error hidden role="alert"></p>
               </div>
               <button class="btn btn--secondary btn--sm" type="submit">Publish</button>
             </form>

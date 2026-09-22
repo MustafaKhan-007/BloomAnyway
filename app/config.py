@@ -53,6 +53,17 @@ class Config:
         32, int(os.environ.get("REEL_CHUNK_MB", "8") or 8)))
     MAX_CONTENT_LENGTH = (MAX_VIDEO_MB + 32) * 1024 * 1024
 
+    # The owner's own video on a reel review. It lands beside the Content Hub
+    # videos (VIDEO_STORAGE_DIR) rather than among the raw reels, which are
+    # swept weekly — a published review's video is meant to keep. It goes up
+    # in slices too, so this ceiling is not the request body limit;
+    # REVIEW_CHUNK_MB is the number that has to stay under Cloudflare's
+    # ~100 MB.
+    REVIEW_UPLOAD_MAX_MB = int(
+        os.environ.get("REVIEW_UPLOAD_MAX_MB", "2048") or 2048)
+    REVIEW_CHUNK_MB = max(1, min(
+        32, int(os.environ.get("REVIEW_CHUNK_MB", "8") or 8)))
+
     # Course module files (lesson videos, worksheets, slides). These stream to
     # their own directory on the media disk rather than into Postgres, so a
     # module can hold a full-length video without bloating the database or a

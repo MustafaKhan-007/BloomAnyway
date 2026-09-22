@@ -33,6 +33,7 @@ from ..services import quotes as quotes_service
 from ..services import reel_of_week as rotw_svc
 from ..services import reel_reviews as reel_svc
 from ..services import reel_uploads as reel_up
+from ..services import review_uploads as review_up
 from ..services import stats
 from ..services import mailer
 from ..services.mailer import (last_send_error, send_customer_support_email,
@@ -3876,6 +3877,7 @@ def reel_reviews():
                            progress=reel_svc.week_progress(week),
                            today=reel_svc.atlanta_today(),
                            today_reviews=reel_svc.reviews_on(),
+                           max_upload_label=review_up.max_upload_label(),
                            max_mb=current_app.config["MAX_VIDEO_MB"])
 
 
@@ -3947,18 +3949,22 @@ def reel_reviews_publish(app_id):
     review.published = True
     if review.review_date is None:
         review.review_date = today
-    upload = request.files.get("review_video")
-    if upload and upload.filename:
-        try:
-            disk_name, mime, fname, _size = process_video(
-                upload, current_app.config["VIDEO_STORAGE_DIR"],
-                current_app.config["MAX_VIDEO_MB"] * 1024 * 1024)
-        except VideoError as exc:
-            flash(str(exc), "error")
-            return redirect(url_for("admin.reel_reviews"))
-        if review.review_disk_name:
-            delete_stored(current_app.config["VIDEO_STORAGE_DIR"],
-                          review.review_disk_name)
+    # Either already on the media disk in slices, or riding along with this
+    # post. A video of the owner talking through a reel is routinely past what
+    # one request body may carry, so the big ones have landed before Publish
+    # was ever pressed and the form carries the id of what arrived.
+    replaced = ""
+    try:
+        landed = review_up.claim(request.form, request.files)
+    except VideoError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("admin.reel_reviews"))
+    if landed is not None:
+        disk_name, mime, fname, _size = landed
+        # Hold the old name rather than deleting it here: the new video is on
+        # the disk but the row still points at the old one, and a commit that
+        # fails now would leave the review playing nothing.
+        replaced = review.review_disk_name or ""
         review.review_disk_name = disk_name
         review.review_mime = mime
         review.review_filename = fname
@@ -3972,7 +3978,21 @@ def reel_reviews_publish(app_id):
         actor_id=current_user.id,
         exclude_id=current_user.id,
     )
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        # The video is on the disk and no row points at it now. Nothing sweeps
+        # this folder, so a file left here is left for good — and at the size
+        # these run to, a handful of them is the whole media disk.
+        if landed is not None:
+            delete_stored(current_app.config["VIDEO_STORAGE_DIR"], landed[0])
+        log.exception("reel review publish failed")
+        flash("We couldn't publish that review just now — please try again.",
+              "error")
+        return redirect(url_for("admin.reel_reviews"))
+    if replaced:
+        delete_stored(current_app.config["VIDEO_STORAGE_DIR"], replaced)
     week = reel_svc.week_progress(application.week_key)
     # Where the week has got to, rather than what is left of an allowance.
     tail = (f" {week['done']} of seven this week." if week["left"]
@@ -3980,6 +4000,47 @@ def reel_reviews_publish(app_id):
     flash("Reel review published to the Content Hub." + _told_suffix(told) + tail,
           "success")
     return redirect(url_for("admin.reel_reviews"))
+
+
+# --- review videos that are too big for one request --------------------------
+# Cloudflare Free rejects any request body over roughly 100 MB, so a recording
+# of the owner talking through a reel cannot arrive in one piece however the
+# app is configured. The browser cuts it up and posts the slices here first;
+# the publish form then carries the id of what landed instead of the file.
+
+@bp.route("/reel-reviews/uploads/begin", methods=["POST"])
+@admin_required
+def reel_review_upload_begin():
+    payload = request.get_json(silent=True) or {}
+    try:
+        upload_id = review_up.begin_upload(
+            str(payload.get("filename") or ""),
+            int(payload.get("size") or 0))
+    except (VideoError, TypeError, ValueError) as exc:
+        return jsonify({"error": str(exc) or "That file didn't look right."}), 400
+    return jsonify({"upload_id": upload_id,
+                    "chunk_bytes": review_up.chunk_bytes()})
+
+
+@bp.route("/reel-reviews/uploads/<upload_id>/chunk", methods=["POST"])
+@admin_required
+def reel_review_upload_chunk(upload_id):
+    part = request.files.get("chunk")
+    data = part.read() if part else request.get_data()
+    if not data:
+        return jsonify({"error": "That slice was empty."}), 400
+    try:
+        received = review_up.append_chunk(upload_id, data)
+    except VideoError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"received": received})
+
+
+@bp.route("/reel-reviews/uploads/<upload_id>/abort", methods=["POST"])
+@admin_required
+def reel_review_upload_abort(upload_id):
+    review_up.abort_upload(upload_id)
+    return jsonify({"ok": True})
 
 
 @bp.route("/reel-reviews/review/<int:review_id>/unpublish", methods=["POST"])

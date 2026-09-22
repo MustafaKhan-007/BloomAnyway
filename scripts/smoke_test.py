@@ -3952,6 +3952,108 @@ ok("Content Hub tells non-members why the reviews are locked",
 ok("Missing reel review returns 404",
    client.get("/watch/reviews/999999").status_code == 404)
 
+# --- the owner's review video goes up a slice at a time ----------------------
+# It used to have to arrive whole, which meant anything past the ~100 MB a
+# Cloudflare Free request body may carry could be recorded, attached and
+# published, and answered only with "that file was too large".
+from app.services import review_uploads as _review_up  # noqa: E402
+
+_studio_reels = admin.get("/admin/reel-reviews").get_data(as_text=True)
+ok("The publish form sends big videos up in slices",
+   "data-review-upload" in _studio_reels
+   and "/admin/reel-reviews/uploads/begin" in _studio_reels)
+with app.app_context():
+    _review_ceiling = _review_up.max_upload_label()
+ok("And says what the real ceiling is, not the request body limit",
+   f"Up to {_review_ceiling}" in _studio_reels)
+
+_big_review = minimal_mp4 + (b"review-bytes" * 6000)
+r = admin.post("/admin/reel-reviews/uploads/begin",
+               json={"filename": "studio-review.mp4", "size": len(_big_review)})
+_rev_start = r.get_json() or {}
+ok("Studio can start sending a review video up in slices",
+   r.status_code == 200 and bool(_rev_start.get("upload_id"))
+   and _rev_start.get("chunk_bytes", 0) > 0)
+_rev_upload_id = _rev_start.get("upload_id")
+for _i in range(0, len(_big_review), 4096):
+    r = admin.post(f"/admin/reel-reviews/uploads/{_rev_upload_id}/chunk",
+                   data={"chunk": (io.BytesIO(_big_review[_i:_i + 4096]), "part")},
+                   content_type="multipart/form-data")
+ok("Every slice is taken and counted back",
+   r.status_code == 200
+   and (r.get_json() or {}).get("received") == len(_big_review))
+
+with app.app_context():
+    _old_review_file = db.session.get(ReelReview, review_id).review_disk_name
+r = admin.post(f"/admin/reel-reviews/{app_id}/publish", data={
+    "title": "Loved your pacing", "body": long_review,
+    "review_upload_id": _rev_upload_id,
+    "review_upload_name": "studio-review.mp4",
+}, follow_redirects=True)
+ok("Publishing takes what already landed instead of a file",
+   "published to the Content Hub" in r.get_data(as_text=True))
+with app.app_context():
+    _rev = db.session.get(ReelReview, review_id)
+    _rev_path = _os.path.join(app.config["VIDEO_STORAGE_DIR"],
+                              _rev.review_disk_name or "")
+    ok("The reassembled review video is on the disk, byte for byte what was sent",
+       _os.path.isfile(_rev_path)
+       and open(_rev_path, "rb").read() == _big_review)
+    # A raw reel's folder is emptied every Monday, and nothing there knows a
+    # published review's video from a member's week-old entry.
+    ok("It is kept with the Content Hub videos, not among the swept raw reels",
+       not _os.path.isfile(_os.path.join(app.config["REEL_RAW_DIR"],
+                                         _rev.review_disk_name or "_")))
+    ok("The video it replaced is not left on the disk for good",
+       bool(_old_review_file)
+       and not _os.path.isfile(_os.path.join(
+           app.config["VIDEO_STORAGE_DIR"], _old_review_file)))
+    ok("No half-finished slice is left behind",
+       not _os.path.isfile(_os.path.join(_review_up.parts_dir(),
+                                         _rev_upload_id)))
+ok("And the new video streams, seekable, to a member",
+   client.get(f"/watch/reviews/{review_id}/stream").status_code == 200
+   and client.get(f"/watch/reviews/{review_id}/stream",
+                  headers={"Range": "bytes=0-99"}).status_code == 206)
+
+r = admin.post("/admin/reel-reviews/uploads/begin",
+               json={"filename": "notes.txt", "size": 4096})
+ok("Something that isn't a video is turned away before a byte is sent",
+   r.status_code == 400)
+r = admin.post("/admin/reel-reviews/uploads/begin",
+               json={"filename": "enormous.mp4",
+                     "size": (app.config["REVIEW_UPLOAD_MAX_MB"] + 1) * 1024 * 1024})
+ok("So is a file over the cap", r.status_code == 400)
+r = admin.post("/admin/reel-reviews/uploads/nonesuch.mp4/chunk",
+               data={"chunk": (io.BytesIO(b"slice"), "part")},
+               content_type="multipart/form-data")
+ok("Slices for an upload we never started are refused", r.status_code == 400)
+ok("Only owners can send a review video up",
+   client.post("/admin/reel-reviews/uploads/begin",
+               json={"filename": "x.mp4", "size": 4096}).status_code in (302, 404)
+   and app.test_client().post(
+       "/admin/reel-reviews/uploads/begin",
+       json={"filename": "x.mp4", "size": 4096}).status_code in (302, 404))
+
+# A slice going missing leaves something that will not play, and the last
+# chance to notice is when the pieces are put together.
+r = admin.post("/admin/reel-reviews/uploads/begin",
+               json={"filename": "truncated.mp4", "size": 8192})
+_broken_id = (r.get_json() or {})["upload_id"]
+admin.post(f"/admin/reel-reviews/uploads/{_broken_id}/chunk",
+           data={"chunk": (io.BytesIO(b"not a video" * 40), "part")},
+           content_type="multipart/form-data")
+r = admin.post(f"/admin/reel-reviews/{app_id}/publish", data={
+    "title": "Loved your pacing", "body": long_review,
+    "review_upload_id": _broken_id, "review_upload_name": "truncated.mp4",
+}, follow_redirects=True)
+ok("A file that didn't arrive as a video is refused rather than published",
+   "look like a valid video" in r.get_data(as_text=True))
+with app.app_context():
+    ok("And the review keeps the video it already had",
+       db.session.get(ReelReview, review_id).review_disk_name
+       == _os.path.basename(_rev_path))
+
 # --- reel of the week: member entries feed the home page spotlight ----------
 from app.models import ReelSubmission
 from app.services import reel_of_week as rotw_svc
