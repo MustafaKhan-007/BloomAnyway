@@ -203,6 +203,14 @@ input:focus, select:focus, textarea:focus {
   outline-offset: 2px;
   border-color: var(--gold);
 }
+/* A field the page fills in for you. Left looking like every other input it
+   reads as broken rather than as taken care of — you click it, nothing
+   happens, and the note underneath explaining why goes unread. */
+input:disabled, select:disabled, textarea:disabled {
+  background: var(--ivory-deep);
+  color: var(--ink-soft);
+  cursor: not-allowed;
+}
 label { display: block; font-weight: 600; margin-bottom: 6px; }
 .field { margin-bottom: 20px; }
 /* Stands in for a <label> over a group of checkboxes, which has no one input

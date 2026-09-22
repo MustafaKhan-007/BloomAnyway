@@ -62,6 +62,32 @@ PRODUCT_KINDS: tuple[tuple[str, str], ...] = (
 PRODUCT_KIND_KEYS = tuple(key for key, _ in PRODUCT_KINDS)
 PRODUCT_KIND_PILLS = dict(PRODUCT_KINDS)
 PRODUCT_STATUSES = ("draft", "published", "archived")
+
+#: How a product is paid for. "once" is a single payment, which is what
+#: everything here was until a product could be subscribed to; the rest are
+#: Stripe's recurring intervals, named the way the Studio form asks for them.
+BILLING_PERIODS: tuple[tuple[str, str], ...] = (
+    ("once", "One-time payment"),
+    ("week", "Every week"),
+    ("month", "Every month"),
+    ("3month", "Every 3 months"),
+    ("6month", "Every 6 months"),
+    ("year", "Every year"),
+)
+BILLING_PERIOD_KEYS = tuple(key for key, _ in BILLING_PERIODS)
+BILLING_PERIOD_LABELS = dict(BILLING_PERIODS)
+#: The (interval, interval_count) pair Stripe wants for each recurring one.
+#: Stripe has no "every 3 months" — it has a month counted three at a time.
+STRIPE_INTERVALS: dict[str, tuple[str, int]] = {
+    "week": ("week", 1),
+    "month": ("month", 1),
+    "3month": ("month", 3),
+    "6month": ("month", 6),
+    "year": ("year", 1),
+}
+#: Stripe refuses a product description over this, and refuses the whole call
+#: with it rather than trimming, so the form says the number out loud.
+STRIPE_DESCRIPTION_MAX = 500
 QUOTE_CATEGORIES = ("comfort", "determination", "renewal")
 
 #: membership tiers. "none" = free (quotes, shop, Content Hub free picks);
@@ -470,6 +496,23 @@ class Product(db.Model):
     ls_checkout_url = db.Column(db.String(500))  # legacy; unused
     ls_variant_id = db.Column(db.String(40), index=True)  # legacy; unused
     stripe_price_id = db.Column(db.String(80), index=True)
+    #: Stripe's own copy of this product (``prod_…``). Studio creates it on the
+    #: first save and keeps its name, blurb and pictures in step after that.
+    stripe_product_id = db.Column(db.String(80), index=True)
+    #: What Stripe shows on its checkout page and on the card statement line.
+    #: Blank falls back to the promise — see :meth:`stripe_blurb`.
+    stripe_description = db.Column(db.String(STRIPE_DESCRIPTION_MAX))
+    #: once | week | month | 3month | 6month | year — see BILLING_PERIODS.
+    billing_period = db.Column(db.String(12), nullable=False, default="once")
+    #: Every price id this product has finished with, newest first. A Stripe
+    #: price cannot be re-priced — changing what something costs means a new
+    #: price and the old one archived. Orders placed before that still name
+    #: the old id, and a shelf that can't match them is a buyer locked out of
+    #: what they paid for, so none of them are ever forgotten.
+    retired_price_ids_json = db.Column(db.Text)
+    #: When Studio and Stripe were last agreed, and why they aren't.
+    stripe_synced_at = db.Column(db.DateTime)
+    stripe_sync_error = db.Column(db.String(300))
     # healing | building — Courses & Guides lanes
     track = db.Column(db.String(20), index=True)
     meta_line = db.Column(db.String(200))  # e.g. "80 daily pages • PDF + printable"
@@ -1188,6 +1231,84 @@ class Product(db.Model):
         if contents:
             return all("course" not in p.types() for p in contents)
         return True
+
+    # --- how it is charged, and which Stripe price says so -------------------
+
+    def billing_key(self) -> str:
+        """The billing period, falling back to the one-off everything began as."""
+        key = (self.billing_period or "").strip().lower()
+        return key if key in BILLING_PERIOD_KEYS else "once"
+
+    def is_recurring(self) -> bool:
+        return self.billing_key() != "once"
+
+    def billing_label(self) -> str:
+        return BILLING_PERIOD_LABELS.get(self.billing_key(), "One-time payment")
+
+    def stripe_interval(self) -> tuple[str, int] | None:
+        """``("month", 3)`` for a quarterly product; ``None`` for a one-off."""
+        return STRIPE_INTERVALS.get(self.billing_key())
+
+    def price_suffix(self) -> str:
+        """" / month" and the like, for a price shown next to what it buys."""
+        key = self.billing_key()
+        return "" if key == "once" else {
+            "week": " / week", "month": " / month", "3month": " / 3 months",
+            "6month": " / 6 months", "year": " / year",
+        }.get(key, "")
+
+    def stripe_blurb(self) -> str:
+        """What Stripe should say this is.
+
+        The promise is already a one-line description written for a stranger,
+        so a product nobody has written a Stripe blurb for still arrives at
+        checkout saying something rather than nothing.
+        """
+        for text in (self.stripe_description, self.promise):
+            wrote = " ".join((text or "").split())
+            if wrote:
+                return wrote[:STRIPE_DESCRIPTION_MAX]
+        return ""
+
+    def retired_price_ids(self) -> list[str]:
+        """Price ids this product has used and finished with, newest first."""
+        try:
+            rows = json.loads(self.retired_price_ids_json or "[]")
+        except (ValueError, TypeError):
+            return []
+        out, seen = [], set()
+        for raw in rows if isinstance(rows, list) else []:
+            key = str(raw or "").strip()
+            if key and key not in seen:
+                seen.add(key)
+                out.append(key)
+        return out
+
+    def retire_price_id(self, price_id: str | None) -> None:
+        """Remember a price we have stopped selling at, so old orders match."""
+        key = (price_id or "").strip()
+        if not key:
+            return
+        kept = [k for k in self.retired_price_ids() if k != key]
+        # 40 is far more price changes than anything here will see, and it
+        # stops a runaway sync loop from growing the column without end.
+        self.retired_price_ids_json = json.dumps(([key] + kept)[:40])
+
+    def price_keys(self) -> list[str]:
+        """Every id that has ever meant "this product" at a Stripe checkout.
+
+        Anything matching a purchase to the catalogue reads this rather than
+        the current price alone, or a price change would quietly strand every
+        order placed before it.
+        """
+        out, seen = [], set()
+        for raw in ([self.stripe_price_id, self.ls_variant_id]
+                    + self.retired_price_ids()):
+            key = (raw or "").strip()
+            if key and key not in seen:
+                seen.add(key)
+                out.append(key)
+        return out
 
     def publish_blockers(self):
         """List of human-readable requirements missing before publishing."""

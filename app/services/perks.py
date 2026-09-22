@@ -67,8 +67,9 @@ def _match(purchase: ShopPurchase, products: list[Product]) -> Product | None:
         if not key:
             continue
         for product in products:
-            if key in ((product.stripe_price_id or "").strip(),
-                       (product.ls_variant_id or "").strip()):
+            # Every price this has ever sold at, so a perk bought before a
+            # price change is still a perk.
+            if key in product.price_keys():
                 return product
     name = (purchase.product_name or "").strip().lower()
     if name:

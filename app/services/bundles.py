@@ -146,8 +146,7 @@ def backfill(product: Product | None) -> int:
     """
     if product is None or not contents(product):
         return 0
-    keys = [k for k in ((product.stripe_price_id or "").strip(),
-                        (product.ls_variant_id or "").strip()) if k]
+    keys = product.price_keys()
     matches = [ShopPurchase.product_name == product.title]
     if keys:
         matches.append(ShopPurchase.variant_id.in_(keys))

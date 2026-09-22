@@ -271,13 +271,32 @@
     <details class="admin-panel studio-card studio-section" open>
       <summary class="studio-section__head">
         <h2>Pricing &amp; checkout</h2>
-        <p class="field-help studio-section__lede">Price shown on the product page. Paste the Stripe Price ID so checkout works.</p>
+        <p class="field-help studio-section__lede">
+          {%- if stripe_managed %}Set the price here and Studio makes it in Stripe for you — product, picture, description and all.
+          {%- else %}Price shown on the product page. Paste the Stripe Price ID so checkout works.{% endif %}
+        </p>
       </summary>
       <div class="form-row">
         <div class="field">
           <label for="price">Price (USD)</label>
           <input type="text" id="price" name="price" placeholder="29.00"
                  value="{{ '%.2f'|format(product.price_cents / 100) if product.price_cents is not none else '' }}">
+        </div>
+        <div class="field">
+          <label for="billing_period">How it's paid</label>
+          <select id="billing_period" name="billing_period">
+            {% for key, label in billing_periods %}
+            <option value="{{ key }}"{{ ' selected' if product.billing_key() == key }}>{{ label }}</option>
+            {% endfor %}
+          </select>
+          <p class="field-help">
+            One-time is the usual. Anything else charges again on that rhythm
+            until the buyer stops it, and Stripe runs it as a subscription.
+            {%- if product.is_recurring() %}
+            <strong>This one renews {{ product.billing_label()|lower }}</strong>, so
+            it can't be given as a gift &mdash; the card would stay the giver's.
+            {%- endif %}
+          </p>
         </div>
         <div class="field">
           <label for="compare_at">Compare-at (optional)</label>
@@ -307,9 +326,55 @@
         </div>
         <div class="field" style="flex:2;">
           <label for="stripe">Stripe price ID</label>
+          {# Disabled rather than read-only: a disabled field isn't posted, and
+             the save reads "no value" as "leave it alone" rather than as the
+             owner having cleared it. #}
           <input type="text" id="stripe" name="stripe" placeholder="price_…"
-                 value="{{ product.stripe_price_id or '' }}">
-          <p class="field-help">Required to publish and accept payments. Use a one-time Price from Stripe.</p>
+                 value="{{ product.stripe_price_id or '' }}"
+                 {{ 'disabled' if stripe_managed }}>
+          <p class="field-help">
+            {%- if stripe_managed %}
+            Studio looks after this. Change the price above and a new Stripe
+            price is made on save &mdash; the old one is archived, because
+            Stripe won't let a price be edited once it exists. Everyone who
+            already bought keeps what they paid.
+            {%- if product.stripe_product_id %}
+            <br>Stripe product <code>{{ product.stripe_product_id }}</code>.
+            {%- endif %}
+            {%- if product.retired_price_ids() %}
+            <br>{{ product.retired_price_ids()|length }} older
+            price{{ '' if product.retired_price_ids()|length == 1 else 's' }}
+            archived and still matched to old orders.
+            {%- endif %}
+            {%- else %}
+            Required to publish and accept payments. Use a one-time Price from Stripe.
+            {%- endif %}
+          </p>
+          {% if product.stripe_sync_error %}
+          <p class="field-help"><strong>Stripe said no:</strong>
+            {{ product.stripe_sync_error }}</p>
+          {% elif stripe_managed and product.stripe_synced_at %}
+          <p class="field-help">In step with Stripe as of
+            {{ product.stripe_synced_at|when('%b %d, %Y at %I:%M %p') }}.</p>
+          {% endif %}
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="field" style="flex:2;">
+          <label for="stripe_description">Stripe description</label>
+          <textarea id="stripe_description" name="stripe_description" rows="3"
+                    maxlength="{{ stripe_description_max }}"
+                    placeholder="A short line Stripe shows beside the price.">{{ product.stripe_description or '' }}</textarea>
+          <p class="field-help">
+            What Stripe shows on its own checkout page and in its dashboard.
+            <strong>It must be under {{ stripe_description_max }} characters</strong>
+            &mdash; Stripe refuses the whole thing rather than shortening it,
+            so anything longer is cut here before it gets there.
+            Leave it empty and the one-line promise is used.
+            {%- if not product.stripe_description and product.promise %}
+            Right now that's &ldquo;{{ product.promise }}&rdquo;.
+            {%- endif %}
+          </p>
         </div>
       </div>
       <div class="form-row">
