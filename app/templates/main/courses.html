@@ -60,11 +60,11 @@
       <span class="lib-card__price lib-card__price--shelved">No longer sold</span>
       {% elif product.has_promo() %}
       <span class="lib-card__price lib-card__price--promo">
-        <strong>{{ product.promo_display() }}</strong>
+        <strong>{{ product.promo_display() }}{{ product.price_suffix() }}</strong>
         <s>{{ product.price_display() }}</s>
       </span>
       {% else %}
-      <span class="lib-card__price">{{ product.price_display() or '—' }}</span>
+      <span class="lib-card__price">{{ product.price_display() or '—' }}{{ product.price_suffix() }}</span>
       {% endif %}
       {% if owned_purchase_id %}
       <a class="btn lib-card__btn lib-card__btn--primary lib-card__btn--{{ lane }}"

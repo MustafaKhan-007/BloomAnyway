@@ -371,11 +371,32 @@ def checkout_product(slug):
             # The product page says this too, but the pay button is on
             # Stripe's page, and that is the last thing anyone reads.
             submit_note=GUIDE_NO_REFUND if product.is_guide() else "",
+            # A product can be sold on a subscription now. Stripe wants to be
+            # told which of its two checkouts this is, and refuses a renewing
+            # price put through the one-off one.
+            recurring=product.is_recurring(),
         )
     except pay.StripeError as exc:
         flash(str(exc), "error")
         return redirect(url_for("main.courses"))
     return redirect(url)
+
+
+def _giftable(product):
+    """Why this can't be given to somebody, or an empty string.
+
+    A subscription can't be: the card kept on file would be the buyer's, and
+    a present that quietly charges the giver every month until somebody
+    notices is not a present.
+    """
+    stop = _buyable(product)
+    if stop:
+        return stop
+    if product.is_recurring():
+        return ("This one is paid for {}, so it can't be given as a gift — "
+                "the card would stay on the giver's name. Send them the link "
+                "instead.").format(product.billing_label().lower())
+    return ""
 
 
 def _buyable(product):
@@ -420,7 +441,7 @@ def gift_product(slug):
     product = Product.query.filter_by(slug=slug, status="published").first_or_404()
     if not product.visible_to(current_user):
         abort(404)
-    stop = _buyable(product)
+    stop = _giftable(product)
     if stop:
         flash(stop, "info")
         return redirect(url_for("main.course_detail", slug=product.slug))

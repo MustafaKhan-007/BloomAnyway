@@ -18,11 +18,12 @@ from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 
 from ..extensions import db
-from ..models import (Announcement, ContactMessage, ContentReport, DRIP_MODES,
+from ..models import (Announcement, BILLING_PERIODS, BILLING_PERIOD_KEYS,
+                      ContactMessage, ContentReport, DRIP_MODES,
                       FEEDBACK_KINDS, FaqItem, ForumComment,
                       ForumPost, MEMBERSHIPS, MEMBERSHIP_LABELS, MarketplaceListing,
                       MembershipPlan,
-                      PRODUCT_KINDS,
+                      PRODUCT_KINDS, STRIPE_DESCRIPTION_MAX,
                       Page, Product, ProductAsset, Quote, QuoteFavorite, QuotePin,
                       ReelReview, ReelReviewApplication, ReelSubmission,
                       SiteFeedback, Testimonial,
@@ -674,7 +675,21 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
         product.perk_starts_at = None
         product.perk_ends_at = None
 
-    product.stripe_price_id = (form.get("stripe") or "").strip() or None
+    # Only when the form actually carried the field. Studio stops offering it
+    # once Stripe is being managed from here, and a field that isn't on the
+    # page must not read as one the owner cleared.
+    if form.get("stripe") is not None:
+        product.stripe_price_id = (form.get("stripe") or "").strip() or None
+    billing = (form.get("billing_period") or "").strip().lower()
+    if billing in BILLING_PERIOD_KEYS:
+        product.billing_period = billing
+    elif not (product.billing_period or "").strip():
+        product.billing_period = "once"
+    # Stripe refuses the whole call over its limit rather than trimming, so
+    # the cut happens here and the form says the number.
+    product.stripe_description = " ".join(
+        (form.get("stripe_description") or "").split()
+    )[:STRIPE_DESCRIPTION_MAX] or None
     price = _parse_price_cents(form.get("price"))
     if price is not None or form.get("price") is not None:
         # Allow clearing price with empty field on edit
@@ -766,6 +781,53 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
         if cleaned and cleaned != product.slug:
             product.slug = unique_product_slug(cleaned, exclude_id=product.id)
     return module_numbers
+
+
+def _stripe_form_context() -> dict:
+    """What the product form needs to know about Stripe before drawing."""
+    from ..services import stripe_catalog
+
+    return {
+        "billing_periods": BILLING_PERIODS,
+        "stripe_description_max": STRIPE_DESCRIPTION_MAX,
+        "stripe_managed": stripe_catalog.manages_catalog(),
+    }
+
+
+def _sync_stripe_catalog(product: Product) -> dict:
+    """Put what Studio says about this product into Stripe. Caller commits.
+
+    The owner hears about it only when there is something to know: a price
+    that has rotated, or a Stripe that wouldn't take the change. A save that
+    went through cleanly says nothing, because it is the ordinary case.
+    """
+    from ..services import stripe_catalog
+
+    report = stripe_catalog.sync_product(product)
+    if report["error"]:
+        flash("Saved here, but Stripe wouldn't take it — " + report["error"]
+              + " Checkout carries on with the price it already had. There's "
+              "a Sync with Stripe button on the products list to try again.",
+              "error")
+    elif report["retired"]:
+        flash("Stripe is charging " + (product.price_display() or "the new price")
+              + " from now on. A price can't be edited there, so that's a new "
+              "one with the old archived — anybody already part-way through "
+              "checkout pays what they were shown.", "info")
+    return report
+
+
+def _settle_publish(product: Product, form) -> None:
+    """Live or draft, decided after Stripe has had its say.
+
+    The Stripe price is one of the things a product needs before it can be
+    published, and Studio now makes that price during the same save. Asking
+    before the sync would keep every new product as a draft on the save that
+    created it, however complete it was.
+    """
+    if not form.get("live"):
+        return
+    product.status = "draft" if product.publish_blockers() else "published"
 
 
 def _warn_test_not_live(product: Product) -> None:
@@ -948,10 +1010,43 @@ def _save_asset_lessons(product: Product, form) -> None:
 @bp.route("/products")
 @admin_required
 def products():
+    from ..services import stripe_catalog
+
     items = (Product.query
              .options(joinedload(Product.assets))
              .order_by(Product.track, Product.sort_order, Product.id).all())
-    return render_template("admin/products.html", items=items)
+    return render_template("admin/products.html", items=items,
+                           stripe_managed=stripe_catalog.manages_catalog())
+
+
+@bp.route("/products/stripe-sync", methods=["POST"])
+@admin_required
+def products_stripe_sync():
+    """Bring every product into step with Stripe in one go.
+
+    For the catalogue that existed before Studio managed any of this: each
+    product has a price id somebody pasted in and no product id at all, and
+    opening thirty pages to press save on each is not a plan.
+    """
+    from ..services import stripe_catalog
+
+    tally = stripe_catalog.sync_all()
+    if tally.get("off"):
+        flash("Stripe isn't connected, so there's nothing to sync with. Add "
+              "the secret key first.", "error")
+        return redirect(url_for("admin.products"))
+
+    done = tally["synced"]
+    said = [f"{done} product{'' if done == 1 else 's'} match Stripe now"]
+    if tally["priced"]:
+        said.append(f"{tally['priced']} got a fresh price")
+    if tally["skipped"]:
+        said.append(f"{tally['skipped']} skipped for having no price yet")
+    flash(", ".join(said) + ".", "success" if done else "info")
+    if tally["failed"]:
+        flash(f"{tally['failed']} wouldn't go through: "
+              + "; ".join(tally["problems"]), "error")
+    return redirect(url_for("admin.products"))
 
 
 @bp.route("/products/new", methods=["GET", "POST"])
@@ -1016,6 +1111,10 @@ def product_new():
                 log.exception("create product teaser upload failed")
         if gallery_urls:
             product.set_gallery(gallery_urls)
+        # After the pictures, so the first thing Stripe is told about this
+        # product already has its cover on it.
+        _sync_stripe_catalog(product)
+        _settle_publish(product, request.form)
         blockers = product.publish_blockers() if product.status == "published" else []
         if blockers:
             product.status = "draft"
@@ -1044,6 +1143,7 @@ def product_new():
         product_kinds=PRODUCT_KINDS,
         bundle_choices=_bundle_choices(),
         bundle_held=[],
+        **_stripe_form_context(),
         **_upload_limits(),
     )
 
@@ -1111,6 +1211,8 @@ def product_edit(product_id):
             except Exception:
                 log.exception("edit product cover upload failed")
                 flash("Product saved, but the cover didn’t upload.", "error")
+        _sync_stripe_catalog(product)
+        _settle_publish(product, request.form)
         blockers = product.publish_blockers() if product.status == "published" else []
         if blockers:
             product.status = "draft"
@@ -1163,6 +1265,7 @@ def product_edit(product_id):
         bundle_choices=_bundle_choices(product),
         bundle_held=product.bundle_ids(),
         blockers=product.publish_blockers(),
+        **_stripe_form_context(),
         **_upload_limits(),
     )
 

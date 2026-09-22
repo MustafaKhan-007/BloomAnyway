@@ -82,11 +82,17 @@ def create_checkout_session(
     quantity: int = 1,
     trial_days: int = 0,
     submit_note: str = "",
+    recurring: bool = False,
 ) -> str:
     """Create a Stripe Checkout Session and return the hosted URL.
 
     ``product_id`` is a Stripe Price id (``price_…``).
     Memberships use ``mode=subscription``; courses/guides use ``mode=payment``.
+
+    ``recurring`` says the price behind this one renews, which a product can
+    now do as well as a membership. Stripe refuses a recurring price in
+    payment mode outright, so the caller has to be right about this — the
+    product knows, from the billing period set in Studio.
 
     ``trial_days`` holds off the first charge that long. Stripe only takes it
     on a subscription, and only between 1 and 730, so anything else is left
@@ -104,7 +110,7 @@ def create_checkout_session(
     meta = {str(k): str(v) for k, v in (metadata or {}).items() if v is not None}
     meta["price_id"] = price_id
     kind = (meta.get("kind") or "").strip().lower()
-    mode = "subscription" if kind == "membership" else "payment"
+    mode = "subscription" if (kind == "membership" or recurring) else "payment"
 
     params: dict[str, Any] = {
         "mode": mode,
@@ -251,7 +257,29 @@ def _product_for_price_id(price_id: str | None) -> Product | None:
     row = Product.query.filter_by(stripe_price_id=key).first()
     if row:
         return row
-    return Product.query.filter_by(ls_variant_id=key).first()
+    row = Product.query.filter_by(ls_variant_id=key).first()
+    if row:
+        return row
+    # A price the product used to sell at. Changing what something costs
+    # means a new price id in Stripe, and a checkout started before that
+    # change still arrives naming the old one.
+    return _product_for_retired_price(key)
+
+
+def _product_for_retired_price(key: str) -> Product | None:
+    """Whichever product used to charge on this price, if any did.
+
+    A scan rather than a query: retired ids live in a JSON list, the
+    catalogue is small, and this only runs when the two direct lookups have
+    already come back empty.
+    """
+    like = f'%"{key}"%'
+    for row in (Product.query
+                .filter(Product.retired_price_ids_json.ilike(like))
+                .all()):
+        if key in row.retired_price_ids():
+            return row
+    return None
 
 
 def _product_from_metadata(data: dict) -> Product | None:

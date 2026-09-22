@@ -1,7 +1,10 @@
 {# The quiet second way to buy: same money, somebody else's shelf. It sits
    beside "Buy now" and beside "Open & read" both, because already having a
    thing is no reason not to send it to somebody. #}
+{# Nothing on a subscription, though: the card stays the giver's, so it
+   would go on charging them long after the present was opened. #}
 {% macro gift_link(product) %}
+{% if not product.is_recurring() %}
 <a class="pd-hero__gift" href="{{ url_for('main.gift_product', slug=product.slug) }}"
    title="Buy this as a gift" aria-label="Buy this as a gift">
   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -13,4 +16,5 @@
   </svg>
   <span>Gift it</span>
 </a>
+{% endif %}
 {% endmacro %}

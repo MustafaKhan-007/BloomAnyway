@@ -28,6 +28,14 @@ def catalog_product_for_purchase(purchase: ShopPurchase) -> Product | None:
         row = Product.query.filter_by(ls_variant_id=key).first()
         if row:
             return row
+        # What it cost when they bought it. A price cannot be edited in
+        # Stripe, so every price change leaves a trail of ids behind it, and
+        # a shelf that only knows today's price is a buyer locked out of
+        # something they paid for.
+        for row in Product.query.filter(
+                Product.retired_price_ids_json.ilike(f'%"{key}"%')).all():
+            if key in row.retired_price_ids():
+                return row
     # Fallback: exact title match (helps older purchases).
     name = (purchase.product_name or "").strip()
     if name:
@@ -48,10 +56,8 @@ def catalog_products_for(purchases) -> dict[int, Product]:
     by_key: dict[str, Product] = {}
     by_title: dict[str, Product] = {}
     for product in Product.query.all():
-        for raw in (product.stripe_price_id, product.ls_variant_id):
-            key = (raw or "").strip()
-            if key:
-                by_key.setdefault(key, product)
+        for key in product.price_keys():
+            by_key.setdefault(key, product)
         title = (product.title or "").strip().lower()
         if title:
             by_title.setdefault(title, product)

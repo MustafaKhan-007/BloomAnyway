@@ -48,8 +48,11 @@
         {% endif %}
         <div class="pd-hero__buy">
           {% if product.has_promo() %}
+          {# The suffix is empty for everything bought once, which is most of
+             it. On a subscription it is the difference between a price and a
+             commitment, so it goes wherever the number does. #}
           <div class="pd-hero__price">
-            <strong>{{ product.promo_display() }}</strong>
+            <strong>{{ product.promo_display() }}{{ product.price_suffix() }}</strong>
             <s>{{ product.price_display() }}</s>
           </div>
           <p class="pd-promo">
@@ -67,7 +70,7 @@
           </p>
           {% else %}
           <div class="pd-hero__price">
-            <strong>{{ product.price_display() or '—' }}</strong>
+            <strong>{{ product.price_display() or '—' }}{{ product.price_suffix() }}</strong>
             {% if product.shows_compare_at() %}<s>{{ product.compare_at_display() }}</s>{% endif %}
           </div>
           {% endif %}

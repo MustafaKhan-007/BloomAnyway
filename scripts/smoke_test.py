@@ -395,6 +395,307 @@ ok("Courses page uses My space-style library cards",
 ok("Uploaded cover appears on Courses cards",
    f"/media/product-cover/{cover_id}" in courses_body
    and "lib-card__cover--photo" in courses_body)
+
+# --- 3b. Studio makes the Stripe side of a product, and rotates its price ----
+# A Stripe price cannot be re-priced: the amount is fixed the moment it is
+# created. So changing what something costs means making a second price,
+# pointing checkout at that, and archiving the first — and every order
+# already placed still names the first, which is the part that has to keep
+# working.
+from app.services import stripe_catalog as cat_svc
+
+
+class _FakeCatalogAPI:
+    """Enough of Stripe's product and price API to watch what Studio sends."""
+
+    def __init__(self):
+        self.products, self.prices, self.calls = {}, {}, []
+        self._n = 0
+        self.refuse = ""
+
+    def _mint(self, prefix):
+        self._n += 1
+        return f"{prefix}_fake{self._n}"
+
+    def product_create(self, **kw):
+        self.calls.append(("product.create", kw))
+        pid = self._mint("prod")
+        self.products[pid] = dict(kw, id=pid)
+        return dict(self.products[pid])
+
+    def product_modify(self, pid, **kw):
+        self.calls.append(("product.modify", kw))
+        self.products.setdefault(pid, {"id": pid}).update(kw)
+        return dict(self.products[pid])
+
+    def price_create(self, **kw):
+        if self.refuse:
+            raise Exception(self.refuse)
+        self.calls.append(("price.create", kw))
+        pid = self._mint("price")
+        self.prices[pid] = dict(kw, id=pid, active=True)
+        return dict(self.prices[pid])
+
+    def price_retrieve(self, pid, **kw):
+        if pid not in self.prices:
+            raise Exception(f"No such price: {pid}")
+        return dict(self.prices[pid])
+
+    def price_modify(self, pid, **kw):
+        self.calls.append(("price.modify", kw))
+        self.prices.setdefault(pid, {"id": pid}).update(kw)
+        return dict(self.prices[pid])
+
+    def sent(self, name):
+        """Every payload of one kind, oldest first."""
+        return [kw for call, kw in self.calls if call == name]
+
+
+_cat = _FakeCatalogAPI()
+_real_product_api, _real_price_api = pay.stripe.Product, pay.stripe.Price
+_real_configured_fn = pay.configured
+
+
+class _StripeProductAPI:
+    create = staticmethod(_cat.product_create)
+    modify = staticmethod(_cat.product_modify)
+
+
+class _StripePriceAPI:
+    create = staticmethod(_cat.price_create)
+    modify = staticmethod(_cat.price_modify)
+    retrieve = staticmethod(_cat.price_retrieve)
+
+
+def _catalog_on():
+    """Studio only manages Stripe when there is a Stripe and we aren't testing."""
+    pay.stripe.Product = _StripeProductAPI
+    pay.stripe.Price = _StripePriceAPI
+    pay.configured = lambda: True
+    app.config["TESTING"] = False
+
+
+def _catalog_off():
+    pay.stripe.Product = _real_product_api
+    pay.stripe.Price = _real_price_api
+    pay.configured = _real_configured_fn
+    app.config["TESTING"] = True
+
+
+_cover_form = {"title": "Cover Test Guide", "track": "healing", "type": "guide",
+               "promise": "A soft check-in.", "billing_period": "once",
+               # The form posts this or the product drops back to a draft,
+               # and a draft has no checkout to test against.
+               "live": "on"}
+
+_catalog_on()
+try:
+    with app.app_context():
+        ok("With a Stripe to talk to, Studio takes the catalogue on",
+           cat_svc.manages_catalog() is True)
+
+    r = admin.post(f"/admin/products/{cover_id}/edit",
+                   data=dict(_cover_form, price="19.00",
+                             stripe_description="Twenty minutes, once a day."),
+                   follow_redirects=True)
+    ok("Saving a product is enough to put it in Stripe", r.status_code == 200)
+    with app.app_context():
+        _cp = db.session.get(Product, cover_id)
+        ok("Stripe now holds a product of its own for it",
+           (_cp.stripe_product_id or "").startswith("prod_"),
+           _cp.stripe_product_id)
+        ok("And a price, with no more pasting of ids",
+           (_cp.stripe_price_id or "").startswith("price_"), _cp.stripe_price_id)
+        ok("Nothing is left hanging from the sync",
+           _cp.stripe_sync_error is None and _cp.stripe_synced_at is not None)
+        _made = _cat.sent("product.create")[-1]
+        ok("The blurb Studio was given is the one Stripe gets",
+           _made["description"] == "Twenty minutes, once a day.", _made)
+        ok("The cover already uploaded goes with it",
+           _made.get("images")
+           and f"/media/product-cover/{cover_id}" in _made["images"][0],
+           _made.get("images"))
+        ok("Stamped with a version, so a new cover isn't the old one cached",
+           "?v=" in (_made.get("images") or [""])[0])
+        ok("And it points back at the page it is sold on",
+           (_made.get("url") or "").endswith("/courses/cover-test-guide"),
+           _made.get("url"))
+        _priced = _cat.sent("price.create")[-1]
+        ok("Bought once means Stripe is told nothing about renewing",
+           "recurring" not in _priced and _priced["unit_amount"] == 1900,
+           _priced)
+        _first_price = _cp.stripe_price_id
+
+    # The whole point: change the number, get a new price, keep the old one.
+    r = admin.post(f"/admin/products/{cover_id}/edit",
+                   data=dict(_cover_form, price="24.00",
+                             stripe_description="Twenty minutes, once a day."),
+                   follow_redirects=True)
+    with app.app_context():
+        _cp = db.session.get(Product, cover_id)
+        ok("A new price in Studio is a new price in Stripe",
+           _cp.stripe_price_id != _first_price
+           and (_cp.stripe_price_id or "").startswith("price_"),
+           f"{_first_price} -> {_cp.stripe_price_id}")
+        ok("Charging what the owner typed, not what it used to be",
+           _cat.prices[_cp.stripe_price_id]["unit_amount"] == 2400)
+        ok("The old one is archived rather than left live beside it",
+           _cat.prices[_first_price].get("active") is False)
+        ok("But remembered, because old orders still name it",
+           _cp.retired_price_ids() == [_first_price], _cp.retired_price_ids())
+        ok("So a purchase made at the old price still finds its product",
+           pay._product_for_price_id(_first_price) is not None
+           and pay._product_for_price_id(_first_price).id == cover_id)
+        ok("The product keeps the one Stripe product through all of it",
+           len(_cat.sent("product.create")) == 1,
+           _cat.sent("product.create"))
+
+    _priced_before = len(_cat.sent("price.create"))
+    admin.post(f"/admin/products/{cover_id}/edit",
+               data=dict(_cover_form, price="24.00",
+                         stripe_description="Twenty minutes, once a day."),
+               follow_redirects=True)
+    ok("A save that changes nothing leaves the price alone",
+       len(_cat.sent("price.create")) == _priced_before,
+       f"{_priced_before} -> {len(_cat.sent('price.create'))}")
+
+    # Recurring, and a blurb longer than Stripe will take.
+    _long_blurb = "Seven words about what this is for. " * 30
+    r = admin.post("/admin/products/new", data={
+        "title": "Monthly Companion", "track": "healing", "type": "guide",
+        "promise": "A letter a month.", "price": "12.00",
+        "billing_period": "month", "stripe_description": _long_blurb,
+        "live": "on",
+    }, follow_redirects=True)
+    ok("Studio takes a product that renews", r.status_code == 200)
+    with app.app_context():
+        _sub = Product.query.filter_by(slug="monthly-companion").first()
+        ok("Which it knows is a subscription",
+           _sub is not None and _sub.is_recurring()
+           and _sub.billing_label() == "Every month")
+        _priced = _cat.sent("price.create")[-1]
+        ok("Stripe is told how often, in the shape it asks for",
+           _priced.get("recurring") == {"interval": "month", "interval_count": 1},
+           _priced.get("recurring"))
+        _made = _cat.sent("product.create")[-1]
+        ok("A blurb over Stripe's limit is cut before Stripe refuses it",
+           len(_made["description"]) == 500, len(_made["description"]))
+        ok("And what is stored is what was sent",
+           _sub.stripe_description == _made["description"])
+        ok("It went live on the save that made its price",
+           _sub.status == "published", _sub.status)
+        _sub_id, _sub_slug = _sub.id, _sub.slug
+
+    # A renewing price has to go through Stripe's other checkout, or Stripe
+    # refuses it outright.
+    _modes = []
+
+    class _FakeSessionAPI:
+        @staticmethod
+        def create(**kw):
+            _modes.append(kw)
+            return type("S", (), {"url": "https://pay.test/x"})
+
+    _real_session_cls = pay.stripe.checkout.Session
+    pay.stripe.checkout.Session = _FakeSessionAPI
+    try:
+        client.post(f"/checkout/product/{_sub_slug}")
+        ok("Buying a subscription opens Stripe's subscription checkout",
+           _modes and _modes[-1]["mode"] == "subscription",
+           [m.get("mode") for m in _modes])
+        client.post("/checkout/product/cover-test-guide")
+        ok("And a one-off still opens the one-off one",
+           _modes[-1]["mode"] == "payment", _modes[-1].get("mode"))
+    finally:
+        pay.stripe.checkout.Session = _real_session_cls
+
+    r = client.get(f"/courses/{_sub_slug}")
+    ok("The page says it renews rather than showing a bare price",
+       "$12 / month" in r.get_data(as_text=True))
+    r = client.get(f"/gift/{_sub_slug}", follow_redirects=True)
+    ok("A subscription can't be given as a gift",
+       "can&#39;t be given as a gift" in r.get_data(as_text=True)
+       or "can't be given as a gift" in r.get_data(as_text=True))
+
+    # Everything made before Studio managed any of this: a price id typed in
+    # by hand, and no product of its own recorded.
+    with app.app_context():
+        _cat.products["prod_old_hand"] = {"id": "prod_old_hand", "name": "Old"}
+        _cat.prices["price_old_hand"] = {
+            "id": "price_old_hand", "product": "prod_old_hand", "active": True,
+            "unit_amount": 4900, "currency": "usd"}
+        _legacy = Product(title="Hand Made", slug="hand-made", type="guide",
+                          status="draft", currency="USD", price_cents=4900,
+                          promise="Written before any of this.",
+                          track="healing", stripe_price_id="price_old_hand")
+        db.session.add(_legacy)
+        db.session.commit()
+        _legacy_id = _legacy.id
+        _before = len(_cat.sent("product.create"))
+        _report = cat_svc.sync_product(_legacy)
+        db.session.commit()
+        ok("An id pasted in by hand is adopted, not duplicated",
+           _report["ok"] and _legacy.stripe_product_id == "prod_old_hand"
+           and len(_cat.sent("product.create")) == _before,
+           _report)
+        ok("And the price it was already selling on is kept",
+           _legacy.stripe_price_id == "price_old_hand"
+           and _legacy.retired_price_ids() == [], _legacy.stripe_price_id)
+
+    # Stripe having a bad afternoon must not cost the owner their work.
+    _cat.refuse = "Your card country is not supported."
+    try:
+        r = admin.post(f"/admin/products/{cover_id}/edit",
+                       data=dict(_cover_form, price="31.00",
+                                 stripe_description="Twenty minutes, once a day."),
+                       follow_redirects=True)
+        _body = r.get_data(as_text=True)
+        ok("A Stripe that refuses says so, in words, on the page",
+           "Stripe wouldn&#39;t take it" in _body or "Stripe wouldn't take it" in _body)
+        with app.app_context():
+            _cp = db.session.get(Product, cover_id)
+            ok("The product is still saved with what was typed",
+               _cp.price_cents == 3100, _cp.price_cents)
+            ok("Checkout keeps the price that does work",
+               _cp.stripe_price_id in _cat.prices
+               and _cat.prices[_cp.stripe_price_id].get("active") is not False)
+            ok("And the reason is written down for the list to show",
+               "not supported" in (_cp.stripe_sync_error or ""),
+               _cp.stripe_sync_error)
+    finally:
+        _cat.refuse = ""
+
+    # One button for a catalogue that pre-dates all of this.
+    r = admin.post("/admin/products/stripe-sync", follow_redirects=True)
+    _body = r.get_data(as_text=True)
+    ok("Sync with Stripe goes through the whole catalogue",
+       r.status_code == 200 and "match Stripe now" in _body, _body[-400:])
+    with app.app_context():
+        ok("Clearing the failure it had a moment ago",
+           db.session.get(Product, cover_id).stripe_sync_error is None)
+        ok("Products with no price yet are skipped, not failed",
+           Product.query.filter(Product.price_cents.is_(None),
+                                Product.stripe_sync_error.isnot(None)).count() == 0)
+
+    _form_body = admin.get(f"/admin/products/{cover_id}/edit").get_data(as_text=True)
+    ok("The form offers how it is paid for",
+       'name="billing_period"' in _form_body
+       and "One-time payment" in _form_body and "Every 3 months" in _form_body)
+    ok("And a Stripe description that says the limit out loud",
+       'name="stripe_description"' in _form_body
+       and 'maxlength="500"' in _form_body
+       and "under 500 characters" in _form_body)
+    ok("The price id is Studio's to set now, not something to paste",
+       re.search(r'id="stripe"[^>]*disabled', _form_body, re.S) is not None)
+    ok("It says which Stripe product it is keeping in step",
+       "Stripe product <code>prod_" in _form_body)
+finally:
+    _catalog_off()
+
+with app.app_context():
+    ok("With Stripe left alone, Studio goes back to the pasted id",
+       cat_svc.manages_catalog() is False)
+
 r = client.get("/")
 home = r.get_data(as_text=True)
 ok("Home includes creator membership CTA",

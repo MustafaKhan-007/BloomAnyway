@@ -41,12 +41,14 @@ def _exclude_test_sales(query):
     matter: ``NOT IN`` on a NULL column is NULL, which would silently throw
     away every membership order along with the test ones.
     """
-    rows = (db.session.query(Product.id, Product.stripe_price_id)
-            .filter(Product.test_mode.is_(True)).all())
+    rows = Product.query.filter(Product.test_mode.is_(True)).all()
     if not rows:
         return query
-    ids = [r[0] for r in rows]
-    prices = [(r[1] or "").strip() for r in rows if (r[1] or "").strip()]
+    ids = [r.id for r in rows]
+    # Every price the dry run has ever been charged at, not just today's —
+    # a test product whose price was changed would otherwise start counting
+    # its older rehearsals as takings.
+    prices = sorted({key for r in rows for key in r.price_keys()})
     query = query.filter(or_(Order.product_id.is_(None),
                              Order.product_id.notin_(ids)))
     if prices:
@@ -76,18 +78,13 @@ def _chart_title_maps(orders: list[Order]) -> tuple[dict[str, str], dict[str, st
         return by_variant, by_payment
 
     if variants:
-        products = (
-            Product.query
-            .filter(or_(
-                Product.stripe_price_id.in_(variants),
-                Product.ls_variant_id.in_(variants),
-            ))
-            .all()
-        )
-        for p in products:
-            for key in ((p.stripe_price_id or "").strip(), (p.ls_variant_id or "").strip()):
-                if key and key in variants and p.title:
-                    by_variant[key] = p.title
+        # Read whole rather than queried by id: an order can name a price the
+        # product has since stopped selling at, and those live in a JSON list
+        # that no ``IN`` clause can reach. The catalogue is small.
+        for p in Product.query.all():
+            for key in p.price_keys():
+                if key in variants and p.title:
+                    by_variant.setdefault(key, p.title)
 
         plans = (
             MembershipPlan.query

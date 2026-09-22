@@ -12,7 +12,19 @@
         Open a product to edit details, cover, teasers, and reading files.
       </p>
     </div>
-    <a class="btn btn--primary" href="{{ url_for('admin.product_new') }}">New product</a>
+    <div class="page-head__actions">
+      {% if stripe_managed %}
+      {# One button for the whole catalogue, because everything made before
+         Studio managed any of this has a price id pasted in by hand and no
+         product in Stripe of its own. Opening each page to press save would
+         be the same work done thirty times. #}
+      <form method="post" action="{{ url_for('admin.products_stripe_sync') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn--secondary" type="submit">Sync with Stripe</button>
+      </form>
+      {% endif %}
+      <a class="btn btn--primary" href="{{ url_for('admin.product_new') }}">New product</a>
+    </div>
   </div>
 
   {% if items %}
@@ -54,7 +66,7 @@
           </td>
           <td>{{ (p.track or '—')|title }}</td>
           <td>{{ p.types()|join(', ') }}</td>
-          <td>{{ p.price_display() or '—' }}</td>
+          <td>{{ p.price_display() or '—' }}{{ p.price_suffix() }}</td>
           <td>
             <span class="status-pill status-pill--{{ 'published' if p.status == 'published' else 'draft' }}">
               {{ 'live' if p.status == 'published' else 'draft' }}
@@ -64,6 +76,9 @@
             {% endif %}
             {% if p.is_off_shelf() %}
             <span class="status-pill status-pill--shelved">off the shelves</span>
+            {% endif %}
+            {% if p.stripe_sync_error %}
+            <span class="status-pill status-pill--shelved" title="{{ p.stripe_sync_error }}">stripe failed</span>
             {% endif %}
           </td>
           <td class="studio-product-list__actions">
