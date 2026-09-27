@@ -1964,7 +1964,10 @@ _pd = client.get("/courses/rebuild-your-week").get_data(as_text=True)
 ok("The product page says what it goes back to, and when",
    "Reverting to $49 on" in _pd and "<s>$49</s>" in _pd, "no notice of the rise")
 ok("And how long is left of the price it is on now",
-   'data-countdown="' in _pd and re.search(r">\s*\d+ days?[,<]", _pd)
+   # A week or more out it reads "7 days left", nearer it reads "6 days, 3
+   # hours left". Which of the two depends on the hour the suite runs at
+   # against the owner's clock, so both have to count.
+   'data-countdown="' in _pd and re.search(r">\s*\d+ days?(?:,| left)", _pd)
    and 'data-countdown-zero="The price just went back up"' in _pd,
    "no live timer beside the day it goes up")
 with app.app_context():
@@ -12120,6 +12123,193 @@ try:
 finally:
     _mailer.send_email = _real_send_email
     pay.create_checkout_session = _real_gift_session
+
+# --- landing pages the owner builds herself --------------------------------
+# The whole point of the draft/published split is that Save is not Publish, so
+# most of what follows is about what a visitor can see at each step.
+from app.models import LandingPage as _LP  # noqa: E402
+from app.models import SiteImage as _SiteImage  # noqa: E402
+from app.services import landing_pages as _lp  # noqa: E402
+
+_guest = app.test_client()
+
+r = admin.post("/admin/landing/new", data={"title": "Spring Launch"},
+               follow_redirects=True)
+_lp_body = r.get_data(as_text=True)
+ok("A new landing page opens straight into the builder",
+   r.status_code == 200 and "data-lp-editor" in _lp_body)
+ok("It starts as a whole page rather than a blank one",
+   _lp_body.count("data-slot-id") >= 6)
+ok("Every block on it can be typed on", "contenteditable" in _lp_body)
+with app.app_context():
+    _page = _LP.query.filter_by(title="Spring Launch").first()
+    _lp_id, _lp_slug = _page.id, _page.slug
+    ok("Named from what was typed, with an address to match",
+       _lp_slug == "spring-launch", _lp_slug)
+    ok("And is not published", not _page.is_published())
+
+ok("A visitor gets a 404 rather than a half-built page",
+   _guest.get(f"/p/{_lp_slug}").status_code == 404)
+ok("A member can't peek at the draft either",
+   client.get(f"/p/{_lp_slug}?preview=1").status_code == 404)
+_prev = admin.get(f"/p/{_lp_slug}?preview=1").get_data(as_text=True)
+ok("The owner can preview it, and is told visitors can't see it",
+   "lp-preview-bar" in _prev and "can't see it at all yet" in _prev)
+
+_blocks = [
+    {"id": "b1", "type": "hero",
+     "fields": {"eyebrow": "SPRING", "heading": "Come and build",
+                "body": "Eight weeks.", "button_text": "Join",
+                "button_url": "/courses", "image": "", "bg": "plum"}},
+    {"id": "b2", "type": "faq", "fields": {"heading": "Questions", "bg": "cream"},
+     "items": [{"question": "How long?", "answer": "Eight weeks."}]},
+]
+r = admin.post(f"/admin/landing/{_lp_id}/save", json={"blocks": _blocks})
+ok("Saving answers cleanly and says it is still only a draft",
+   r.status_code == 200 and (r.get_json() or {}).get("status") == "Draft",
+   r.get_json())
+ok("And a visitor still sees nothing at all",
+   _guest.get(f"/p/{_lp_slug}").status_code == 404)
+
+admin.post(f"/admin/landing/{_lp_id}/publish")
+_live = _guest.get(f"/p/{_lp_slug}")
+_live_text = _live.get_data(as_text=True)
+ok("Publishing puts it on the site, in the words that were typed",
+   _live.status_code == 200 and "Come and build" in _live_text
+   and 'href="/courses"' in _live_text)
+ok("A visitor is shown no draft bar and none of the editing handles",
+   "lp-preview-bar" not in _live_text
+   and "contenteditable" not in _live_text
+   and "lp-ed__chrome" not in _live_text)
+
+_blocks[0]["fields"]["heading"] = "A completely new headline"
+admin.post(f"/admin/landing/{_lp_id}/save", json={"blocks": _blocks})
+_after = _guest.get(f"/p/{_lp_slug}").get_data(as_text=True)
+ok("An edit after publishing waits: the live page still says the old thing",
+   "Come and build" in _after and "A completely new headline" not in _after)
+ok("While the owner's preview shows the new one",
+   "A completely new headline" in
+   admin.get(f"/p/{_lp_slug}?preview=1").get_data(as_text=True))
+with app.app_context():
+    ok("And Studio says the live page is behind the draft",
+       db.session.get(_LP, _lp_id).status_label() == "Live · edited")
+admin.post(f"/admin/landing/{_lp_id}/publish")
+ok("Publishing again hands it over",
+   "A completely new headline" in _guest.get(f"/p/{_lp_slug}").get_data(as_text=True))
+
+admin.post(f"/admin/landing/{_lp_id}/unpublish")
+ok("Unpublishing takes it off the site",
+   _guest.get(f"/p/{_lp_slug}").status_code == 404)
+with app.app_context():
+    ok("But keeps the draft, so nothing is lost",
+       bool(db.session.get(_LP, _lp_id).draft_json))
+admin.post(f"/admin/landing/{_lp_id}/publish")
+
+# A page built out of typed words must never be a way to put script on the
+# site. Everything is stored as text and escaped on the way out.
+admin.post(f"/admin/landing/{_lp_id}/save", json={"blocks": [
+    {"id": "b9", "type": "text",
+     "fields": {"heading": "<script>alert(1)</script>",
+                "body": "<img src=x onerror=alert(2)>",
+                "align": "left", "bg": "cream"}}]})
+admin.post(f"/admin/landing/{_lp_id}/publish")
+_xss = _guest.get(f"/p/{_lp_slug}").get_data(as_text=True)
+ok("A script tag typed into a heading is shown, not run",
+   "<script>alert(1)</script>" not in _xss and "&lt;script&gt;" in _xss)
+ok("An onerror image is shown, not run",
+   "<img src=x" not in _xss and "&lt;img src=x onerror" in _xss)
+ok("javascript: is not a link we are willing to write",
+   _lp.clean_url("javascript:alert(1)") == ""
+   and _lp.clean_url("data:text/html,x") == ""
+   and _lp.clean_url("//elsewhere.test/x") == "")
+ok("An ordinary path or address is kept",
+   _lp.clean_url("/courses") == "/courses"
+   and _lp.clean_url("https://x.test/a") == "https://x.test/a")
+admin.post(f"/admin/landing/{_lp_id}/save", json={"blocks": [
+    {"id": "b8", "type": "cta",
+     "fields": {"heading": "Hi", "body": "", "button_text": "Go",
+                "button_url": "javascript:alert(1)", "bg": "plum"}}]})
+admin.post(f"/admin/landing/{_lp_id}/publish")
+ok("A javascript: button never reaches the page",
+   "javascript:" not in _guest.get(f"/p/{_lp_slug}").get_data(as_text=True))
+
+admin.post(f"/admin/landing/{_lp_id}/save", json={"blocks": [
+    {"id": "x1", "type": "not_a_block", "fields": {"a": 1}},
+    {"id": "x2", "type": "text",
+     "fields": {"heading": "Kept", "body": "Yes", "align": "sideways",
+                "bg": "neon", "sneaky": "<b>x</b>"}}]})
+with app.app_context():
+    _kept = _lp.blocks_from_json(db.session.get(_LP, _lp_id).draft_json)
+    ok("A block type we don't have is dropped on the way in", len(_kept) == 1)
+    ok("So is a field we don't have", "sneaky" not in _kept[0]["fields"])
+    ok("A choice that isn't on the list falls back to the default",
+       _kept[0]["fields"]["align"] == "left"
+       and _kept[0]["fields"]["bg"] == "cream")
+    ok("And the real words survive all of it",
+       _kept[0]["fields"]["heading"] == "Kept")
+
+_png = io.BytesIO()
+_PILImage.new("RGB", (800, 500), (122, 46, 98)).save(_png, format="PNG")
+_png.seek(0)
+r = admin.post("/admin/landing/images",
+               data={"image": (_png, "shot.png")},
+               content_type="multipart/form-data")
+_img_url = (r.get_json() or {}).get("url", "")
+ok("A picture uploads and is served back",
+   r.status_code == 200 and _img_url.startswith("/media/site/lp_")
+   and _guest.get(_img_url).status_code == 200, r.get_json())
+admin.post(f"/admin/landing/{_lp_id}/save", json={"blocks": [
+    {"id": "p1", "type": "image",
+     "fields": {"image": _img_url, "caption": "A shot", "width": "wide",
+                "bg": "cream"}}]})
+admin.post(f"/admin/landing/{_lp_id}/publish")
+ok("And shows up on the published page",
+   _img_url in _guest.get(f"/p/{_lp_slug}").get_data(as_text=True))
+ok("Something that isn't a picture is refused",
+   admin.post("/admin/landing/images",
+              data={"image": (io.BytesIO(b"nope"), "x.png")},
+              content_type="multipart/form-data").status_code == 400)
+
+# The browser never builds block markup: it asks for it here, so the canvas
+# and the published page can't drift apart.
+r = admin.post("/admin/landing/render-block", json={"type": "features"})
+_rb = r.get_json() or {}
+ok("The server draws a fresh block for the builder",
+   r.status_code == 200 and "lp-block--features" in (_rb.get("html") or "")
+   and "contenteditable" in (_rb.get("html") or "")
+   and (_rb.get("block") or {}).get("type") == "features")
+ok("A block type we don't have is refused",
+   admin.post("/admin/landing/render-block",
+              json={"type": "nope"}).status_code == 400)
+
+admin.post("/admin/landing/new", data={"title": "Spring Launch"})
+with app.app_context():
+    _slugs = [p.slug for p in _LP.query.all()]
+    ok("Two pages of the same name get different addresses",
+       len(set(_slugs)) == len(_slugs), _slugs)
+ok("A landing page can't sit on a path something else answers on",
+   _lp.slugify("admin") == "admin-page" and _lp.slugify("courses") == "courses-page")
+
+ok("A member is refused the builder",
+   client.get("/admin/landing").status_code in (302, 404)
+   and client.post(f"/admin/landing/{_lp_id}/save",
+                   json={"blocks": []}).status_code in (302, 404)
+   and client.post(f"/admin/landing/{_lp_id}/publish").status_code in (302, 404))
+ok("And a stranger can neither make a page nor upload a picture",
+   app.test_client().post("/admin/landing/new").status_code in (302, 404)
+   and app.test_client().post("/admin/landing/images").status_code in (302, 404))
+
+with app.app_context():
+    _imgs_before = _SiteImage.query.filter(_SiteImage.key.like("lp_%")).count()
+admin.post(f"/admin/landing/{_lp_id}/delete")
+with app.app_context():
+    ok("Deleting a page takes it away", db.session.get(_LP, _lp_id) is None)
+    ok("Along with the pictures nothing points at any more",
+       _imgs_before >= 1
+       and _SiteImage.query.filter(_SiteImage.key.like("lp_%")).count() == 0)
+ok("Its address 404s afterwards, and so does one that never existed",
+   _guest.get(f"/p/{_lp_slug}").status_code == 404
+   and _guest.get("/p/no-such-landing-page-xyz").status_code == 404)
 
 # --- the stylesheet is still readable text ---------------------------------
 # Twice now an edit has been saved with UTF-8 read back as Latin-1, which turns

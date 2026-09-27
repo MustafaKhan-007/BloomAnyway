@@ -1,0 +1,95 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}{{ page.title }} — Studio{% endblock %}
+
+{% block content %}
+{#
+  The builder. The canvas below is the page itself, drawn by the same macro
+  the public page uses — so what she is typing on is what will go out, not a
+  likeness of it. Structure changes (adding, reordering, a background, a
+  picture) ask the server to redraw the block; typing stays in the browser.
+#}
+<div class="lp-ed"
+     data-lp-editor
+     data-save-url="{{ url_for('admin.landing_save', page_id=page.id) }}"
+     data-render-url="{{ url_for('admin.landing_render_block') }}"
+     data-upload-url="{{ url_for('admin.landing_image_upload') }}"
+     data-dirty="{{ 'yes' if page.has_unpublished_changes() else 'no' }}">
+
+  <div class="lp-ed__bar">
+    <div class="lp-ed__bar-left">
+      <a class="btn btn--quiet btn--sm" href="{{ url_for('admin.landing_pages') }}">&larr; All pages</a>
+      <div class="lp-ed__naming">
+        <input class="lp-ed__title" name="title" value="{{ page.title }}"
+               aria-label="Page name" maxlength="160">
+        <label class="lp-ed__slug">
+          <span>/p/</span>
+          <input name="slug" value="{{ page.slug }}" aria-label="Web address"
+                 maxlength="80" pattern="[a-zA-Z0-9\-]*">
+        </label>
+      </div>
+    </div>
+    <div class="lp-ed__bar-right">
+      <span class="lp-ed__state" data-state
+            data-live="{{ 'yes' if page.is_published() else 'no' }}">{{ page.status_label() }}</span>
+      <a class="btn btn--quiet btn--sm" data-preview
+         href="{{ url_for('main.landing', slug=page.slug) }}?preview=1"
+         target="_blank" rel="noopener">Preview</a>
+      {% if page.is_published() %}
+      <a class="btn btn--quiet btn--sm" href="{{ url_for('main.landing', slug=page.slug) }}"
+         target="_blank" rel="noopener">View live</a>
+      {% endif %}
+      <button type="button" class="btn btn--secondary btn--sm" data-save>Save changes</button>
+      <form method="post" action="{{ url_for('admin.landing_publish', page_id=page.id) }}"
+            style="display:inline;" data-publish-form>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn--primary btn--sm">Publish</button>
+      </form>
+    </div>
+  </div>
+
+  <p class="lp-ed__hint field-help">
+    Click any words to change them. Use the handles on a block to move it,
+    copy it or take it away. <strong>Save changes</strong> keeps your work
+    without touching the live page &mdash; nothing visitors see changes until
+    you press <strong>Publish</strong>.
+  </p>
+
+  <div class="lp-ed__stage">
+    <div class="lp-ed__canvas">
+      <div class="lp" data-canvas>
+        {% for b in blocks %}
+          {% set label = defs[b.type].label if b.type in defs else b.type %}
+          {% include "admin/_landing_slot.html" with context %}
+        {% endfor %}
+      </div>
+
+      <div class="lp-ed__adder">
+        <p class="lp-ed__adder-label">Add a block</p>
+        <div class="lp-ed__adder-row">
+          {% for key in block_order %}
+          <button type="button" class="lp-ed__add" data-add="{{ key }}"
+                  title="{{ defs[key].hint }}">{{ defs[key].label }}</button>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <aside class="lp-ed__panel" data-panel hidden>
+      <div class="lp-ed__panel-head">
+        <strong data-panel-title>Block</strong>
+        <button type="button" class="lp-ed__panel-close" data-panel-close aria-label="Close">&times;</button>
+      </div>
+      <div data-panel-body></div>
+    </aside>
+  </div>
+</div>
+
+{# tojson, not a pre-made string: it escapes the angle brackets, so words
+   typed into a block can never close this tag and become markup. #}
+<script type="application/json" data-lp-blocks>{{ blocks|tojson }}</script>
+<script type="application/json" data-lp-defs>{{ defs|tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/landing-editor.js', v='20260928a') }}" defer></script>
+{% endblock %}

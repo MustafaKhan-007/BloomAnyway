@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import io
+import re
+import secrets
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
@@ -57,6 +59,41 @@ def process_and_save(key: str, file_storage) -> str:
         raise SiteImageError("That file was empty.")
     if len(raw) > MAX_UPLOAD_BYTES:
         raise SiteImageError("Keep site images under 8 MB.")
+    return _store(key, raw)
+
+
+#: Pictures that aren't one of the fixed slots. A landing page makes as many
+#: as the owner cares to add, so they are keyed by a random name under this
+#: prefix rather than being on a list of their own.
+FREEFORM_PREFIX = "lp_"
+_FREEFORM_KEY = re.compile(r"lp_[0-9a-f]{32}\Z")
+
+
+def new_freeform_key() -> str:
+    return FREEFORM_PREFIX + secrets.token_hex(16)
+
+
+def is_freeform_key(key: str) -> bool:
+    return bool(_FREEFORM_KEY.match(key or ""))
+
+
+def save_freeform(key: str, file_storage) -> str:
+    """Store a picture that isn't one of the fixed slots.
+
+    Landing pages need as many pictures as the owner cares to add, so they
+    can't come from ``SITE_IMAGE_KEYS``. Same size limit and same shrink; no
+    crop, because a page block decides its own shape and cropping here would
+    take the choice away.
+    """
+    if not is_freeform_key(key):
+        raise SiteImageError("Unknown image slot.")
+    if not file_storage or not getattr(file_storage, "filename", None):
+        raise SiteImageError("Choose an image file first.")
+    raw = file_storage.read(MAX_UPLOAD_BYTES + 1)
+    if not raw:
+        raise SiteImageError("That file was empty.")
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise SiteImageError("Keep pictures under 8 MB.")
     return _store(key, raw)
 
 
@@ -132,6 +169,8 @@ def clear(key: str) -> None:
 
 
 def get(key: str) -> SiteImage | None:
-    if key not in SITE_IMAGE_KEYS:
+    """A stored picture: one of the fixed slots, or an uploaded landing-page
+    one. Anything else is not a key we hand bytes out for."""
+    if key not in SITE_IMAGE_KEYS and not is_freeform_key(key):
         return None
     return db.session.get(SiteImage, key)

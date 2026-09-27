@@ -2072,6 +2072,49 @@ class Page(db.Model):
     updated_at = db.Column(db.DateTime, nullable=False, default=utcnow, onupdate=utcnow)
 
 
+class LandingPage(db.Model):
+    """A page the owner builds herself in Studio, block by block.
+
+    Two copies of the same page. ``draft_json`` is what the builder shows and
+    Save writes; ``published_json`` is what a visitor is served, and only
+    Publish copies one onto the other. Empty ``published_json`` means the page
+    is not on the site at all — which is what a page looks like while it is
+    still being built, without anyone having to remember to hide it.
+    """
+    __tablename__ = "landing_pages"
+
+    id = db.Column(db.Integer, primary_key=True)
+    #: what it is called in Studio, and the browser tab title
+    title = db.Column(db.String(160), nullable=False)
+    #: the path it answers on, /p/<slug>
+    slug = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    #: blocks as JSON — see services/landing_pages.py. Deferred on both: a
+    #: listing reads every page and wants neither.
+    draft_json = db.deferred(db.Column(db.Text, nullable=False, default=""))
+    published_json = db.deferred(db.Column(db.Text, nullable=False, default=""))
+    published_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=utcnow,
+                           onupdate=utcnow)
+
+    def is_published(self) -> bool:
+        return bool(self.published_json)
+
+    def has_unpublished_changes(self) -> bool:
+        """True when the draft says something the live page doesn't."""
+        if not self.published_json:
+            return bool(self.draft_json)
+        return (self.draft_json or "") != self.published_json
+
+    def status_label(self) -> str:
+        if not self.is_published():
+            return "Draft"
+        return "Live · edited" if self.has_unpublished_changes() else "Live"
+
+    def path(self) -> str:
+        return f"/p/{self.slug}"
+
+
 class Setting(db.Model):
     __tablename__ = "settings"
 

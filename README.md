@@ -13,6 +13,8 @@ What's inside:
   auto-granted on a paid Stripe order (revoked on refund)
 - **Marketplace** / Showcase: members advertise digital products & services
 - Owner-uploaded **Content Hub** (`/watch`)
+- **Landing pages** the owner builds block by block in Studio (`/p/<slug>`),
+  with a draft that only goes out when she presses Publish
 - Home-page spotlight, daily quotes, streaks & badges, My Journey PDF
 - Two community forums (Building & Healing)
 - Admin studio: community health, main payment insights, traffic sources,
@@ -415,6 +417,47 @@ Everything else is optional or auto-managed:
 - Brevo templates: `BREVO_TEMPLATE_GIFT_RECEIVED` / `_GIFT_SENT` / `_GIFT_STUCK`.
   All default to 0, which falls back to the general layout (#10) — set them once
   there are designs.
+
+## 4i. Landing pages you build yourself
+
+- **Studio → Landing pages** (`/admin/landing`). *New landing page* gives you a
+  whole page already laid out — hero, numbers, cards, a quote, questions, a
+  call to action — rather than a blank canvas, because something to change is
+  much easier than something to start. It lives at `/p/<slug>`.
+- **A page is a list of blocks**, each one a type and a bag of words, kept as
+  JSON in `landing_pages.draft_json`. Ten types (`hero`, `text`, `image`,
+  `image_text`, `features`, `stats`, `quote`, `faq`, `cta`, `divider`), each
+  with a background, and some with repeating items you can add and remove.
+  The whole schema is `BLOCK_DEFS` in `app/services/landing_pages.py`.
+- **Save is not Publish.** `draft_json` is what Studio shows and Save writes;
+  `published_json` is what a visitor gets, and only Publish copies one onto
+  the other. A page that has never been published is a **404** to everyone
+  else — so a half-built page can sit there for a week without anyone having
+  to remember to hide it. The owner reads their own draft at
+  `/p/<slug>?preview=1`, which is the only way to see one before it goes out,
+  and a bar across the top says so. *Unpublish* takes a page off the site and
+  leaves the draft alone.
+- **The canvas is the page.** `partials/landing_blocks.html` is the only thing
+  that turns a block into markup, and both the live page and the builder call
+  it — the builder just passes `editing=True`, which adds contenteditable text,
+  picture buttons and item handles. So there is no second renderer to drift.
+  When something structural changes (a block added, a background picked, a
+  picture swapped) the browser posts the block to
+  `/admin/landing/render-block` and swaps in what comes back; only typing
+  stays in the browser, because a round trip per keystroke would be miserable.
+- **Nothing on a landing page is ever stored or rendered as HTML.** The editor
+  sends `innerText`, never `innerHTML`; the server keeps only fields it knows
+  about, drops block types it doesn't, forces every choice back onto its list,
+  and puts URLs through `clean_url` (which refuses `javascript:`, `data:` and
+  protocol-relative links). Jinja escapes the rest. That is what stops a page
+  built in Studio being a way to put script on the site.
+- **Pictures** upload to `/admin/landing/images` and are kept in Postgres as
+  `SiteImage` rows under an `lp_` key (like avatars), so they survive Render's
+  ephemeral disk; they are served from `/media/site/<key>`. You can paste an
+  external URL instead. Deleting a page sweeps the pictures no page points at
+  any more, draft or published.
+- Slugs are tidied (`Spring Launch!!` → `spring-launch`), made unique, and kept
+  off paths something else already answers on (`RESERVED_SLUGS`).
 
 ## 5. Security notes
 

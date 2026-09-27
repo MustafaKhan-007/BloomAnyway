@@ -1,0 +1,172 @@
+{#
+  How a landing-page block is drawn — the only place it is decided.
+
+  The public page and the builder both call render_block(). Passing
+  editing=True adds the hooks the editor needs (contenteditable text, picture
+  buttons, item handles) and nothing else, so what the owner is typing on is
+  the page itself rather than a likeness of it.
+
+  Every value here goes through Jinja's escaping. Text fields hold plain text
+  and are drawn with nl2br; nothing on a landing page is ever stored or
+  rendered as HTML.
+#}
+
+{# Attributes that make one text field editable. Used for block fields and
+   for fields inside a repeating item alike — the editor works out which by
+   looking at what the node sits inside. #}
+{%- macro ed(key, editing, placeholder='') -%}
+{%- if editing %} data-f="{{ key }}" contenteditable="plaintext-only" data-ph="{{ placeholder }}" role="textbox" tabindex="0"{% endif -%}
+{%- endmacro -%}
+
+{%- macro picture(src, editing, key='image', cls='', alt='') -%}
+<div class="lp-pic {{ cls }}"{% if editing %} data-img="{{ key }}"{% endif %}>
+  {%- if src %}<img src="{{ src }}" alt="{{ alt }}" loading="lazy">
+  {%- elif editing %}<span class="lp-pic__empty">No picture yet</span>{% endif -%}
+  {%- if editing %}
+  <button type="button" class="lp-pic__btn" data-img-pick>{{ 'Swap picture' if src else 'Add picture' }}</button>
+  {%- if src %}<button type="button" class="lp-pic__btn lp-pic__btn--drop" data-img-clear>Remove</button>{% endif -%}
+  {% endif -%}
+</div>
+{%- endmacro -%}
+
+{# A button. Real link on the live page; inert on the editor, where the words
+   are typed in place and the address is set in the side panel. #}
+{%- macro cta_button(block, editing, cls='lp-btn') -%}
+{%- set label = block.fields.button_text -%}
+{%- set href = block.fields.button_url -%}
+{%- if label or editing -%}
+  {%- if editing -%}
+  <span class="{{ cls }}"{{ ed('button_text', editing, 'Button text') }}>{{ label }}</span>
+  {%- else -%}
+  <a class="{{ cls }}" href="{{ href or '#' }}">{{ label }}</a>
+  {%- endif -%}
+{%- endif -%}
+{%- endmacro -%}
+
+{%- macro item_chrome(editing, label='Item') -%}
+{%- if editing -%}
+<button type="button" class="lp-item__drop" data-item-drop title="Remove this {{ label|lower }}" aria-label="Remove this {{ label|lower }}">&times;</button>
+{%- endif -%}
+{%- endmacro -%}
+
+{%- macro add_item(editing, label='Item') -%}
+{%- if editing -%}
+<button type="button" class="lp-item__add" data-item-add>+ Add {{ label|lower }}</button>
+{%- endif -%}
+{%- endmacro -%}
+
+
+{% macro render_block(b, editing=False) %}
+{%- set f = b.fields -%}
+<section class="lp-block lp-block--{{ b.type }} lp-bg--{{ f.bg|default('cream') }}"
+         data-block="{{ b.id }}" data-type="{{ b.type }}">
+
+{%- if b.type == 'hero' %}
+  {%- if f.image %}<div class="lp-hero__bg"><img src="{{ f.image }}" alt=""></div>{% endif %}
+  {%- if editing %}<div class="lp-hero__pick">{{ picture(f.image, editing, 'image') }}</div>{% endif %}
+  <div class="lp-wrap lp-hero__inner">
+    <p class="lp-eyebrow"{{ ed('eyebrow', editing, 'Small line above') }}>{{ f.eyebrow|nl2br }}</p>
+    <h1 class="lp-hero__title"{{ ed('heading', editing, 'Your headline') }}>{{ f.heading|nl2br }}</h1>
+    <div class="lp-lede"{{ ed('body', editing, 'A line or two under it') }}>{{ f.body|nl2br }}</div>
+    <p class="lp-actions">{{ cta_button(b, editing, 'lp-btn lp-btn--big') }}</p>
+  </div>
+
+{%- elif b.type == 'text' %}
+  <div class="lp-wrap lp-text lp-align--{{ f.align|default('left') }}">
+    <h2 class="lp-h2"{{ ed('heading', editing, 'A heading') }}>{{ f.heading|nl2br }}</h2>
+    <div class="lp-body"{{ ed('body', editing, 'Your words') }}>{{ f.body|nl2br }}</div>
+  </div>
+
+{%- elif b.type == 'image' %}
+  {# No picture chosen and nobody editing: draw nothing rather than a hole
+     where one would have gone. #}
+  <div class="lp-wrap lp-imageblock lp-width--{{ f.width|default('wide') }}">
+    {%- if f.image or editing %}{{ picture(f.image, editing, 'image', 'lp-pic--block', f.caption) }}{% endif %}
+    {%- if f.caption or editing %}
+    <p class="lp-caption"{{ ed('caption', editing, 'Caption (optional)') }}>{{ f.caption }}</p>
+    {%- endif %}
+  </div>
+
+{%- elif b.type == 'image_text' %}
+  {# Same here, and the words take the whole width instead of sitting in a
+     half with an empty half beside them. #}
+  <div class="lp-wrap lp-split lp-split--{{ f.side|default('left') }}{{ ' lp-split--solo' if not f.image and not editing }}">
+    {%- if f.image or editing %}{{ picture(f.image, editing, 'image', 'lp-pic--split', f.heading) }}{% endif %}
+    <div class="lp-split__words">
+      <h2 class="lp-h2"{{ ed('heading', editing, 'A heading') }}>{{ f.heading|nl2br }}</h2>
+      <div class="lp-body"{{ ed('body', editing, 'Your words') }}>{{ f.body|nl2br }}</div>
+      {%- if f.button_text or editing %}
+      <p class="lp-actions">{{ cta_button(b, editing) }}</p>
+      {%- endif %}
+    </div>
+  </div>
+
+{%- elif b.type == 'stats' %}
+  <div class="lp-wrap">
+    {%- if f.heading or editing %}
+    <h2 class="lp-h2 lp-align--center"{{ ed('heading', editing, 'Heading (optional)') }}>{{ f.heading|nl2br }}</h2>
+    {%- endif %}
+    <div class="lp-stats" data-items>
+      {%- for it in b['items'] %}
+      <div class="lp-stat" data-item>
+        {{ item_chrome(editing, 'number') }}
+        <p class="lp-stat__value"{{ ed('value', editing, '100+') }}>{{ it.value }}</p>
+        <p class="lp-stat__label"{{ ed('label', editing, 'what it counts') }}>{{ it.label }}</p>
+      </div>
+      {%- endfor %}
+    </div>
+    {{ add_item(editing, 'number') }}
+  </div>
+
+{%- elif b.type == 'features' %}
+  <div class="lp-wrap">
+    <h2 class="lp-h2 lp-align--center"{{ ed('heading', editing, 'A heading') }}>{{ f.heading|nl2br }}</h2>
+    {%- if f.body or editing %}
+    <div class="lp-body lp-align--center lp-body--lede"{{ ed('body', editing, 'An intro line (optional)') }}>{{ f.body|nl2br }}</div>
+    {%- endif %}
+    <div class="lp-cards lp-cards--{{ f.columns|default('3') }}" data-items>
+      {%- for it in b['items'] %}
+      <div class="lp-card" data-item>
+        {{ item_chrome(editing, 'card') }}
+        <h3 class="lp-card__title"{{ ed('title', editing, 'Card title') }}>{{ it.title }}</h3>
+        <div class="lp-card__body"{{ ed('body', editing, 'What it is') }}>{{ it.body|nl2br }}</div>
+      </div>
+      {%- endfor %}
+    </div>
+    {{ add_item(editing, 'card') }}
+  </div>
+
+{%- elif b.type == 'quote' %}
+  <div class="lp-wrap lp-quote">
+    <blockquote class="lp-quote__text"{{ ed('quote', editing, 'What they said') }}>{{ f.quote|nl2br }}</blockquote>
+    <p class="lp-quote__by"{{ ed('attribution', editing, 'Who said it') }}>{{ f.attribution }}</p>
+  </div>
+
+{%- elif b.type == 'faq' %}
+  <div class="lp-wrap lp-faq">
+    <h2 class="lp-h2"{{ ed('heading', editing, 'A heading') }}>{{ f.heading|nl2br }}</h2>
+    <div class="lp-faq__list" data-items>
+      {%- for it in b['items'] %}
+      <div class="lp-faq__row" data-item>
+        {{ item_chrome(editing, 'question') }}
+        <h3 class="lp-faq__q"{{ ed('question', editing, 'The question') }}>{{ it.question }}</h3>
+        <div class="lp-faq__a"{{ ed('answer', editing, 'The answer') }}>{{ it.answer|nl2br }}</div>
+      </div>
+      {%- endfor %}
+    </div>
+    {{ add_item(editing, 'question') }}
+  </div>
+
+{%- elif b.type == 'cta' %}
+  <div class="lp-wrap lp-cta">
+    <h2 class="lp-h2"{{ ed('heading', editing, 'The ask') }}>{{ f.heading|nl2br }}</h2>
+    <div class="lp-body"{{ ed('body', editing, 'One more line') }}>{{ f.body|nl2br }}</div>
+    <p class="lp-actions">{{ cta_button(b, editing, 'lp-btn lp-btn--big') }}</p>
+  </div>
+
+{%- elif b.type == 'divider' %}
+  <div class="lp-wrap"><hr class="lp-rule"></div>
+
+{%- endif %}
+</section>
+{% endmacro %}

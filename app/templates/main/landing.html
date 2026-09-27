@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% from "partials/landing_blocks.html" import render_block %}
+{% block title %}{{ page.title }} — {{ site.site_title }}{% endblock %}
+
+{% block content %}
+{% if preview %}
+{# An owner looking at the draft. Said plainly, because a draft and the live
+   page look identical and there is no other way to tell them apart. #}
+<div class="lp-preview-bar">
+  <span>You're looking at the <strong>draft</strong> of this page. Visitors
+    {% if page.is_published() %}still see the published version.{% else %}can't see it at all yet.{% endif %}</span>
+  <a class="btn btn--secondary btn--sm" href="{{ url_for('admin.landing_edit', page_id=page.id) }}">Edit</a>
+</div>
+{% endif %}
+<div class="lp">
+  {% for b in blocks %}{{ render_block(b) }}{% endfor %}
+  {% if not blocks %}
+  <section class="lp-block lp-bg--cream"><div class="lp-wrap lp-align--center">
+    <h1 class="lp-h2">Nothing here yet</h1>
+    <p class="lp-body">This page hasn't been built out.</p>
+  </div></section>
+  {% endif %}
+</div>
+{% endblock %}

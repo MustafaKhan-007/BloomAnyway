@@ -21,7 +21,8 @@ from ..extensions import db
 from ..models import (Announcement, BILLING_PERIODS, BILLING_PERIOD_KEYS,
                       ContactMessage, ContentReport, DRIP_MODES,
                       FEEDBACK_KINDS, FaqItem, ForumComment,
-                      ForumPost, MEMBERSHIPS, MEMBERSHIP_LABELS, MarketplaceListing,
+                      ForumPost, LandingPage,
+                      MEMBERSHIPS, MEMBERSHIP_LABELS, MarketplaceListing,
                       MembershipPlan,
                       PRODUCT_KINDS, STRIPE_DESCRIPTION_MAX,
                       Page, Product, ProductAsset, Quote, QuoteFavorite, QuotePin,
@@ -30,6 +31,7 @@ from ..models import (Announcement, BILLING_PERIODS, BILLING_PERIOD_KEYS,
                       User, Video, QUOTE_CATEGORIES, utcnow)
 from ..services import badges as badges_service
 from ..services import demo_accounts
+from ..services import landing_pages as lp_svc
 from ..services import quotes as quotes_service
 from ..services import reel_of_week as rotw_svc
 from ..services import reel_reviews as reel_svc
@@ -185,6 +187,9 @@ def dashboard():
     return render_template(
         "admin/dashboard.html",
         challenge_enroll_url=challenge_service.enroll_url(current_user),
+        landing_recent=(LandingPage.query
+                        .order_by(LandingPage.updated_at.desc())
+                        .limit(3).all()),
         storage=storage,
         today_quote=quotes_service.quote_for(today),
         tomorrow_quote=quotes_service.quote_for(today + timedelta(days=1)),
@@ -4189,6 +4194,150 @@ def reel_reviews_delete(review_id):
     flash(f"Deleted “{title[:60]}”. Their entry is back in the queue.",
           "success")
     return redirect(url_for("admin.reel_reviews"))
+
+
+# ============================ LANDING PAGES ==================================
+# Pages the owner builds herself. Everything below deals in *blocks* — a type
+# and a bag of words — never in markup: the editor sends back what was typed,
+# and the one macro in partials/landing_blocks.html decides how it is drawn.
+# That is what stops a page built in Studio being a way to put script on the
+# site, and it is why the browser asks us to redraw a block rather than
+# building one itself.
+
+def _landing_or_404(page_id: int) -> LandingPage:
+    page = db.session.get(LandingPage, page_id)
+    if page is None:
+        abort(404)
+    return page
+
+
+@bp.route("/landing")
+@admin_required
+def landing_pages():
+    pages = (LandingPage.query
+             .order_by(LandingPage.updated_at.desc()).all())
+    return render_template("admin/landing_pages.html", pages=pages)
+
+
+@bp.route("/landing/new", methods=["POST"])
+@admin_required
+def landing_new():
+    page = lp_svc.create(request.form.get("title") or "Untitled landing page")
+    db.session.commit()
+    flash("Here's a page to make your own. Nothing is live until you publish it.",
+          "success")
+    return redirect(url_for("admin.landing_edit", page_id=page.id))
+
+
+@bp.route("/landing/<int:page_id>")
+@admin_required
+def landing_edit(page_id):
+    page = _landing_or_404(page_id)
+    context = lp_svc.editor_context()
+    return render_template(
+        "admin/landing_editor.html", page=page,
+        blocks=lp_svc.blocks_from_json(page.draft_json),
+        defs=context["defs"], block_order=context["order"])
+
+
+@bp.route("/landing/<int:page_id>/save", methods=["POST"])
+@admin_required
+def landing_save(page_id):
+    page = _landing_or_404(page_id)
+    payload = request.get_json(silent=True) or {}
+    try:
+        lp_svc.save_draft(page, payload.get("blocks"),
+                          title=payload.get("title"),
+                          slug=payload.get("slug"))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        log.exception("landing page save failed")
+        return jsonify({"error": "We couldn't save that just now."}), 500
+    return jsonify({
+        "ok": True,
+        "slug": page.slug,
+        "title": page.title,
+        "status": page.status_label(),
+        "live": page.is_published(),
+        "saved_at": page.updated_at.isoformat(timespec="seconds"),
+    })
+
+
+@bp.route("/landing/<int:page_id>/publish", methods=["POST"])
+@admin_required
+def landing_publish(page_id):
+    page = _landing_or_404(page_id)
+    lp_svc.publish(page)
+    db.session.commit()
+    flash(f"“{page.title}” is live at /p/{page.slug}.", "success")
+    return redirect(url_for("admin.landing_edit", page_id=page.id))
+
+
+@bp.route("/landing/<int:page_id>/unpublish", methods=["POST"])
+@admin_required
+def landing_unpublish(page_id):
+    page = _landing_or_404(page_id)
+    lp_svc.unpublish(page)
+    db.session.commit()
+    flash(f"“{page.title}” is off the site. Your draft is untouched.", "success")
+    return redirect(request.referrer or url_for("admin.landing_pages"))
+
+
+@bp.route("/landing/<int:page_id>/delete", methods=["POST"])
+@admin_required
+def landing_delete(page_id):
+    page = _landing_or_404(page_id)
+    title = page.title
+    lp_svc.delete(page)
+    db.session.commit()
+    flash(f"Deleted “{title[:60]}”.", "success")
+    return redirect(url_for("admin.landing_pages"))
+
+
+@bp.route("/landing/render-block", methods=["POST"])
+@admin_required
+def landing_render_block():
+    """Draw one block for the editor.
+
+    The browser never builds this markup itself. Asking for it here means the
+    canvas and the published page come out of the same macro, so a block
+    cannot look one way while it is being built and another once it is out.
+    """
+    payload = request.get_json(silent=True) or {}
+    block_type = str(payload.get("type") or "").strip()
+    raw = payload.get("block")
+    if isinstance(raw, dict):
+        block = lp_svc.normalize_block(raw)
+    elif block_type:
+        try:
+            block = lp_svc.new_block(block_type)
+        except lp_svc.LandingPageError as exc:
+            return jsonify({"error": str(exc)}), 400
+    else:
+        block = None
+    if block is None:
+        return jsonify({"error": "There's no block of that kind."}), 400
+    label = lp_svc.BLOCK_DEFS[block["type"]]["label"]
+    html = render_template("admin/_landing_slot.html", b=block, label=label)
+    return jsonify({"html": html, "block": block})
+
+
+@bp.route("/landing/images", methods=["POST"])
+@admin_required
+def landing_image_upload():
+    from ..services.site_images import SiteImageError, save_freeform
+
+    upload = request.files.get("image")
+    try:
+        url = save_freeform(lp_svc.new_image_key(), upload)
+    except SiteImageError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception:
+        db.session.rollback()
+        log.exception("landing image upload failed")
+        return jsonify({"error": "We couldn't save that picture."}), 500
+    return jsonify({"url": url})
 
 
 # --- support / coaching groups ----------------------------------------------

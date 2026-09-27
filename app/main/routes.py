@@ -3255,6 +3255,36 @@ def support_session_report(meeting_id, user_id):
     return redirect(url_for("main.support_session_wrap", meeting_id=meeting_id))
 
 
+@bp.route("/p/<slug>")
+def landing(slug):
+    """A landing page the owner built in Studio.
+
+    Visitors are served ``published_json`` and nothing else, so a page that
+    has never been published is a 404 to them — not a half-built page they
+    happened to find the address of. An owner can add ``?preview=1`` to read
+    their own draft, which is the only way to see one before it goes out.
+    """
+    from ..services import landing_pages as lp_svc
+    from ..models import LandingPage
+
+    wants_draft = request.args.get("preview") == "1"
+    is_owner = getattr(current_user, "is_admin", False)
+    if wants_draft and is_owner:
+        page = LandingPage.query.filter_by(slug=slug).first()
+        if page is None:
+            abort(404)
+        return render_template(
+            "main/landing.html", page=page, preview=True,
+            blocks=lp_svc.blocks_from_json(page.draft_json))
+
+    page = lp_svc.public_page(slug)
+    if page is None:
+        abort(404)
+    return render_template(
+        "main/landing.html", page=page, preview=False,
+        blocks=lp_svc.blocks_from_json(page.published_json))
+
+
 @bp.route("/privacy")
 def privacy():
     return _legal_page("privacy", "Privacy Policy")

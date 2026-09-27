@@ -1,0 +1,73 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Landing pages{% endblock %}
+
+{% block content %}
+<div class="studio-page">
+  <div class="page-head">
+    <div>
+      <p class="eyebrow">Content</p>
+      <h1>Landing pages</h1>
+      <p class="field-help" style="margin: 6px 0 0; max-width: 62ch;">
+        Pages you build yourself and hand out a link to. Nothing goes live
+        until you press Publish, so a page can sit half-finished for as long
+        as you like.
+      </p>
+    </div>
+    <form method="post" action="{{ url_for('admin.landing_new') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn btn--primary btn--sm">New landing page</button>
+    </form>
+  </div>
+
+<div class="admin-panel studio-card">
+  {% if pages %}
+  <table class="admin-table">
+    <thead>
+      <tr><th>Page</th><th>Address</th><th>Status</th><th>Last saved</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for p in pages %}
+      <tr>
+        <td><strong>{{ p.title }}</strong></td>
+        <td><code>/p/{{ p.slug }}</code></td>
+        <td>
+          <span class="lp-pill lp-pill--{{ 'live' if p.is_published() else 'draft' }}">{{ p.status_label() }}</span>
+        </td>
+        <td>{{ p.updated_at|localtime }}</td>
+        <td>
+          <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+            <a class="btn btn--secondary btn--sm"
+               href="{{ url_for('admin.landing_edit', page_id=p.id) }}">View &amp; edit</a>
+            <a class="btn btn--quiet btn--sm"
+               href="{{ url_for('main.landing', slug=p.slug) }}{{ '' if p.is_published() else '?preview=1' }}"
+               target="_blank" rel="noopener">{{ 'Open' if p.is_published() else 'Preview' }}</a>
+            {% if p.is_published() %}
+            <form method="post" action="{{ url_for('admin.landing_unpublish', page_id=p.id) }}"
+                  style="display:inline;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn--quiet btn--sm">Unpublish</button>
+            </form>
+            {% endif %}
+            <form method="post" action="{{ url_for('admin.landing_delete', page_id=p.id) }}"
+                  style="display:inline;"
+                  data-confirm="Delete “{{ p.title }}”? This cannot be undone.">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn--quiet btn--sm lp-danger">Delete</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No landing pages yet.</p>
+  <p class="field-help">
+    A new one starts as a whole page &mdash; a hero, some cards, a few
+    questions and a call to action &mdash; for you to make your own. Nothing
+    of it is on the site until you publish it.
+  </p>
+  {% endif %}
+</div>
+</div>
+{% endblock %}
