@@ -11708,17 +11708,24 @@ details.lp-faq__row[open] > summary.lp-faq__q::after { content: " \2212"; }
 .lp-pill--draft { background: rgba(107, 97, 89, 0.14); color: var(--ink-soft); }
 .lp-danger { color: var(--error); }
 
-/* Picking what a new page starts as. Wraps rather than shrinks: on a phone
-   the label sits over the select and the button drops under it, which is
-   readable, where a squeezed-up row of three is not. */
+/* Picking what a new page starts as. One row of three, and the select is
+   the only part allowed to give up room — a New button on a line of its
+   own under a dropdown reads as two separate controls, which it isn't.
+   Below phone width the three stack, which is the one place that is right. */
+.lp-new { min-width: 0; }
 .lp-new__row {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px;
+  display: flex; flex-wrap: nowrap; align-items: center; gap: 8px 10px;
 }
 .lp-new__label {
-  font-size: 12px; font-weight: 800; letter-spacing: 0.06em;
+  flex: none; font-size: 12px; font-weight: 800; letter-spacing: 0.06em;
   text-transform: uppercase; color: var(--ink-soft);
 }
-.lp-new__row select { max-width: min(46ch, 100%); }
+.lp-new__row select { flex: 0 1 auto; min-width: 0; }
+.lp-new__row .btn { flex: none; }
+@media (max-width: 560px) {
+  .lp-new__row { flex-wrap: wrap; }
+  .lp-new__row select { flex: 1 1 100%; }
+}
 .lp-new__guide { margin: 14px 0 0; display: grid; gap: 4px; }
 .lp-new__guide dt { font-weight: 700; }
 .lp-new__guide dd {

@@ -284,8 +284,8 @@ _CLASSIC_BLOCKS = [
 #: picker itself can fit; ``hint`` is the longer line under it.
 TEMPLATES: dict[str, dict] = {
     "challenge": {
-        "label": "Challenge launch",
-        "short": "the full two-month challenge page",
+        "label": "The challenge page",
+        "short": "hero to waitlist",
         "hint": "The whole challenge page — hero, curriculum, what's "
                 "included, real results, questions and a waitlist.",
         "title": "Two Month Challenge",
@@ -293,7 +293,7 @@ TEMPLATES: dict[str, dict] = {
     },
     "classic": {
         "label": "Classic starter",
-        "short": "hero, cards and questions",
+        "short": "hero, cards, questions",
         "hint": "The page new ones used to start as: one of each kind of "
                 "block, filled with placeholder words to write over.",
         "title": "Untitled landing page",
@@ -301,7 +301,7 @@ TEMPLATES: dict[str, dict] = {
     },
     "blank": {
         "label": "Blank page",
-        "short": "nothing on it yet",
+        "short": "nothing yet",
         "hint": "An empty canvas. Add the blocks you want, in the order you "
                 "want them.",
         "title": "Untitled landing page",
