@@ -1261,6 +1261,65 @@
     return Math.min(COLUMNS + 1 - span, Math.max(1, start));
   }
 
+  // Which of the twelve the pointer is literally over.
+  function columnAt(clientX) {
+    var box = canvas.getBoundingClientRect();
+    var n = Math.floor((clientX - box.left) / (box.width / COLUMNS)) + 1;
+    return Math.min(COLUMNS, Math.max(1, n));
+  }
+
+  /* The slot nearest a height on the page, for when the pointer is over
+     none of them.
+
+     A block narrower than the page leaves empty grid beside it, and that
+     empty space is exactly where somebody dragging something wants to
+     drop it. Without this the gap was the one place on the canvas that
+     answered nothing at all. */
+  function slotNear(clientY) {
+    var best = null, nearest = Infinity;
+    Array.prototype.forEach.call(canvas.children, function (el) {
+      if (!el.hasAttribute || !el.hasAttribute("data-slot")) return;
+      if (drag && el === drag.node) return;
+      var box = el.getBoundingClientRect();
+      var away = clientY < box.top ? box.top - clientY
+        : (clientY > box.bottom ? clientY - box.bottom : 0);
+      if (away < nearest) { nearest = away; best = el; }
+    });
+    return best;
+  }
+
+  /* Where a block will land when it is dropped on this one.
+     ``{start, span, after}`` — after saying whether it goes behind the
+     block it was dropped on in the page's own order.
+
+     A block narrower than the page leaves a gap beside it, and dropping
+     something into that gap plainly means "put it there". So it goes
+     there, narrowed to the gap if it has to be: dropping a full-width
+     block into a half-width space and being told, silently, that it
+     went underneath instead is the builder deciding it knows better. */
+  function landingOn(over, clientX, clientY) {
+    var them = blockById(over.getAttribute("data-slot-id"));
+    var theirStart = them ? startOf(them) : 1;
+    var theirSpan = them ? spanOf(them) : COLUMNS;
+    var gapRight = COLUMNS + 1 - (theirStart + theirSpan);
+    var gapLeft = theirStart - 1;
+    var pointer = columnAt(clientX);
+
+    if (gapRight > 0 && pointer >= theirStart + theirSpan) {
+      return { start: theirStart + theirSpan,
+               span: Math.min(drag.span, gapRight), after: true };
+    }
+    if (gapLeft > 0 && pointer < theirStart) {
+      return { start: 1, span: Math.min(drag.span, gapLeft), after: false };
+    }
+    // Over the block itself: above it or below it, at its own width, and
+    // at whichever column the pointer is holding it over.
+    var box = over.getBoundingClientRect();
+    return { start: columnUnderPointer(clientX, drag.span),
+             span: drag.span,
+             after: (clientY - box.top) > box.height / 2 };
+  }
+
   function placeBlock(block, start, span) {
     block.fields.col_start = String(start);
     block.fields.col_span = String(span);
@@ -1364,28 +1423,35 @@
     else if (e.clientY > window.innerHeight - edge) window.scrollBy(0, 18);
 
     var over = e.target.closest && e.target.closest(drag.sel);
+    // Over the empty grid beside a narrow block, there is no slot under
+    // the pointer — but that gap is the whole reason for dragging there.
+    if (!over && drag.kind === "block") over = slotNear(e.clientY);
     if (!over || over === drag.node) return;
     // A card belongs to its own block, and a block to the canvas. Without
     // this a card could be dropped into the cards of a different block,
     // where the state behind it has nowhere to go.
     if (drag.home && over.parentElement !== drag.home) return;
 
+    if (drag.kind === "block") {
+      // Sideways as well as down. Which side of its neighbour a block
+      // goes decides the order it is written in as well as where it
+      // sits — and that order is the one a phone stacks them in, and
+      // the one they are read aloud in. Dropping a block to the right
+      // of another and having it come out above on a phone is the kind
+      // of wrong nobody thinks to look for.
+      var land = landingOn(over, e.clientX, e.clientY);
+      if (land.after) over.after(theLine()); else over.before(theLine());
+      drag.column = land.start;
+      drag.landSpan = land.span;
+      dropLine.style.gridColumn = land.start + "/span " + land.span;
+      dropLine.classList.toggle("is-part", land.span < COLUMNS);
+      return;
+    }
+
     var box = over.getBoundingClientRect();
     var after = drag.rows
       ? (e.clientX - box.left) > box.width / 2
       : (e.clientY - box.top) > box.height / 2;
-
-    if (drag.kind === "block") {
-      if (after) over.after(theLine()); else over.before(theLine());
-      // Sideways as well as down: the column the pointer is over is the
-      // column the block will start at. The line is drawn at that column
-      // and at the block's own width, so it is the block's footprint
-      // rather than a rule across the page.
-      drag.column = columnUnderPointer(e.clientX, drag.span);
-      dropLine.style.gridColumn = drag.column + "/span " + drag.span;
-      dropLine.classList.toggle("is-part", drag.span < COLUMNS);
-      return;
-    }
     if (after) over.after(drag.node); else over.before(drag.node);
   });
 
@@ -1406,7 +1472,9 @@
     if (done.kind === "block" && dropLine && dropLine.parentNode) {
       dropLine.replaceWith(done.node);
       var landed = blockById(done.node.getAttribute("data-slot-id"));
-      if (landed && done.column) placeBlock(landed, done.column, done.span);
+      if (landed && done.column) {
+        placeBlock(landed, done.column, done.landSpan || done.span);
+      }
     }
     clearLine();
     done.node.classList.remove("is-dragging");

@@ -49,17 +49,22 @@
         <button type="button" class="lp-ed__device" data-set-zoom="full"
                 aria-pressed="false" title="Show the page at its real size">1:1</button>
       </span>
-      {# The same macro the public page uses, run with the editing hooks
-         off. Not a likeness of the page — the page. #}
+      {# Beside the widths, because it is the same kind of question: what
+         does this look like to somebody else. The same macro the public
+         page uses, run with the editing hooks off — not a likeness of
+         the page but the page. #}
       <button type="button" class="btn btn--quiet btn--sm" data-preview-toggle
               aria-pressed="false">Preview</button>
       <button type="button" class="lp-ed__icon" data-undo title="Undo (Ctrl+Z)" aria-label="Undo" disabled>&#8630;</button>
       <button type="button" class="lp-ed__icon" data-redo title="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled>&#8631;</button>
       <span class="lp-ed__state" data-state
             data-live="{{ 'yes' if page.is_published() else 'no' }}">{{ page.status_label() }}</span>
+      {# The draft in a tab of its own. Preview above answers "how does
+         this look"; this one answers "do the links go where I meant",
+         which needs a real page in a real browser. #}
       <a class="btn btn--quiet btn--sm" data-preview
          href="{{ url_for('main.landing', slug=page.slug) }}?preview=1"
-         target="_blank" rel="noopener">Preview</a>
+         target="_blank" rel="noopener">Open draft</a>
       {% if page.is_published() %}
       <a class="btn btn--quiet btn--sm" href="{{ url_for('main.landing', slug=page.slug) }}"
          target="_blank" rel="noopener">View live</a>
