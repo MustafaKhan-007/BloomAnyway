@@ -16,6 +16,13 @@
 {%- if editing %} data-f="{{ key }}"{% if rich %} data-rich="1"{% endif %} contenteditable="true" spellcheck="true" data-ph="{{ placeholder }}" role="textbox" aria-multiline="{{ 'true' if rich else 'false' }}"{% endif -%}
 {%- endmacro -%}
 
+{# The small letter-spaced line above a section heading. Every block with a
+   heading has one, and an empty one draws nothing, so a page written before
+   there were eyebrows reads exactly as it did. #}
+{%- macro eyebrow(f, editing) -%}
+{%- if f.eyebrow or editing %}<p class="lp-eyebrow"{{ ed('eyebrow', editing, 'Small line above (optional)') }}>{{ f.eyebrow|lpline }}</p>{% endif -%}
+{%- endmacro -%}
+
 {%- macro picture(src, editing, key='image', cls='', alt='', rounded=True) -%}
 <div class="lp-pic {{ cls }}{{ ' lp-pic--square' if not rounded }}"{% if editing %} data-img="{{ key }}"{% endif %}>
   {%- if src %}<img src="{{ src }}" alt="{{ alt|lpplain }}" loading="lazy">
@@ -99,12 +106,14 @@
 
 {%- elif b.type == 'text' %}
   <div class="lp-wrap lp-text lp-w--{{ f.width|default('normal') }}">
+    {{ eyebrow(f, editing) }}
     <h2 class="lp-h2"{{ ed('heading', editing, 'A heading') }}>{{ f.heading|lpline }}</h2>
     <div class="lp-body"{{ ed('body', editing, 'Your words', True) }}>{{ f.body|lprich }}</div>
   </div>
 
 {%- elif b.type == 'columns' %}
   <div class="lp-wrap">
+    {{ eyebrow(f, editing) }}
     {%- if f.heading or editing %}
     <h2 class="lp-h2"{{ ed('heading', editing, 'Heading (optional)') }}>{{ f.heading|lpline }}</h2>
     {%- endif %}
@@ -134,6 +143,7 @@
 
 {%- elif b.type == 'gallery' %}
   <div class="lp-wrap">
+    {{ eyebrow(f, editing) }}
     {%- if f.heading or editing %}
     <h2 class="lp-h2"{{ ed('heading', editing, 'Heading (optional)') }}>{{ f.heading|lpline }}</h2>
     {%- endif %}
@@ -155,6 +165,7 @@
   <div class="lp-wrap lp-split lp-split--{{ f.side|default('left') }} lp-split--r-{{ f.ratio|default('even') }}{{ ' lp-split--solo' if not f.image and not editing }}">
     {%- if f.image or editing %}{{ picture(f.image, editing, 'image', 'lp-pic--split', f.heading) }}{% endif %}
     <div class="lp-split__words">
+      {{ eyebrow(f, editing) }}
       <h2 class="lp-h2"{{ ed('heading', editing, 'A heading') }}>{{ f.heading|lpline }}</h2>
       <div class="lp-body"{{ ed('body', editing, 'Your words', True) }}>{{ f.body|lprich }}</div>
       {%- if f.button_text or editing %}
@@ -166,6 +177,7 @@
 {%- elif b.type == 'video' %}
   {%- set embed = lp_video_embed(f.url) %}
   <div class="lp-wrap lp-w--{{ f.width|default('wide') }}">
+    {{ eyebrow(f, editing) }}
     {%- if f.heading or editing %}
     <h2 class="lp-h2"{{ ed('heading', editing, 'Heading (optional)') }}>{{ f.heading|lpline }}</h2>
     {%- endif %}
@@ -185,6 +197,7 @@
 
 {%- elif b.type == 'stats' %}
   <div class="lp-wrap">
+    {{ eyebrow(f, editing) }}
     {%- if f.heading or editing %}
     <h2 class="lp-h2 lp-al--center"{{ ed('heading', editing, 'Heading (optional)') }}>{{ f.heading|lpline }}</h2>
     {%- endif %}
@@ -202,6 +215,7 @@
 
 {%- elif b.type == 'features' %}
   <div class="lp-wrap">
+    {{ eyebrow(f, editing) }}
     <h2 class="lp-h2"{{ ed('heading', editing, 'A heading') }}>{{ f.heading|lpline }}</h2>
     {%- if f.body or editing %}
     <div class="lp-body lp-body--lede"{{ ed('body', editing, 'An intro line (optional)', True) }}>{{ f.body|lprich }}</div>
@@ -228,6 +242,7 @@
 
 {%- elif b.type == 'faq' %}
   <div class="lp-wrap lp-faq">
+    {{ eyebrow(f, editing) }}
     <h2 class="lp-h2"{{ ed('heading', editing, 'A heading') }}>{{ f.heading|lpline }}</h2>
     <div class="lp-faq__list" data-items>
       {%- for it in b['items'] %}
@@ -250,6 +265,7 @@
 
 {%- elif b.type == 'buttons' %}
   <div class="lp-wrap">
+    {{ eyebrow(f, editing) }}
     {%- if f.heading or editing %}
     <h2 class="lp-h2"{{ ed('heading', editing, 'Heading (optional)') }}>{{ f.heading|lpline }}</h2>
     {%- endif %}
@@ -270,6 +286,7 @@
 
 {%- elif b.type == 'cta' %}
   <div class="lp-wrap lp-cta">
+    {{ eyebrow(f, editing) }}
     <h2 class="lp-h2"{{ ed('heading', editing, 'The ask') }}>{{ f.heading|lpline }}</h2>
     <div class="lp-body"{{ ed('body', editing, 'One more line', True) }}>{{ f.body|lprich }}</div>
     <p class="lp-actions">{{ cta_button(b, editing, 'button', 'lp-btn lp-btn--big') }}</p>

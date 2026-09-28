@@ -4216,13 +4216,16 @@ def _landing_or_404(page_id: int) -> LandingPage:
 def landing_pages():
     pages = (LandingPage.query
              .order_by(LandingPage.updated_at.desc()).all())
-    return render_template("admin/landing_pages.html", pages=pages)
+    return render_template("admin/landing_pages.html", pages=pages,
+                           templates=lp_svc.template_choices(),
+                           default_template=lp_svc.DEFAULT_TEMPLATE)
 
 
 @bp.route("/landing/new", methods=["POST"])
 @admin_required
 def landing_new():
-    page = lp_svc.create(request.form.get("title") or "Untitled landing page")
+    template = lp_svc.template_key(request.form.get("template"))
+    page = lp_svc.create(request.form.get("title") or "", template=template)
     db.session.commit()
     flash("Here's a page to make your own. Nothing is live until you publish it.",
           "success")
