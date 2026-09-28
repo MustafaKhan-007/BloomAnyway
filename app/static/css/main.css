@@ -11707,3 +11707,20 @@ details.lp-faq__row[open] > summary.lp-faq__q::after { content: " \2212"; }
 .lp-pill--live { background: rgba(95, 122, 99, 0.16); color: #3F5643; }
 .lp-pill--draft { background: rgba(107, 97, 89, 0.14); color: var(--ink-soft); }
 .lp-danger { color: var(--error); }
+
+/* Picking what a new page starts as. Wraps rather than shrinks: on a phone
+   the label sits over the select and the button drops under it, which is
+   readable, where a squeezed-up row of three is not. */
+.lp-new__row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px;
+}
+.lp-new__label {
+  font-size: 12px; font-weight: 800; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--ink-soft);
+}
+.lp-new__row select { max-width: min(46ch, 100%); }
+.lp-new__guide { margin: 14px 0 0; display: grid; gap: 4px; }
+.lp-new__guide dt { font-weight: 700; }
+.lp-new__guide dd {
+  margin: 0 0 8px; max-width: 62ch; font-size: 0.92rem; color: var(--ink-soft);
+}

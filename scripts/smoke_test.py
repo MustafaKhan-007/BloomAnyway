@@ -12142,6 +12142,76 @@ ok("A new landing page opens straight into the builder",
 ok("It starts as a whole page rather than a blank one",
    _lp_body.count("data-slot-id") >= 6)
 ok("Every block on it can be typed on", "contenteditable" in _lp_body)
+
+# What a new page opens as. The challenge page is the default; the starter
+# every page used to begin with is still there behind it, and so is nothing
+# at all, for somebody who would rather lay it out herself.
+ok("Press New and you get the challenge page, in its own words",
+   "You need a plan." in _lp_body
+   and "Four stages, zero to income" in _lp_body
+   and "Round 2 is almost open." in _lp_body)
+ok("Its sections are labelled, not just headed",
+   _lp_body.count('class="lp-eyebrow"') >= 8
+   and "The curriculum" in _lp_body and "Real results" in _lp_body)
+
+r = admin.post("/admin/landing/new",
+               data={"title": "Old Way", "template": "classic"},
+               follow_redirects=True)
+_old_body = r.get_data(as_text=True)
+ok("The starter pages used to begin with is still one you can pick",
+   r.status_code == 200 and "Four stages, zero to income" not in _old_body
+   and "A heading goes here" in _old_body)
+with app.app_context():
+    _old_id = _LP.query.filter_by(title="Old Way").first().id
+    ok("And it is the same eight blocks it always was",
+       [b["type"] for b in
+        _lp.blocks_from_json(db.session.get(_LP, _old_id).draft_json)]
+       == ["hero", "stats", "text", "features", "image_text", "quote",
+           "faq", "cta"])
+admin.post(f"/admin/landing/{_old_id}/delete")
+
+r = admin.post("/admin/landing/new",
+               data={"title": "From Scratch", "template": "blank"},
+               follow_redirects=True)
+with app.app_context():
+    _bare_id = _LP.query.filter_by(title="From Scratch").first().id
+    ok("A blank one really is blank",
+       r.status_code == 200
+       and _lp.blocks_from_json(db.session.get(_LP, _bare_id).draft_json) == [])
+admin.post(f"/admin/landing/{_bare_id}/delete")
+
+r = admin.post("/admin/landing/new",
+               data={"title": "Bad Pick", "template": "../../etc/passwd"},
+               follow_redirects=True)
+ok("A template name we haven't got falls back rather than failing",
+   r.status_code == 200 and "You need a plan." in r.get_data(as_text=True))
+with app.app_context():
+    _bad_id = _LP.query.filter_by(title="Bad Pick").first().id
+admin.post(f"/admin/landing/{_bad_id}/delete")
+
+# Templates are written in a file rather than typed into the builder, so
+# nothing has checked them by the time somebody presses New. These do.
+for _key in _lp.TEMPLATES:
+    _tb = _lp.template_blocks(_key)
+    ok(f"The {_key} template is made only of blocks we have",
+       all(b["type"] in _lp.BLOCK_DEFS for b in _tb))
+    # create() writes the template straight into the draft, so anything the
+    # cleaner would change is something the first Save would silently
+    # rewrite under her.
+    ok(f"And nothing in the {_key} template is changed by being saved",
+       _lp.normalize_blocks(_tb) == _tb)
+
+_ch = _lp.template_blocks("challenge")
+_anchors = {b["fields"]["anchor"] for b in _ch if b["fields"]["anchor"]}
+_jumps = {v[1:] for b in _ch for k, v in b["fields"].items()
+          if k.endswith("_url") and isinstance(v, str) and v.startswith("#")}
+ok("Every button on the challenge page that jumps lands somewhere",
+   bool(_jumps) and _jumps <= _anchors, f"{_jumps} vs {_anchors}")
+
+_picker = admin.get("/admin/landing").get_data(as_text=True)
+ok("The list page lets her choose what a new page starts as",
+   all(f'value="{k}"' in _picker for k in _lp.TEMPLATES)
+   and 'name="template"' in _picker)
 with app.app_context():
     _page = _LP.query.filter_by(title="Spring Launch").first()
     _lp_id, _lp_slug = _page.id, _page.slug
@@ -12621,6 +12691,19 @@ ok("But the words are still made readable on the colour she did choose",
    f"color:{_lp.INK_ON_DARK}" in _col and "lp-block--inked" in _col)
 ok("An anchor is cut down to something a link can jump to",
    'id="special-offer"' in _col)
+ok("A section with nothing above its heading draws nothing above its heading",
+   "lp-eyebrow" not in _col)
+
+admin.post(f"/admin/landing/{_fp_id}/save", json={"blocks": [
+    {"id": "e1", "type": "features",
+     "fields": {"eyebrow": "What's included", "heading": "Six of them",
+                "bg": "cream"},
+     "items": [{"title": "One", "body": "Yes"}]}]})
+admin.post(f"/admin/landing/{_fp_id}/publish")
+_eye = _guest.get(f"/p/{_fp_slug}").get_data(as_text=True)
+ok("And a small line above one shows there, over the heading",
+   'class="lp-eyebrow"' in _eye
+   and _eye.index("What's included") < _eye.index("Six of them"))
 with app.app_context():
     ok("A name with nothing usable in it is no anchor at all",
        _lp.clean_anchor("!!!") == "" and _lp.clean_anchor("  A b  ") == "a-b")

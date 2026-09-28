@@ -30,6 +30,7 @@ from markupsafe import Markup
 
 from ..extensions import db
 from ..models import LandingPage, utcnow
+from .landing_templates import DEFAULT_TEMPLATE, TEMPLATES
 
 #: Field kinds. ``line`` and ``rich`` are typed on the page itself; the rest
 #: are set in the side panel.
@@ -252,6 +253,7 @@ BLOCK_DEFS: dict[str, dict] = {
         "icon": "¶",
         "hint": "A heading and a paragraph.",
         "fields": {
+            "eyebrow": {"kind": LINE, "default": "", "label": "Small line above"},
             "heading": {"kind": LINE, "default": "A heading goes here"},
             "body": {"kind": RICH, "default": "And the words that go under it. Select any of this to make it <strong>bold</strong>, <em>italic</em> or a link."},
             "align": _align(),
@@ -265,6 +267,7 @@ BLOCK_DEFS: dict[str, dict] = {
         "icon": "▥",
         "hint": "Two or three columns of writing side by side.",
         "fields": {
+            "eyebrow": {"kind": LINE, "default": "", "label": "Small line above"},
             "heading": {"kind": LINE, "default": ""},
             "count": {"kind": CHOICE, "options": ("2", "3"), "default": "2",
                       "label": "Columns"},
@@ -302,6 +305,7 @@ BLOCK_DEFS: dict[str, dict] = {
         "icon": "▦",
         "hint": "A grid of pictures.",
         "fields": {
+            "eyebrow": {"kind": LINE, "default": "", "label": "Small line above"},
             "heading": {"kind": LINE, "default": ""},
             "count": {"kind": CHOICE, "options": ("2", "3", "4"), "default": "3",
                       "label": "Per row"},
@@ -323,6 +327,7 @@ BLOCK_DEFS: dict[str, dict] = {
         "icon": "◧",
         "hint": "A picture beside words.",
         "fields": {
+            "eyebrow": {"kind": LINE, "default": "", "label": "Small line above"},
             "image": {"kind": IMAGE, "default": ""},
             "heading": {"kind": LINE, "default": "Something worth showing"},
             "body": {"kind": RICH, "default": "Put the picture on whichever side reads better."},
@@ -341,6 +346,7 @@ BLOCK_DEFS: dict[str, dict] = {
         "icon": "▶",
         "hint": "A YouTube or Vimeo video.",
         "fields": {
+            "eyebrow": {"kind": LINE, "default": "", "label": "Small line above"},
             "heading": {"kind": LINE, "default": ""},
             "url": {"kind": URL, "default": "",
                     "label": "YouTube or Vimeo link"},
@@ -355,6 +361,7 @@ BLOCK_DEFS: dict[str, dict] = {
         "icon": "◆",
         "hint": "A row of figures worth shouting about.",
         "fields": {
+            "eyebrow": {"kind": LINE, "default": "", "label": "Small line above"},
             "heading": {"kind": LINE, "default": ""},
             "pad": _pad(),
             "bg": _bg("soft"),
@@ -374,6 +381,7 @@ BLOCK_DEFS: dict[str, dict] = {
         "icon": "▤",
         "hint": "What's inside, one card each.",
         "fields": {
+            "eyebrow": {"kind": LINE, "default": "", "label": "Small line above"},
             "heading": {"kind": LINE, "default": "What's inside"},
             "body": {"kind": RICH, "default": ""},
             "columns": {"kind": CHOICE, "options": ("2", "3", "4"),
@@ -412,6 +420,7 @@ BLOCK_DEFS: dict[str, dict] = {
         "icon": "?",
         "hint": "The things people ask before they buy.",
         "fields": {
+            "eyebrow": {"kind": LINE, "default": "", "label": "Small line above"},
             "heading": {"kind": LINE, "default": "Before you join"},
             "style": {"kind": CHOICE, "options": ("open", "folded"),
                       "default": "open", "label": "Answers"},
@@ -433,6 +442,7 @@ BLOCK_DEFS: dict[str, dict] = {
         "icon": "⬭",
         "hint": "A row of links, on their own.",
         "fields": {
+            "eyebrow": {"kind": LINE, "default": "", "label": "Small line above"},
             "heading": {"kind": LINE, "default": ""},
             "align": _align("center"),
             "pad": _pad("small"),
@@ -455,6 +465,7 @@ BLOCK_DEFS: dict[str, dict] = {
         "icon": "➜",
         "hint": "The ask, on its own.",
         "fields": {
+            "eyebrow": {"kind": LINE, "default": "", "label": "Small line above"},
             "heading": {"kind": LINE, "default": "Ready when you are"},
             "body": {"kind": RICH, "default": "Doors are open now."},
             "button_text": {"kind": LINE, "default": "Join now"},
@@ -540,19 +551,6 @@ def new_block(block_type: str) -> dict:
         count = spec["items"].get("default_count", 1)
         block["items"] = [new_item(block_type) for _ in range(count)]
     return block
-
-
-def default_blocks() -> list[dict]:
-    """The page a brand-new landing page starts as.
-
-    Deliberately a whole page rather than an empty canvas: something already
-    laid out is far easier to make your own than a blank screen with an
-    "add a block" button on it.
-    """
-    blocks = [new_block(t) for t in
-              ("hero", "stats", "text", "features", "image_text", "quote",
-               "faq", "cta")]
-    return blocks
 
 
 # --- cleaning what the editor sends back --------------------------------------
@@ -852,6 +850,77 @@ def blocks_json(blocks: list[dict], settings: dict | None = None) -> str:
                       ensure_ascii=False, separators=(",", ":"))
 
 
+# --- what a new page starts as -------------------------------------------------
+#
+# A new page has always opened as a whole page rather than a blank canvas:
+# something already laid out is far easier to make your own than an empty
+# screen with an "add a block" button on it. What changed is that there is
+# now more than one such page to start from, and ``landing_templates`` holds
+# their words.
+
+def _template_block(spec: dict) -> dict:
+    """One block of a template: its own defaults, with the template on top.
+
+    A field the block hasn't got is an error rather than something quietly
+    dropped. A template is written in a file rather than typed in the
+    builder, so a misspelt key would otherwise surface as a section sitting
+    there with its placeholder text and nothing to say why.
+    """
+    block_type = spec["type"]
+    block = new_block(block_type)
+
+    fields = spec.get("fields") or {}
+    unknown = sorted(set(fields) - set(block_fields(block_type)))
+    if unknown:
+        raise LandingPageError(
+            f"A {block_type} block has no field called {unknown[0]!r}.")
+    block["fields"].update(fields)
+
+    item_fields = (BLOCK_DEFS[block_type].get("items") or {}).get("fields")
+    if "items" in spec:
+        if not item_fields:
+            raise LandingPageError(f"A {block_type} block has no items.")
+        block["items"] = []
+        for item in spec["items"]:
+            unknown = sorted(set(item) - set(item_fields))
+            if unknown:
+                raise LandingPageError(
+                    f"A {block_type} item has no field called {unknown[0]!r}.")
+            block["items"].append({**new_item(block_type), **item})
+    return block
+
+
+def template_key(raw) -> str:
+    """A template we have, or the one a new page opens as by default."""
+    name = str(raw or "").strip()
+    return name if name in TEMPLATES else DEFAULT_TEMPLATE
+
+
+def template_title(key: str | None = None) -> str:
+    """What to call a page started from this template, if nothing is typed."""
+    return TEMPLATES[template_key(key)]["title"]
+
+
+def template_blocks(key: str | None = None) -> list[dict]:
+    """The blocks a page started from this template holds.
+
+    Put through the same cleaner a save goes through. That is what stops a
+    template being a back door — nothing in ``landing_templates`` can reach
+    a page that couldn't be typed into the builder — and it means what lands
+    in the database is the same shape the editor writes back, so the first
+    Save changes nothing.
+    """
+    spec = TEMPLATES[template_key(key)]
+    return normalize_blocks([_template_block(b) for b in spec["blocks"]])
+
+
+def template_choices() -> list[dict]:
+    """What the picker offers, in the order it offers them."""
+    return [{"key": key, "label": spec["label"], "short": spec["short"],
+             "hint": spec["hint"]}
+            for key, spec in TEMPLATES.items()]
+
+
 # --- slugs -------------------------------------------------------------------
 
 #: Paths a landing page may not sit on, because something else already answers
@@ -890,13 +959,19 @@ def unique_slug(text: str, *, exclude_id: int | None = None) -> str:
 
 # --- the pages themselves ------------------------------------------------------
 
-def create(title: str = "") -> LandingPage:
-    """A new page, already laid out and not yet published."""
-    name = strip_marks(title) or "Untitled landing page"
+def create(title: str = "", template: str | None = None) -> LandingPage:
+    """A new page, laid out from a template and not yet published.
+
+    A template name we don't have falls back to the default one rather than
+    failing. Which page somebody starts from is a preference, not an
+    instruction worth refusing over.
+    """
+    key = template_key(template)
+    name = strip_marks(title) or template_title(key)
     page = LandingPage(
         title=name[:160],
         slug=unique_slug(name),
-        draft_json=blocks_json(default_blocks(), default_settings()),
+        draft_json=blocks_json(template_blocks(key), default_settings()),
         published_json="",
     )
     db.session.add(page)

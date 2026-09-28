@@ -13,9 +13,20 @@
         as you like.
       </p>
     </div>
-    <form method="post" action="{{ url_for('admin.landing_new') }}">
+    {# What a new page opens as. The challenge page is first because it is
+       the one being launched; the starter every page used to begin with,
+       and an empty canvas, are still here behind it. #}
+    <form method="post" action="{{ url_for('admin.landing_new') }}" class="lp-new">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button type="submit" class="btn btn--primary btn--sm">New landing page</button>
+      <div class="lp-new__row">
+        <label class="lp-new__label" for="lp-new-template">Start from</label>
+        <select id="lp-new-template" name="template">
+          {% for t in templates %}
+          <option value="{{ t.key }}" {{ 'selected' if t.key == default_template }}>{{ t.label }} &mdash; {{ t.short }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="btn btn--primary btn--sm">New landing page</button>
+      </div>
     </form>
   </div>
 
@@ -70,10 +81,16 @@
   {% else %}
   <p>No landing pages yet.</p>
   <p class="field-help">
-    A new one starts as a whole page &mdash; a hero, some cards, a few
-    questions and a call to action &mdash; for you to make your own. Nothing
-    of it is on the site until you publish it.
+    A new one starts as a whole page for you to make your own, not a blank
+    screen. Pick what it starts as up there. Nothing of it is on the site
+    until you publish it.
   </p>
+  <dl class="lp-new__guide">
+    {% for t in templates %}
+    <dt>{{ t.label }}</dt>
+    <dd>{{ t.hint }}</dd>
+    {% endfor %}
+  </dl>
   {% endif %}
 </div>
 </div>
