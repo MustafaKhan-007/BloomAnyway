@@ -11236,6 +11236,18 @@ details.lp-faq__row[open] > summary.lp-faq__q::after { content: " \2212"; }
   box-shadow: 0 1px 6px rgba(43, 38, 34, 0.18);
 }
 .lp-ed__grip { font-size: 13px; opacity: .65; }
+.lp-ed__tag:active { cursor: grabbing; }
+/* While a block is in hand, the words underneath must not swallow the
+   pointer — the drop target has to be the block, not the paragraph. */
+.lp-ed.is-dragging-block [data-f],
+.lp-ed.is-dragging-block .lp-pic,
+.lp-ed.is-dragging-block iframe { pointer-events: none; }
+.lp-ed.is-dragging-block .lp-ed__slot {
+  outline-color: rgba(122, 46, 98, 0.25);
+}
+.lp-ed.is-dragging-block .lp-ed__slot:not(.is-dragging) {
+  box-shadow: inset 0 3px 0 -1px transparent;
+}
 .lp-ed__chrome-tools {
   display: flex; gap: 2px; padding: 3px;
   background: rgba(255, 255, 255, 0.96); border-radius: 999px;
@@ -11416,20 +11428,27 @@ details.lp-faq__row[open] > summary.lp-faq__q::after { content: " \2212"; }
 .lp-ed__format-sep {
   width: 1px; height: 18px; background: rgba(255, 255, 255, 0.22); margin: 0 3px;
 }
-.lp-ed__swatches { display: flex; gap: 3px; align-items: center; }
-.lp-sw { width: 18px !important; min-width: 18px !important; height: 18px !important;
-  border-radius: 999px !important; border: 1px solid rgba(255,255,255,.5) !important; }
-.lp-sw--none  { background: transparent; position: relative; }
-.lp-sw--none::after {
-  content: ""; position: absolute; inset: 3px 0; width: 100%; height: 1px;
-  background: #fff; transform: rotate(-45deg); transform-origin: center;
+.lp-ed__swatches { display: flex; gap: 4px; align-items: center; }
+/* These have to out-rank ".lp-ed__format button", which paints every button
+   in the bar transparent — without the element in the selector the swatches
+   came out as empty rings. */
+.lp-ed__format button.lp-sw {
+  width: 20px; min-width: 20px; height: 20px; padding: 0;
+  border-radius: 999px; border: 2px solid rgba(255, 255, 255, 0.55);
+  position: relative;
 }
-.lp-sw--plum  { background: #7A2E62; }
-.lp-sw--berry { background: #A03A7C; }
-.lp-sw--rose  { background: #E08A6D; }
-.lp-sw--gold  { background: #EFA733; }
-.lp-sw--muted { background: #8a8a8a; }
-.lp-sw--white { background: #fff; }
+.lp-ed__format button.lp-sw:hover { border-color: #fff; transform: scale(1.12); }
+.lp-ed__format button.lp-sw--none  { background: #fff; }
+.lp-ed__format button.lp-sw--none::after {
+  content: ""; position: absolute; left: 1px; right: 1px; top: 7px; height: 2px;
+  background: #C0392B; transform: rotate(-45deg);
+}
+.lp-ed__format button.lp-sw--plum  { background: #7A2E62; }
+.lp-ed__format button.lp-sw--berry { background: #A03A7C; }
+.lp-ed__format button.lp-sw--rose  { background: #E08A6D; }
+.lp-ed__format button.lp-sw--gold  { background: #EFA733; }
+.lp-ed__format button.lp-sw--muted { background: #8A8A8A; }
+.lp-ed__format button.lp-sw--white { background: #FFFFFF; }
 
 /* Status pill on the list. */
 .lp-pill {

@@ -12442,6 +12442,39 @@ with app.app_context():
        and _doc["blocks"][0]["fields"]["heading"] == "From before"
        and _doc["settings"]["accent"] == "plum")
 
+# Three things that were on the page but not usable, and are easy to undo
+# again by accident.
+_ed_css = client.get("/static/css/main.css").get_data(as_text=True)
+_ed_js = (Path(__file__).resolve().parents[1]
+          / "app" / "static" / "js" / "landing-editor.js").read_text(encoding="utf-8")
+
+# The bar paints every button transparent, so a swatch whose colour rule is
+# only a class loses to it and comes out an empty ring.
+_sw_rules = re.findall(r"\.lp-sw--(\w+)\s*\{[^}]*background:", _ed_css)
+_sw_qualified = re.findall(
+    r"\.lp-ed__format button\.lp-sw--(\w+)\s*\{[^}]*background:", _ed_css)
+ok("Every colour swatch out-ranks the rule that paints the bar's buttons",
+   set(_sw_rules) == set(_sw_qualified) and len(_sw_qualified) >= 6,
+   f"unqualified: {sorted(set(_sw_rules) - set(_sw_qualified))}")
+
+ok("Pressing a choice moves the highlight onto it there and then",
+   'aria-pressed' in _ed_js
+   and 'other.classList.toggle("is-on", on)' in _ed_js)
+
+# A block can't be draggable all the time — that stops you selecting the text
+# inside it — so it is armed from the grip and disarmed afterwards.
+ok("A block is armed for dragging when its grip is pressed",
+   '[data-drag]' in _ed_js and 'setAttribute("draggable", "true")' in _ed_js
+   and "endDragArming" in _ed_js)
+ok("And the canvas allows the drop rather than refusing it",
+   'dropEffect = "move"' in _ed_js)
+
+# A frame callback never runs in a background tab, which left the formatting
+# bar showing the wrong selection when somebody came back to the page.
+ok("The formatting bar doesn't wait on a frame callback",
+   "requestAnimationFrame(" not in _ed_js       # the word is in a comment
+   and "window.setTimeout(showFormatBar, 0)" in _ed_js)
+
 admin.post(f"/admin/landing/{_fp_id}/delete")
 
 # --- the database URL says which driver ------------------------------------

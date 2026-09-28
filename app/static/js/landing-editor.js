@@ -241,6 +241,8 @@
 
   function renderLayers() {
     if (!layerList) return;
+    // Rebuilding the list mid-drag would destroy the row being dragged.
+    if (dragging) return;
     layerList.innerHTML = "";
     blocks.forEach(function (block, i) {
       var def = defs[block.type] || {};
@@ -306,9 +308,18 @@
           var b = document.createElement("button");
           b.type = "button";
           b.className = "lp-ed__pill" + (bag[key] === opt ? " is-on" : "");
+          b.setAttribute("aria-pressed", bag[key] === opt ? "true" : "false");
           b.textContent = niceOption(opt);
           b.addEventListener("click", function () {
             bag[key] = opt;
+            // Move the highlight here and now. Redrawing the block doesn't
+            // rebuild this panel, so without this the pill you pressed did
+            // the thing and the old one went on looking like the answer.
+            Array.prototype.forEach.call(pills.children, function (other) {
+              var on = other === b;
+              other.classList.toggle("is-on", on);
+              other.setAttribute("aria-pressed", on ? "true" : "false");
+            });
             onChange();
           });
           pills.appendChild(b);
@@ -595,7 +606,7 @@
     if (!activeField) return;
     document.execCommand(cmd, false, null);
     markDirty();
-    window.requestAnimationFrame(showFormatBar);
+    window.setTimeout(showFormatBar, 0);
   }
 
   function wrapSelection(className) {
@@ -813,9 +824,13 @@
     document.execCommand("insertText", false, text);
   });
 
+  // setTimeout, not requestAnimationFrame: a frame callback never runs while
+  // the tab is in the background, which would leave the bar showing the last
+  // selection when somebody came back to it. The nought is only to let the
+  // selection settle before it is measured.
   document.addEventListener("selectionchange", function () {
     if (!formatBar) return;
-    window.requestAnimationFrame(showFormatBar);
+    window.setTimeout(showFormatBar, 0);
   });
   root.addEventListener("keydown", function (e) {
     var field = e.target.closest && e.target.closest("[data-f]");
@@ -828,35 +843,73 @@
     }
   });
 
-  /* ---- dragging, on the canvas and in the list ---- */
+  /* ---- dragging, on the canvas and in the list ----
+     A block can't simply be draggable="true" all the time: a draggable
+     ancestor stops you selecting the text inside it, and the whole point of
+     this canvas is that the words are editable. So the attribute goes on
+     when the grip is pressed and comes off the moment the drag is over. */
 
   var dragging = null;
 
+  function endDragArming() {
+    Array.prototype.forEach.call(
+      canvas.querySelectorAll('[data-slot][draggable="true"]'),
+      function (s) { s.removeAttribute("draggable"); });
+  }
+
+  root.addEventListener("mousedown", function (e) {
+    var grip = e.target.closest && e.target.closest("[data-drag]");
+    endDragArming();
+    if (!grip) return;
+    var slot = grip.closest("[data-slot]");
+    if (slot) slot.setAttribute("draggable", "true");
+  });
+  // A press that never became a drag must not leave the block armed.
+  document.addEventListener("mouseup", function () {
+    window.setTimeout(function () { if (!dragging) endDragArming(); }, 0);
+  });
+
   root.addEventListener("dragstart", function (e) {
     var layer = e.target.closest && e.target.closest("[data-layer]");
-    var slot = e.target.closest && e.target.closest("[data-slot]");
+    var slot = e.target.closest && e.target.closest('[data-slot][draggable="true"]');
     dragging = layer || slot;
     if (!dragging) return;
     dragging.classList.add("is-dragging");
-    try { e.dataTransfer.setData("text/plain", "b"); } catch (err) {}
+    root.classList.add("is-dragging-block");
+    try { e.dataTransfer.setData("text/plain", "block"); } catch (err) {}
     e.dataTransfer.effectAllowed = "move";
   });
+
   root.addEventListener("dragover", function (e) {
     if (!dragging) return;
+    // Always allow the drop while a block is in hand, or the pointer shows
+    // "no" over the very gaps you are trying to drop into.
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+
+    // Near the top or bottom of the window, keep the page moving — a page
+    // is taller than a screen and otherwise a block can't reach the end.
+    var edge = 90;
+    if (e.clientY < edge) window.scrollBy(0, -18);
+    else if (e.clientY > window.innerHeight - edge) window.scrollBy(0, 18);
+
     var sel = dragging.hasAttribute("data-layer") ? "[data-layer]" : "[data-slot]";
     var over = e.target.closest && e.target.closest(sel);
     if (!over || over === dragging) return;
-    e.preventDefault();
     var box = over.getBoundingClientRect();
     var after = (e.clientY - box.top) > box.height / 2;
     if (after) over.after(dragging); else over.before(dragging);
   });
+
   root.addEventListener("drop", function (e) { if (dragging) e.preventDefault(); });
+
   root.addEventListener("dragend", function () {
     if (!dragging) return;
     dragging.classList.remove("is-dragging");
+    root.classList.remove("is-dragging-block");
     var wasLayer = dragging.hasAttribute("data-layer");
     dragging = null;
+    endDragArming();
     if (wasLayer) {
       // The list is the order of record now; put the canvas in step.
       var order = Array.prototype.map.call(
