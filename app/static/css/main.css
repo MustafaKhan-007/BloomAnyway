@@ -10812,7 +10812,58 @@ a.pd-bundle__title:hover { text-decoration: underline; }
    the builder draws blocks with the same macro, so anything that existed for
    only one of them would be a way for the two to drift apart. */
 
-.lp { display: block; }
+/* The page is twelve columns wide.
+   Everything defaults to all twelve starting at one, which is a block on
+   its own line — so a page built before there were columns comes out
+   exactly as it always did, with no migration and nothing to re-save.
+   A block given fewer columns sits beside whatever else fits on the row.
+
+   The container query, not a media query: the builder shows this page
+   inside a frame it can narrow to a phone's width, and the question
+   "is there room for two of these side by side" is about the width of
+   the page, not the width of the window it happens to be in. The media
+   query below it is the same answer for a browser too old to have
+   container queries at all. */
+.lp {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  align-items: stretch;
+  container-type: inline-size;
+  container-name: lp;
+  /* Its own type, not the shell's. Plenty of landing text takes its size
+     by inheritance, and the builder sits inside Studio, whose body is
+     15px against the site's 17. So every paragraph without a size of its
+     own came out two points smaller in the builder than on the page, and
+     wrapped at different words — which is most of what "the preview
+     doesn't match" turned out to mean. */
+  font-family: var(--font-body);
+  font-size: 17px;
+  line-height: 1.7;
+}
+/* The site steps this up at 900px of window. In the builder the page is
+   a canvas of its own width inside a window of some other size, so the
+   step follows the page instead. On the blocks rather than on .lp: a
+   container query cannot style the container it is asking about. */
+@container lp (min-width: 900px) { .lp > * { font-size: 18px; } }
+/* `> *` rather than `> .lp-block`: on the live page the grid item is the
+   block, and in the builder it is the slot wrapped around it. Both carry
+   the same placement, so the two lay out identically. */
+.lp > * { grid-column: 1 / -1; min-width: 0; }
+/* A container query rather than a media query, deliberately. The question
+   is how wide *the page* is, and in the builder the page is a canvas laid
+   out at a chosen screen's width inside a window of some other size. A
+   media query would answer about the window and get it wrong in there. */
+@container lp (max-width: 800px) {
+  .lp > * { grid-column: 1 / -1 !important; }
+  .lp .lp-pull--small, .lp .lp-pull--medium,
+  .lp .lp-pull--large { margin-top: 0; }
+}
+/* Pulls a block up into the one above it, for laying a card over the
+   bottom of a hero. Steps, because a free measurement is a thing to
+   fiddle with for an hour and still get wrong on a phone. */
+.lp-pull--small  { margin-top: -28px; z-index: 2; }
+.lp-pull--medium { margin-top: -64px; z-index: 2; }
+.lp-pull--large  { margin-top: -110px; z-index: 2; }
 
 /* Page-wide choices. The accent is a variable the blocks below read, so one
    pick changes buttons, numbers and rules together. */
@@ -10836,7 +10887,14 @@ a.pd-bundle__title:hover { text-decoration: underline; }
 /* "Hide the site header and footer" — for a page meant to stand alone. */
 body:has(.lp-bare) .site-header, body:has(.lp-bare) .site-footer { display: none; }
 
-.lp-block { position: relative; }
+/* Each block asks about its own width, not the window's.
+   Two reasons, and both of them matter. A block can be half the page
+   wide now, and a row of three cards in a half-width block has 600px to
+   do it in, not 1280 — the window was never the right thing to ask. And
+   the builder draws the page at a chosen screen's width inside a window
+   of some other size, so a rule keyed to the window is a rule that
+   answers one question in the builder and a different one on the page. */
+.lp-block { position: relative; container-type: inline-size; container-name: lpblock; }
 .lp-wrap { width: min(var(--lp-max), calc(100% - 48px)); margin-inline: auto; }
 .lp-w--narrow { --lp-max: 720px; }
 .lp-w--normal { --lp-max: 1140px; }
@@ -10887,7 +10945,7 @@ body:has(.lp-bare) .site-header, body:has(.lp-bare) .site-footer { display: none
 /* Type. */
 .lp-h2 {
   font-family: var(--font-display);
-  font-size: clamp(1.6rem, 1.1rem + 2vw, 2.6rem);
+  font-size: clamp(1.6rem, 1.1rem + 2cqi, 2.6rem);
   line-height: 1.15; margin: 0 0 16px; color: var(--plum-deep);
 }
 .lp-body { font-size: 1.05rem; line-height: 1.7; margin: 0; }
@@ -10935,7 +10993,7 @@ body:has(.lp-bare) .site-header, body:has(.lp-bare) .site-footer { display: none
 .lp-hero__inner { position: relative; z-index: 1; }
 .lp-hero__title {
   font-family: var(--font-display);
-  font-size: clamp(2rem, 1.2rem + 4vw, 3.6rem);
+  font-size: clamp(2rem, 1.2rem + 4cqi, 3.6rem);
   line-height: 1.08; margin: 0 0 18px;
 }
 .lp-lede { font-size: 1.15rem; line-height: 1.65; max-width: 58ch; opacity: 0.94; }
@@ -10968,12 +11026,12 @@ body:has(.lp-bare) .site-header, body:has(.lp-bare) .site-footer { display: none
 
 /* Numbers. */
 .lp-stats { display: grid; gap: 20px; grid-template-columns: 1fr; text-align: center; }
-@media (min-width: 640px) {
+@container lpblock (min-width: 640px) {
   .lp-stats { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
 }
 .lp-stat { position: relative; }
 .lp-stat__value {
-  font-family: var(--font-display); font-size: clamp(2rem, 1.4rem + 2vw, 3rem);
+  font-family: var(--font-display); font-size: clamp(2rem, 1.4rem + 2cqi, 3rem);
   line-height: 1; margin: 0 0 6px; color: var(--lp-accent);
 }
 .lp-bg--plum .lp-stat__value, .lp-bg--dark .lp-stat__value { color: var(--gold); }
@@ -10981,8 +11039,8 @@ body:has(.lp-bare) .site-header, body:has(.lp-bare) .site-footer { display: none
 
 /* Cards. */
 .lp-cards { display: grid; gap: 18px; grid-template-columns: 1fr; margin-top: 28px; }
-@media (min-width: 680px) { .lp-cards--2 { grid-template-columns: repeat(2, 1fr); } }
-@media (min-width: 900px) {
+@container lpblock (min-width: 680px) { .lp-cards--2 { grid-template-columns: repeat(2, 1fr); } }
+@container lpblock (min-width: 900px) {
   .lp-cards--3 { grid-template-columns: repeat(3, 1fr); }
   .lp-cards--4 { grid-template-columns: repeat(4, 1fr); }
 }
@@ -11002,7 +11060,7 @@ body:has(.lp-bare) .site-header, body:has(.lp-bare) .site-footer { display: none
 
 /* Columns. */
 .lp-cols { display: grid; gap: 28px; grid-template-columns: 1fr; margin-top: 8px; }
-@media (min-width: 760px) {
+@container lpblock (min-width: 760px) {
   .lp-cols--2 { grid-template-columns: repeat(2, 1fr); }
   .lp-cols--3 { grid-template-columns: repeat(3, 1fr); }
   .lp-cols--4 { grid-template-columns: repeat(4, 1fr); }
@@ -11017,7 +11075,7 @@ body:has(.lp-bare) .site-header, body:has(.lp-bare) .site-footer { display: none
 .lp-pic--square img { border-radius: 0; }
 .lp-caption { margin: 10px 0 0; font-size: 0.9rem; color: var(--ink-soft); }
 .lp-gallery { display: grid; gap: 14px; grid-template-columns: repeat(2, 1fr); margin-top: 8px; }
-@media (min-width: 760px) {
+@container lpblock (min-width: 760px) {
   .lp-gallery--3 { grid-template-columns: repeat(3, 1fr); }
   .lp-gallery--4 { grid-template-columns: repeat(4, 1fr); }
 }
@@ -11026,7 +11084,7 @@ body:has(.lp-bare) .site-header, body:has(.lp-bare) .site-footer { display: none
 
 /* Picture beside words. */
 .lp-split { display: grid; gap: 32px; grid-template-columns: 1fr; align-items: center; }
-@media (min-width: 820px) {
+@container lpblock (min-width: 820px) {
   .lp-split { grid-template-columns: 1fr 1fr; }
   .lp-split--r-picture { grid-template-columns: 1.4fr 1fr; }
   .lp-split--r-words { grid-template-columns: 1fr 1.4fr; }
@@ -11051,7 +11109,7 @@ body:has(.lp-bare) .site-header, body:has(.lp-bare) .site-footer { display: none
 .lp-pic--face { width: 84px; margin: 0 auto 16px; }
 .lp-pic--face img { border-radius: 999px; aspect-ratio: 1/1; object-fit: cover; }
 .lp-quote__text {
-  font-family: var(--font-display); font-size: clamp(1.25rem, 1rem + 1.4vw, 1.9rem);
+  font-family: var(--font-display); font-size: clamp(1.25rem, 1rem + 1.4cqi, 1.9rem);
   line-height: 1.4; margin: 0; border: 0; padding: 0; font-style: italic;
 }
 .lp-quote__by { margin: 16px 0 0; font-weight: 700; color: var(--ink-soft); }
@@ -11257,19 +11315,38 @@ details.lp-faq__row[open] > summary.lp-faq__q::after { content: " \2212"; }
 }
 .lp-ed__addbig:hover { background: rgba(122, 46, 98, 0.08); border-style: solid; }
 
-/* --- middle: the page --- */
-/* The frame is what narrows; the canvas inside it is the page itself. A
-   phone width is the real page at a phone's width, not a picture of one. */
-.lp-ed__frame { min-width: 0; display: block; }
-.lp-ed__frame[data-device="tablet"] { max-width: 820px; margin: 0 auto; }
-.lp-ed__frame[data-device="phone"] { max-width: 420px; margin: 0 auto; }
+/* --- middle: the page ---
+   The canvas is laid out at a real screen's width — 1280 for a desktop,
+   390 for a phone — and then shrunk to fit whatever room the middle
+   column has. That is the only way a pane 700px wide can show, honestly,
+   what a page does at 1280: the layout is worked out at the true width
+   and only the picture of it is smaller.
+
+   Sizing the canvas to the pane instead is what made the builder lie.
+   Two blocks set to half the page each sat one above the other in here,
+   because at 700px the page's own rules stack them — and then went side
+   by side the moment a visitor opened it on a laptop. */
+.lp-ed__middle { min-width: 0; }
+.lp-ed__frame { min-width: 0; overflow: hidden; position: relative; }
+.lp-ed__canvas {
+  border: 1px solid rgba(61, 20, 49, 0.12); border-radius: var(--radius-card);
+  overflow: hidden; background: var(--dawn-ivory);
+  /* content-box, so the declared width is the width the page gets. With
+     the border counted in, the canvas laid out at 1278 while claiming to
+     be a 1280 screen, and every measurement was two pixels out. */
+  box-sizing: content-box;
+  width: var(--lp-w, 1280px);
+  transform: scale(var(--lp-k, 1));
+  transform-origin: top left;
+}
 .lp-ed__frame[data-device="tablet"] .lp-ed__canvas,
 .lp-ed__frame[data-device="phone"] .lp-ed__canvas {
   box-shadow: 0 8px 34px rgba(43, 38, 34, 0.22);
 }
-.lp-ed__canvas {
-  border: 1px solid rgba(61, 20, 49, 0.12); border-radius: var(--radius-card);
-  overflow: hidden; background: var(--dawn-ivory); min-width: 0;
+.lp-ed__tail {
+  padding: 16px; background: #fff;
+  border: 1px solid rgba(61, 20, 49, 0.12); border-top: 0;
+  border-radius: 0 0 var(--radius-card) var(--radius-card);
 }
 .lp-ed__devices {
   display: inline-flex; gap: 2px; padding: 2px; border-radius: 999px;
@@ -11282,12 +11359,20 @@ details.lp-faq__row[open] > summary.lp-faq__q::after { content: " \2212"; }
 .lp-ed__device:hover { background: rgba(122, 46, 98, 0.12); }
 .lp-ed__device.is-on { background: #fff; color: var(--plum); box-shadow: 0 1px 4px rgba(43,38,34,.16); }
 .lp-ed__blank { text-align: center; padding: 40px 16px; color: var(--ink-soft); }
-.lp-ed__tail { padding: 16px; background: #fff; border-top: 1px solid rgba(61,20,49,.12); }
 .lp-ed__tail .lp-ed__addbig { margin: 0; }
 
 /* A block on the canvas. The toolbar is always there — hiding it behind
    hover made the builder look like it could only change words. */
-.lp-ed__slot { position: relative; outline: 2px solid transparent; }
+/* A column, so the block inside fills the row the grid gave the slot.
+   Out on the live page the block is the grid item and stretches to its
+   row; in here the slot is, and the block sat at its own height inside a
+   stretched wrapper — which is why two blocks side by side matched each
+   other's height on the page and not in the builder. */
+.lp-ed__slot {
+  position: relative; outline: 2px solid transparent;
+  display: flex; flex-direction: column;
+}
+.lp-ed__slot > .lp-block { flex: 1 1 auto; }
 .lp-ed__slot + .lp-ed__slot { border-top: 1px dashed rgba(122, 46, 98, 0.2); }
 .lp-ed__slot:hover { outline-color: rgba(122, 46, 98, 0.35); }
 .lp-ed__slot.is-on { outline-color: var(--plum); }
@@ -11296,9 +11381,12 @@ details.lp-faq__row[open] > summary.lp-faq__q::after { content: " \2212"; }
 .lp-ed__slot.is-first [data-up], .lp-ed__slot.is-last [data-down] {
   visibility: hidden;
 }
-/* Where a block will land. A block is often taller than the screen, so
-   shuffling it live as the pointer passed would haul the page around
-   underneath the hand holding it. */
+/* Where a block will land — at which column, and how wide. A block is
+   often taller than the screen, so shuffling it live as the pointer
+   passed would haul the page around underneath the hand holding it. The
+   marker is the block's own footprint rather than a rule across the
+   page, so dragging one to the right half of the canvas shows it landing
+   in the right half. */
 .lp-ed__dropline {
   height: 0; border-top: 4px solid var(--plum); border-radius: 4px;
   margin: -2px 0; position: relative; z-index: 12;
@@ -11307,6 +11395,39 @@ details.lp-faq__row[open] > summary.lp-faq__q::after { content: " \2212"; }
 .lp-ed__dropline::before {
   content: ""; position: absolute; left: 0; top: -7px;
   width: 10px; height: 10px; border-radius: 50%; background: var(--plum);
+}
+.lp-ed__dropline.is-part {
+  height: 56px; border: 3px dashed var(--plum); border-radius: 10px;
+  background: rgba(122, 46, 98, 0.10); margin: 4px 0;
+}
+.lp-ed__dropline.is-part::before { display: none; }
+
+/* The edge you pull to make a block narrower, so something can sit next
+   to it. Only on the block being pointed at or worked on, or every block
+   on the page would have a bar down its side. */
+.lp-ed__grab {
+  position: absolute; top: 0; right: 0; bottom: 0; width: 12px; z-index: 10;
+  cursor: ew-resize; opacity: 0; transition: opacity .12s;
+  background: linear-gradient(90deg, transparent, rgba(122, 46, 98, 0.30));
+}
+.lp-ed__grab::after {
+  content: ""; position: absolute; top: 50%; right: 3px;
+  width: 4px; height: 46px; margin-top: -23px; border-radius: 4px;
+  background: var(--plum); box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.75);
+}
+.lp-ed__slot:hover > .lp-ed__grab, .lp-ed__slot.is-on > .lp-ed__grab { opacity: 1; }
+.lp-ed.is-sizing-block { cursor: ew-resize; user-select: none; }
+.lp-ed.is-sizing-block .lp-ed__grab { opacity: 1; }
+.lp-ed.is-sizing-block [data-f] { pointer-events: none; }
+
+/* Preview: the page, and nothing that belongs to the builder. */
+.lp-ed.is-previewing .lp-ed__layers,
+.lp-ed.is-previewing .lp-ed__panel,
+.lp-ed.is-previewing .lp-ed__tail,
+.lp-ed.is-previewing .lp-ed__blank { display: none; }
+.lp-ed.is-previewing .lp-ed__stage { grid-template-columns: minmax(0, 1fr); }
+[data-preview-toggle][aria-pressed="true"] {
+  background: var(--plum); border-color: var(--plum); color: #fff;
 }
 /* A block that is on the page but not out to anybody. Faded rather than
    gone: "where did my section go" is the question a hide that vanishes
@@ -11353,14 +11474,13 @@ details.lp-faq__row[open] > summary.lp-faq__q::after { content: " \2212"; }
 }
 .lp-ed__chrome-tools button:hover { background: rgba(122, 46, 98, 0.14); }
 .lp-ed__chrome-tools .lp-ed__drop:hover { background: rgba(166, 75, 63, 0.16); color: var(--error); }
-/* Keep the first line clear of the toolbar — but only on the blocks that
-   don't already have room. Padding the rest would make the builder show
-   spacing the live page doesn't have, which is the one thing a canvas that
-   claims to be the page must not do. */
-.lp-ed__slot .lp-pad--none,
-.lp-ed__slot .lp-pad--small { padding-top: 44px; }
-.lp-ed__slot .lp-hero--short { padding-top: 56px; }
-.lp-ed__slot .lp-spacer { min-height: 44px; }
+/* Nothing here may add height. The toolbar used to push tight blocks down
+   by 44px so it wouldn't cover the first line, which meant the canvas was
+   quietly showing spacing the page doesn't have — the one thing a canvas
+   claiming to be the page must not do. It overlaps the top corners
+   instead, the way every builder's does, and Preview takes it away
+   entirely when the question is what a visitor gets. */
+.lp-ed__slot > .lp-block { min-width: 0; }
 
 /* The rail that adds a block right here. */
 .lp-ed__rail {
@@ -11394,8 +11514,9 @@ details.lp-faq__row[open] > summary.lp-faq__q::after { content: " \2212"; }
   content: attr(data-ph); opacity: 0.45; font-style: italic;
 }
 
-/* Pictures in the builder. */
-.lp-ed .lp-pic { min-height: 52px; }
+/* Pictures in the builder. Only the empty ones are given a size of their
+   own — a picture that is there is already as tall as it is. */
+.lp-ed .lp-pic:not(:has(img)) { min-height: 52px; }
 .lp-pic__empty {
   display: flex; align-items: center; justify-content: center;
   min-height: 150px; border: 2px dashed rgba(122, 46, 98, 0.35);
@@ -11474,6 +11595,14 @@ details.lp-faq__row[open] > summary.lp-faq__q::after { content: " \2212"; }
 }
 .lp-ed__field--btn { display: flex; gap: 6px; margin-top: -4px; }
 .lp-ed__hint { margin: -8px 0 12px; font-size: 11px; }
+.lp-ed__slider { display: flex; gap: 8px; align-items: center; }
+.lp-ed__slider input[type="range"] {
+  flex: 1 1 auto; min-width: 0; padding: 0; accent-color: var(--plum);
+}
+.lp-ed__slider output {
+  flex: none; font-size: 11px; font-weight: 700; color: var(--ink-soft);
+  min-width: 58px; text-align: right;
+}
 /* A swatch to pick with and a box to paste a brand hex into. Empty means
    "whatever the theme says", which a colour well on its own cannot say —
    it always holds some colour, even before anyone has chosen one. */

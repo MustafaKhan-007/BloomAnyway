@@ -3,6 +3,7 @@
 Uses a throwaway SQLite database and the Flask test client. Not a pytest
 suite on purpose — a single readable script the owner/dev can run anywhere.
 """
+import difflib
 import hashlib
 import hmac
 import io
@@ -12511,6 +12512,42 @@ ok("The formatting bar doesn't wait on a frame callback",
    "requestAnimationFrame(" not in _ed_js       # the word is in a comment
    and "window.setTimeout(showFormatBar, 0)" in _ed_js)
 
+# --- putting a block where you want it, not just above or below ------------
+# Twelve columns. All twelve starting at one is a block on its own line,
+# which is what every block was before any of this — so a page written
+# last month comes out looking exactly as it did.
+ok("A block with nothing said about it takes the whole width",
+   _lp.grid_area({}) == (1, 12) and _lp.grid_style({}) == "")
+ok("And one given half the page says so in a style of its own",
+   _lp.grid_style({"col_span": 6, "col_start": 7}) == "grid-column:7/span 6")
+ok("A width that would run off the end is pulled back onto the page",
+   _lp.grid_area({"col_span": 8, "col_start": 9}) == (5, 8),
+   _lp.grid_area({"col_span": 8, "col_start": 9}))
+ok("And nonsense falls back to the whole width",
+   _lp.grid_area({"col_span": "wide", "col_start": "left"}) == (1, 12)
+   and _lp.grid_area({"col_span": 0}) == (1, 12)
+   and _lp.grid_area({"col_span": 99}) == (1, 12))
+
+admin.post(f"/admin/landing/{_fp_id}/save", json={"blocks": [
+    {"id": "s1", "type": "text",
+     "fields": {"heading": "Left", "body": "Half", "bg": "cream",
+                "col_span": "6", "col_start": "1"}},
+    {"id": "s2", "type": "text",
+     "fields": {"heading": "Right", "body": "Half", "bg": "soft",
+                "col_span": "6", "col_start": "7", "pull": "medium"}}]})
+admin.post(f"/admin/landing/{_fp_id}/publish")
+_side = _guest.get(f"/p/{_fp_slug}").get_data(as_text=True)
+ok("Two half-width blocks both say where they sit",
+   "grid-column:1/span 6" in _side and "grid-column:7/span 6" in _side)
+ok("And a block pulled up into the one above carries that too",
+   "lp-pull--medium" in _side)
+ok("The page lays its blocks out on a grid of twelve",
+   re.search(r"^\.lp \{[^}]*grid-template-columns:\s*repeat\(12",
+             _ed_css, re.M | re.S) is not None)
+ok("Narrow enough and every block goes back to the full width",
+   re.search(r"@container lp \(max-width[^}]*\{[^}]*grid-column:\s*1 / -1",
+             _ed_css, re.S) is not None)
+
 # --- taking a block off the page without throwing it away ------------------
 # Keeping a section for next month used to mean deleting it and writing it
 # again, so people kept a second copy of the whole page instead.
@@ -12648,6 +12685,66 @@ with app.app_context():
 
 ok("The pages list offers a copy of any of them",
    'Duplicate</button>' in admin.get("/admin/landing").get_data(as_text=True))
+
+# --- Preview is the page, not a likeness of it -----------------------------
+# One macro with two callers: the public page, and this. That is the whole
+# guarantee — there is nowhere for the two to drift apart, and this checks
+# they are still the same two callers.
+_pv_blocks = [
+    {"id": "pv1", "type": "hero",
+     "fields": {"eyebrow": "SPRING", "heading": "Come and build",
+                "body": "Eight weeks.", "button_text": "Join",
+                "button_url": "/courses", "bg": "plum"}},
+    {"id": "pv2", "type": "features",
+     "fields": {"heading": "Inside", "columns": "3", "bg": "cream",
+                "col_span": "6", "col_start": "7"},
+     "items": [{"title": "One", "body": "First", "image": ""}]},
+]
+_pv_settings = {"accent": "gold", "font": "serif", "width": "wide"}
+r = admin.post("/admin/landing/preview",
+               json={"blocks": _pv_blocks, "settings": _pv_settings})
+_pv_html = (r.get_json() or {}).get("html", "")
+admin.post(f"/admin/landing/{_fp_id}/save",
+           json={"blocks": _pv_blocks, "settings": _pv_settings})
+admin.post(f"/admin/landing/{_fp_id}/publish")
+_pub_html = _guest.get(f"/p/{_fp_slug}").get_data(as_text=True)
+_pub_body = _pub_html[_pub_html.index('<div class="lp '):]
+_pub_body = _pub_body[:_pub_body.rindex("</section>") + len("</section>")]
+_pv_body = _pv_html.strip()
+_pv_body = _pv_body[:_pv_body.rindex("</section>") + len("</section>")]
+ok("What Preview draws is what the page is, character for character",
+   _pv_body == _pub_body,
+   "\n".join(difflib.unified_diff(_pub_body.split("><"),
+                                  _pv_body.split("><"),
+                                  "live", "preview", n=0, lineterm=""))[:600])
+ok("Which means none of the builder's own handles are in it",
+   "contenteditable" not in _pv_html and "lp-ed__chrome" not in _pv_html
+   and "data-item-drag" not in _pv_html)
+ok("A hidden block is left out of Preview the way it is left off the page",
+   "Not for now" not in (admin.post(
+       "/admin/landing/preview",
+       json={"blocks": [{"id": "h1", "type": "text",
+                         "fields": {"heading": "Not for now",
+                                    "visible": "hide"}}],
+             "settings": {}}).get_json() or {}).get("html", ""))
+ok("A member can't ask for a preview either",
+   client.post("/admin/landing/preview",
+               json={"blocks": []}).status_code in (302, 404))
+
+# The builder draws the page at a chosen screen's width inside a window of
+# some other size, so anything responsive keyed to the *window* answers one
+# question in the builder and a different one on the page.
+_media_lp = re.findall(r"@media[^{]*\{(?:[^{}]|\{[^{}]*\})*?\}", _ed_css)
+_lp_in_media = [m for m in _media_lp
+                if re.search(r"\.lp-(?:stats|cards|cols|gallery|split|block|wrap)",
+                             m)]
+ok("How a landing block lays itself out is asked of the block, not the window",
+   not _lp_in_media, [m[:90] for m in _lp_in_media[:2]])
+ok("And its type is sized against the page rather than the window",
+   "cqi" in _ed_css and not re.search(r"\.lp-(?:hero__title|h2|stat__value)"
+                                      r"[^}]*\dvw", _ed_css))
+ok("A landing page carries its own type size, whatever it is sitting in",
+   re.search(r"^\.lp \{[^}]*font-size:\s*17px", _ed_css, re.M | re.S) is not None)
 
 admin.post(f"/admin/landing/{_fp_id}/delete")
 

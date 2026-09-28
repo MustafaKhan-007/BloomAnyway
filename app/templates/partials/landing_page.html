@@ -1,0 +1,24 @@
+{#
+  The body of a landing page, as a visitor gets it.
+
+  One macro with two callers — the public page at /p/<slug>, and the
+  builder's Preview, which asks the server for this and puts it on the
+  canvas. That is the whole guarantee behind "preview matches the page":
+  it isn't a likeness drawn to match, it is the same macro with the same
+  arguments, so there is nowhere for the two to drift apart.
+#}
+{% from "partials/landing_blocks.html" import render_block %}
+
+{% macro landing_body(blocks, settings) %}
+<div class="lp lp-accent--{{ settings.accent|default('plum') }} lp-font--{{ settings.font|default('brand') }} lp-page--{{ settings.width|default('normal') }}{{ ' lp-bare' if settings.nav == 'hide' }}">
+  {#- A hidden block is not drawn at all out here — not drawn and then
+      covered up, which would still send the words down the wire. -#}
+  {% for b in blocks if b.fields.visible != 'hide' %}{{ render_block(b) }}{% endfor %}
+  {% if not blocks %}
+  <section class="lp-block lp-bg--cream lp-pad--large"><div class="lp-wrap lp-al--center">
+    <h1 class="lp-h2">Nothing here yet</h1>
+    <p class="lp-body">This page hasn't been built out.</p>
+  </div></section>
+  {% endif %}
+</div>
+{% endmacro %}

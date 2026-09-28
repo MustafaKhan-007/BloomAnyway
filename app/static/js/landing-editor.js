@@ -36,6 +36,7 @@
 
   var saveUrl = root.getAttribute("data-save-url");
   var renderUrl = root.getAttribute("data-render-url");
+  var previewUrl = root.getAttribute("data-preview-url");
   var uploadUrl = root.getAttribute("data-upload-url");
 
   function readJsonTag(sel, fallback) {
@@ -352,15 +353,57 @@
      had already happened, so pressing undo after picking a colour put back
      the colour you had just picked. */
   function controlsFor(specs, bag, onChange, container, before) {
-    function edit(write) {
-      if (before) before();
-      write();
-      onChange();
-    }
     specs.forEach(function (spec) {
       var key = spec.key;
+      function edit(write) {
+        if (before) before();
+        write();
+        onChange(key);
+      }
       if (spec.kind === "line" || spec.kind === "rich") {
         if (!/description/.test(key)) return;   // typed on the page itself
+      }
+
+      // Where the block sits across the page, and how much of it it
+      // takes. The number moves while the slider does; the change is
+      // taken once it is let go, so sliding from twelve to four is one
+      // step to undo rather than eight.
+      if (spec.kind === "span") {
+        var top = spec.max || 12;
+        if (key === "col_start") {
+          var wide = parseInt(bag.col_span, 10);
+          top = 13 - (isNaN(wide) ? 12 : Math.min(12, Math.max(1, wide)));
+        }
+        var slider = document.createElement("span");
+        slider.className = "lp-ed__slider";
+        var range = document.createElement("input");
+        range.type = "range";
+        range.min = String(spec.min || 1);
+        range.max = String(Math.max(spec.min || 1, top));
+        range.value = String(Math.min(top, parseInt(bag[key], 10) || 1));
+        range.setAttribute("aria-label", spec.label);
+        var out = document.createElement("output");
+        function say() {
+          out.textContent = key === "col_span"
+            ? range.value + " of 12" : "column " + range.value;
+        }
+        say();
+        range.addEventListener("input", say);
+        range.addEventListener("change", function () {
+          edit(function () { bag[key] = range.value; });
+        });
+        slider.appendChild(range);
+        slider.appendChild(out);
+        container.appendChild(fieldRow(spec.label, slider));
+        if (key === "col_start" && top === 1) {
+          range.disabled = true;
+          var only = document.createElement("p");
+          only.className = "field-help lp-ed__hint";
+          only.textContent = "A block the full width of the page has only "
+            + "one place to be. Make it narrower to move it across.";
+          container.appendChild(only);
+        }
+        return;
       }
 
       // A colour of her own, past the six the theme offers. Two controls
@@ -494,9 +537,12 @@
     panelBody.innerHTML = "";
     panelTitle.textContent = def.label || block.type;
 
-    controlsFor(def.fields || [], block.fields, function () {
+    controlsFor(def.fields || [], block.fields, function (key) {
       markDirty();
       redraw(block);
+      // Narrower means fewer places it can start, so the other slider has
+      // to be redrawn against the new range.
+      if (key === "col_span") buildBlockPanel(block);
     }, panelBody, snapshot);
 
     var note = document.createElement("p");
@@ -689,21 +735,109 @@
     redraw(block);
   }
 
+  /* ---- Preview ----
+     The canvas, redrawn by the server out of the same macro the public
+     page uses with the editing hooks off. Not a likeness of the page: the
+     page. Which is why it is asked for rather than made here — anything
+     the browser assembled itself could be wrong in exactly the way a
+     preview must never be. */
+
+  var previewing = false;
+
+  function setPreview(on) {
+    var pane = root.querySelector("[data-preview-canvas]");
+    var button = root.querySelector("[data-preview-toggle]");
+    if (!pane) return;
+    if (!on) {
+      previewing = false;
+      pane.hidden = true;
+      pane.innerHTML = "";
+      canvas.hidden = false;
+      root.classList.remove("is-previewing");
+      if (button) {
+        button.textContent = "Preview";
+        button.setAttribute("aria-pressed", "false");
+      }
+      fitCanvas();
+      return;
+    }
+    syncFromDom();
+    post(previewUrl, { blocks: blocks, settings: settings })
+      .then(function (res) {
+        if (!res.ok || !res.data.html) {
+          window.alert("Couldn't draw the preview just now.");
+          return;
+        }
+        previewing = true;
+        pane.innerHTML = res.data.html;
+        pane.hidden = false;
+        canvas.hidden = true;
+        root.classList.add("is-previewing");
+        fitCanvas();
+        if (button) {
+          button.textContent = "Back to editing";
+          button.setAttribute("aria-pressed", "true");
+        }
+      });
+  }
+
   /* ---- what a visitor's screen does to this ----
      The canvas is the page, so narrowing the canvas is the honest way to
      ask the question: no second rendering that could disagree with the
      first, and the words stay editable at every width. */
 
+  //: What each button means, in real screen pixels. The canvas is laid
+  //: out at these widths and shrunk to fit, so the page's own rules about
+  //: what stacks and what sits side by side answer the same way they will
+  //: for whoever opens it.
+  var DEVICE_WIDTH = { wide: 1280, tablet: 820, phone: 390 };
+  var frame = root.querySelector("[data-device-frame]");
+  var scaler = root.querySelector("[data-scaler]");
+  var device = "wide";
+  var zoom = "fit";
+
+  function fitCanvas() {
+    if (!frame || !scaler) return;
+    var target = DEVICE_WIDTH[device] || DEVICE_WIDTH.wide;
+    var room = frame.clientWidth;
+    var k = zoom === "fit" && room ? Math.min(1, room / target) : 1;
+    scaler.style.setProperty("--lp-w", target + "px");
+    scaler.style.setProperty("--lp-k", String(k));
+    // The transform draws the canvas smaller but leaves its box the size
+    // it was, so the frame is told what the picture actually comes to or
+    // there is a screen of nothing under the page.
+    frame.style.height = Math.ceil(scaler.offsetHeight * k) + "px";
+    frame.style.overflowX = k < 1 ? "hidden" : "auto";
+  }
+
+  if (window.ResizeObserver && scaler) {
+    new window.ResizeObserver(function () { fitCanvas(); }).observe(scaler);
+  }
+  window.addEventListener("resize", fitCanvas);
+
   function setDevice(name) {
-    var frame = root.querySelector("[data-device-frame]");
-    if (frame) frame.setAttribute("data-device", name);
+    device = DEVICE_WIDTH[name] ? name : "wide";
+    if (frame) frame.setAttribute("data-device", device);
     Array.prototype.forEach.call(
       root.querySelectorAll("[data-set-device]"), function (b) {
-        var on = b.getAttribute("data-set-device") === name;
+        var on = b.getAttribute("data-set-device") === device;
         b.classList.toggle("is-on", on);
         b.setAttribute("aria-pressed", on ? "true" : "false");
       });
-    try { window.localStorage.setItem("lp-device", name); } catch (err) {}
+    fitCanvas();
+    try { window.localStorage.setItem("lp-device", device); } catch (err) {}
+  }
+
+  function setZoom(name) {
+    zoom = name === "full" ? "full" : "fit";
+    Array.prototype.forEach.call(
+      root.querySelectorAll("[data-set-zoom]"), function (b) {
+        var on = b.getAttribute("data-set-zoom") === zoom;
+        b.classList.toggle("is-on", on);
+        b.setAttribute("aria-pressed", on ? "true" : "false");
+      });
+    fitCanvas();
+    try { window.localStorage.setItem("lp-zoom", zoom); } catch (err) {}
   }
 
   /* ---- the block picker ---- */
@@ -825,8 +959,17 @@
     if (t.closest("[data-page-settings]")) { selectPage(); return; }
     if (t.closest("[data-undo]")) { undo(); return; }
     if (t.closest("[data-redo]")) { redo(); return; }
-    var device = t.closest("[data-set-device]");
-    if (device) { setDevice(device.getAttribute("data-set-device")); return; }
+    var pickDevice = t.closest("[data-set-device]");
+    if (pickDevice) {
+      setDevice(pickDevice.getAttribute("data-set-device"));
+      return;
+    }
+    var pickZoom = t.closest("[data-set-zoom]");
+    if (pickZoom) { setZoom(pickZoom.getAttribute("data-set-zoom")); return; }
+    if (t.closest("[data-preview-toggle]")) { setPreview(!previewing); return; }
+    // Nothing on the canvas is editable while the page is being previewed,
+    // because what is on the canvas then is not the editor's markup.
+    if (previewing && t.closest("[data-preview-canvas]")) return;
 
     var addOpen = t.closest("[data-add-open]");
     if (addOpen) {
@@ -1080,6 +1223,101 @@
     if (dropLine && dropLine.parentNode) dropLine.remove();
   }
 
+  /* ---- where on the page, not just how far down it ----
+
+     The canvas is twelve columns wide. Dragging a block left or right
+     picks which of them it starts at, and it keeps whatever width it
+     already has, so a block can be put beside another one rather than
+     only above or below it. The line that shows where it will land is
+     drawn at that column and that width — it is the block's footprint,
+     not a full-width rule, so what you are shown is what you get. */
+
+  var COLUMNS = 12;
+
+  function gridUnit() {
+    var box = canvas.getBoundingClientRect();
+    return box.width / COLUMNS;
+  }
+
+  function spanOf(block) {
+    var n = parseInt((block.fields || {}).col_span, 10);
+    return isNaN(n) ? COLUMNS : Math.min(COLUMNS, Math.max(1, n));
+  }
+
+  function startOf(block) {
+    var n = parseInt((block.fields || {}).col_start, 10);
+    var start = isNaN(n) ? 1 : Math.min(COLUMNS, Math.max(1, n));
+    return Math.min(start, COLUMNS + 1 - spanOf(block));
+  }
+
+  // Which column the pointer is over, as a start for a block this wide.
+  function columnUnderPointer(clientX, span) {
+    var box = canvas.getBoundingClientRect();
+    var unit = box.width / COLUMNS;
+    // The pointer holds the middle of the block, which is where a hand
+    // expects to be holding it.
+    var left = clientX - box.left - (span * unit) / 2;
+    var start = Math.round(left / unit) + 1;
+    return Math.min(COLUMNS + 1 - span, Math.max(1, start));
+  }
+
+  function placeBlock(block, start, span) {
+    block.fields.col_start = String(start);
+    block.fields.col_span = String(span);
+    var slot = slotFor(block.id);
+    if (slot) {
+      slot.style.gridColumn = (start === 1 && span === COLUMNS)
+        ? "" : start + "/span " + span;
+    }
+  }
+
+  /* ---- pulling a block narrower ----
+     Not an HTML5 drag: that gesture reports where the pointer went, and
+     what this needs is where it is, continuously, so the block can follow
+     the hand a column at a time. */
+
+  var sizing = null;
+
+  root.addEventListener("pointerdown", function (e) {
+    var grab = e.target.closest && e.target.closest("[data-grab-width]");
+    if (!grab) return;
+    var slot = grab.closest("[data-slot]");
+    var block = slot && blockById(slot.getAttribute("data-slot-id"));
+    if (!block) return;
+    e.preventDefault();
+    snapshot();
+    sizing = { block: block, start: startOf(block), was: spanOf(block) };
+    grab.setPointerCapture(e.pointerId);
+    root.classList.add("is-sizing-block");
+  });
+
+  root.addEventListener("pointermove", function (e) {
+    if (!sizing) return;
+    var box = canvas.getBoundingClientRect();
+    var edge = (e.clientX - box.left) / gridUnit();
+    var span = Math.round(edge) - (sizing.start - 1);
+    span = Math.min(COLUMNS + 1 - sizing.start, Math.max(1, span));
+    if (span === spanOf(sizing.block)) return;
+    placeBlock(sizing.block, sizing.start, span);
+  });
+
+  function endSizing() {
+    if (!sizing) return;
+    var was = sizing.was, block = sizing.block;
+    sizing = null;
+    root.classList.remove("is-sizing-block");
+    if (spanOf(block) === was) {
+      history.pop();               // nothing moved; don't litter undo
+      refreshUndoButtons();
+      return;
+    }
+    markDirty();
+    renderLayers();
+  }
+
+  root.addEventListener("pointerup", endSizing);
+  root.addEventListener("pointercancel", endSizing);
+
   root.addEventListener("dragstart", function (e) {
     var t = e.target;
     if (!t.closest) return;
@@ -1095,7 +1333,10 @@
       found = { node: item, kind: "item", sel: "[data-item]",
                 home: item.parentElement };
     } else if (slot) {
-      found = { node: slot, kind: "block", sel: "[data-slot]", home: canvas };
+      var held = blockById(slot.getAttribute("data-slot-id"));
+      found = { node: slot, kind: "block", sel: "[data-slot]", home: canvas,
+                span: held ? spanOf(held) : COLUMNS,
+                column: held ? startOf(held) : 1 };
     }
     if (!found) return;
     // Take the page as it stands first, so undo puts the drag back.
@@ -1136,6 +1377,13 @@
 
     if (drag.kind === "block") {
       if (after) over.after(theLine()); else over.before(theLine());
+      // Sideways as well as down: the column the pointer is over is the
+      // column the block will start at. The line is drawn at that column
+      // and at the block's own width, so it is the block's footprint
+      // rather than a rule across the page.
+      drag.column = columnUnderPointer(e.clientX, drag.span);
+      dropLine.style.gridColumn = drag.column + "/span " + drag.span;
+      dropLine.classList.toggle("is-part", drag.span < COLUMNS);
       return;
     }
     if (after) over.after(drag.node); else over.before(drag.node);
@@ -1157,6 +1405,8 @@
     drag = null;
     if (done.kind === "block" && dropLine && dropLine.parentNode) {
       dropLine.replaceWith(done.node);
+      var landed = blockById(done.node.getAttribute("data-slot-id"));
+      if (landed && done.column) placeBlock(landed, done.column, done.span);
     }
     clearLine();
     done.node.classList.remove("is-dragging");
@@ -1295,8 +1545,12 @@
   renderLayers();
   applyPageSettings();
   refreshUndoButtons();
-  var lastDevice = "wide";
-  try { lastDevice = window.localStorage.getItem("lp-device") || "wide"; }
-  catch (err) {}
+  var lastDevice = "wide", lastZoom = "fit";
+  try {
+    lastDevice = window.localStorage.getItem("lp-device") || "wide";
+    lastZoom = window.localStorage.getItem("lp-zoom") || "fit";
+  } catch (err) {}
+  setZoom(lastZoom);
   setDevice(lastDevice);
+  fitCanvas();
 })();

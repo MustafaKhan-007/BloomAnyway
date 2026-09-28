@@ -238,8 +238,9 @@ def create_app(config_class=None):
     # link, a coloured span) and are cleaned again here on the way out, so a
     # row written by an older version of the code, or edited straight in the
     # database, still cannot put markup of its own on the page.
-    from .services.landing_pages import (block_ink, block_style, render_text,
-                                         strip_marks, video_embed_url)
+    from .services.landing_pages import (block_ink, block_style, grid_style,
+                                         render_text, strip_marks,
+                                         video_embed_url)
 
     app.jinja_env.filters["lpline"] = lambda v: render_text(v, rich=False)
     app.jinja_env.filters["lprich"] = lambda v: render_text(v, rich=True)
@@ -247,6 +248,7 @@ def create_app(config_class=None):
     app.jinja_env.globals["lp_video_embed"] = video_embed_url
     app.jinja_env.globals["lp_block_style"] = block_style
     app.jinja_env.globals["lp_block_ink"] = block_ink
+    app.jinja_env.globals["lp_grid_style"] = grid_style
 
     from .services.social_graph import (
         linkify_mentions, recent_notifications, unread_notification_count,

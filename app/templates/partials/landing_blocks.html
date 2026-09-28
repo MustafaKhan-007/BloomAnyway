@@ -76,7 +76,7 @@
     ``--inked`` exists because the dark backgrounds colour their captions
     and card titles by hand. A colour of her own has to reach those too, or
     picking one changes the paragraphs and leaves everything else behind. -#}
-<section class="lp-block lp-block--{{ b.type }} lp-bg--{{ f.bg|default('cream') }} lp-pad--{{ pad }}{% if align %} lp-al--{{ align }}{% endif %}{% if f.bg_color %} lp-block--tinted{% endif %}{% if lp_block_ink(f) %} lp-block--inked{% endif %}"
+<section class="lp-block lp-block--{{ b.type }} lp-bg--{{ f.bg|default('cream') }} lp-pad--{{ pad }}{% if align %} lp-al--{{ align }}{% endif %}{% if f.bg_color %} lp-block--tinted{% endif %}{% if lp_block_ink(f) %} lp-block--inked{% endif %}{% if f.pull and f.pull != 'none' %} lp-pull--{{ f.pull }}{% endif %}"
          {% if f.anchor %}id="{{ f.anchor }}" {% endif %}{% if style %}style="{{ style }}" {% endif %}
          data-block="{{ b.id }}" data-type="{{ b.type }}">
 

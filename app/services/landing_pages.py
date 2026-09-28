@@ -39,6 +39,14 @@ LINE, RICH, URL, IMAGE, CHOICE, NUMBER = (
 #: rather than between tags, so both are cleaned down to a shape that cannot
 #: carry anything but what they are for.
 COLOR, ANCHOR = "color", "anchor"
+#: A whole number in a range — where a block sits across the page, and how
+#: much of it the block takes.
+SPAN = "span"
+
+#: The page is twelve columns wide. Everything defaults to all twelve, which
+#: is a block stacked under the last one — exactly what every page did
+#: before there were columns at all.
+GRID_COLUMNS = 12
 
 MAX_LINE = 1200      # generous: the cap is on markup, not on words
 MAX_RICH = 20000
@@ -172,6 +180,19 @@ def _width(default="normal"):
 #: fortnight used to mean deleting it and writing it again afterwards, so
 #: people kept a second copy of the page instead.
 COMMON_FIELDS: dict[str, dict] = {
+    # Where it sits across the page and how much of it it takes. Twelve of
+    # twelve starting at one is a block on its own line, which is what
+    # every block was before any of this — so a page written last month
+    # comes out of here looking exactly as it did.
+    "col_span": {"kind": SPAN, "min": 1, "max": GRID_COLUMNS,
+                 "default": GRID_COLUMNS, "label": "Width"},
+    "col_start": {"kind": SPAN, "min": 1, "max": GRID_COLUMNS,
+                  "default": 1, "label": "Starts at column"},
+    # Pulls a block up into the one above it, for overlapping a card onto a
+    # hero and the like. Steps rather than a number: a free measurement is
+    # a thing to fiddle with for an hour and get wrong on a phone.
+    "pull": {"kind": CHOICE, "options": ("none", "small", "medium", "large"),
+             "default": "none", "label": "Pull up into the block above"},
     "visible": {"kind": CHOICE, "options": ("show", "hide"),
                 "default": "show", "label": "On the page"},
     "bg_color": {"kind": COLOR, "default": "", "label": "Background colour"},
@@ -587,6 +608,44 @@ def clean_color(value) -> str:
     return raw if _HEX.match(raw) else ""
 
 
+def clean_span(value, lo: int, hi: int, default: int) -> int:
+    """A whole number inside its range, or the default."""
+    try:
+        number = int(str(value).strip())
+    except (TypeError, ValueError):
+        return default
+    return number if lo <= number <= hi else default
+
+
+def grid_area(fields) -> tuple[int, int]:
+    """``(start, span)`` for a block, kept inside the twelve columns.
+
+    Clamped here rather than trusted: a span of 8 starting at column 9
+    would run off the end of the grid, and CSS answers that by inventing
+    four more columns and squeezing the whole page into them.
+    """
+    bag = fields or {}
+    span = clean_span(bag.get("col_span"), 1, GRID_COLUMNS, GRID_COLUMNS)
+    start = clean_span(bag.get("col_start"), 1, GRID_COLUMNS, 1)
+    if start + span > GRID_COLUMNS + 1:
+        start = max(1, GRID_COLUMNS + 1 - span)
+    return start, span
+
+
+def grid_style(fields) -> str:
+    """``grid-column:…`` for a block, or "" when it is the whole width.
+
+    Printed twice: onto the block itself for the live page, and onto the
+    wrapper the builder puts around it — because the grid item is the
+    block out there and the wrapper in here, and the two have to lay out
+    the same or the builder is showing something the visitor won't get.
+    """
+    start, span = grid_area(fields)
+    if (start, span) == (1, GRID_COLUMNS):
+        return ""
+    return f"grid-column:{start}/span {span}"
+
+
 def clean_anchor(value) -> str:
     """A name a link can jump to: lowercase letters, digits and dashes.
 
@@ -638,13 +697,18 @@ def block_ink(fields) -> str:
 
 
 def block_style(fields) -> str:
-    """The inline style a block's own colours need, or "".
+    """Everything about a block that has to be a style rather than a class.
 
-    Every value here has been through :func:`clean_color`, so each is a
-    hash and three or six hex digits or it is not here at all.
+    Where it sits on the twelve-column grid, and any colours of its own.
+    Every value here has been through a cleaner that can only return a
+    number in range or a hash and hex digits, so none of it can carry
+    anything but what it is for.
     """
     bag = fields or {}
     bits = []
+    placed = grid_style(bag)
+    if placed:
+        bits.append(placed)
     background = clean_color(bag.get("bg_color"))
     if background:
         bits.append(f"background:{background}")
@@ -670,6 +734,9 @@ def _clean_field(spec: dict, value):
         return clean_color(value)
     if kind == ANCHOR:
         return clean_anchor(value)
+    if kind == SPAN:
+        return clean_span(value, spec.get("min", 1), spec.get("max", 12),
+                          spec["default"])
     return ""
 
 
@@ -978,7 +1045,8 @@ def editor_context() -> dict:
             {"key": k,
              "kind": f["kind"],
              "label": f.get("label", k.replace("_", " ").capitalize()),
-             "options": list(f.get("options", ()))}
+             "options": list(f.get("options", ())),
+             "min": f.get("min"), "max": f.get("max")}
             for k, f in fields.items()
         ]
 

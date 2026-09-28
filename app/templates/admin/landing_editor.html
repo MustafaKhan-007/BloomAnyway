@@ -12,6 +12,7 @@
      data-lp-editor
      data-save-url="{{ url_for('admin.landing_save', page_id=page.id) }}"
      data-render-url="{{ url_for('admin.landing_render_block') }}"
+     data-preview-url="{{ url_for('admin.landing_preview_html') }}"
      data-upload-url="{{ url_for('admin.landing_image_upload') }}">
 
   <div class="lp-ed__bar">
@@ -39,6 +40,19 @@
         <button type="button" class="lp-ed__device" data-set-device="phone"
                 aria-pressed="false" title="Phone" aria-label="Phone width">&#128241;</button>
       </span>
+      {# The canvas is laid out at a real screen's width and shrunk to fit
+         the room there is, so what it shows is what that screen gets.
+         "Actual size" hands the room back for typing. #}
+      <span class="lp-ed__devices" role="group" aria-label="Canvas size">
+        <button type="button" class="lp-ed__device is-on" data-set-zoom="fit"
+                aria-pressed="true" title="Shrink the page to fit">Fit</button>
+        <button type="button" class="lp-ed__device" data-set-zoom="full"
+                aria-pressed="false" title="Show the page at its real size">1:1</button>
+      </span>
+      {# The same macro the public page uses, run with the editing hooks
+         off. Not a likeness of the page — the page. #}
+      <button type="button" class="btn btn--quiet btn--sm" data-preview-toggle
+              aria-pressed="false">Preview</button>
       <button type="button" class="lp-ed__icon" data-undo title="Undo (Ctrl+Z)" aria-label="Undo" disabled>&#8630;</button>
       <button type="button" class="lp-ed__icon" data-redo title="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled>&#8631;</button>
       <span class="lp-ed__state" data-state
@@ -77,20 +91,23 @@
        The device frame narrows the canvas rather than swapping in a second
        rendering of the page, so what is being looked at on a phone width
        is the same markup, still typeable. #}
-    <div class="lp-ed__frame" data-device-frame data-device="wide">
-      <div class="lp-ed__canvas">
-        <div class="lp" data-canvas>
-          {% for b in blocks %}
-            {% set label = defs[b.type].label if b.type in defs else b.type %}
-            {% include "admin/_landing_slot.html" with context %}
-          {% endfor %}
+    <div class="lp-ed__middle">
+      <div class="lp-ed__frame" data-device-frame data-device="wide">
+        <div class="lp-ed__canvas" data-scaler>
+          <div class="lp" data-canvas>
+            {% for b in blocks %}
+              {% set label = defs[b.type].label if b.type in defs else b.type %}
+              {% include "admin/_landing_slot.html" with context %}
+            {% endfor %}
+          </div>
+          <div data-preview-canvas hidden></div>
+          {% if not blocks %}
+          <p class="lp-ed__blank">This page has no blocks yet. Add one below.</p>
+          {% endif %}
         </div>
-        {% if not blocks %}
-        <p class="lp-ed__blank">This page has no blocks yet. Add one below.</p>
-        {% endif %}
-        <div class="lp-ed__tail">
-          <button type="button" class="lp-ed__addbig" data-add-open data-at-end>+ Add a block at the end</button>
-        </div>
+      </div>
+      <div class="lp-ed__tail">
+        <button type="button" class="lp-ed__addbig" data-add-open data-at-end>+ Add a block at the end</button>
       </div>
     </div>
 
