@@ -8,12 +8,30 @@ from datetime import timedelta
 
 
 def _database_url() -> str:
+    """The database URL, with the driver spelled out.
+
+    Render (and Heroku) hand out ``postgres://``, which SQLAlchemy 2.x
+    rejects outright, so that prefix has always been rewritten here.
+
+    The driver is named too, and that part is not cosmetic. A bare
+    ``postgresql://`` means "whatever this version of SQLAlchemy considers
+    the default driver", and in 2.1 that default moved from psycopg2 to
+    psycopg 3. This app installs ``psycopg2-binary``, so the day a build
+    resolved SQLAlchemy 2.1 the engine went looking for a psycopg that was
+    never there, and every deploy died on `flask db upgrade` with
+    ``No module named 'psycopg'``. Saying ``+psycopg2`` makes the choice ours
+    rather than the library's.
+
+    A URL that already names a driver (``postgresql+psycopg://``, say, if
+    this ever moves to psycopg 3) is left exactly as it is.
+    """
     url = os.environ.get("DATABASE_URL", "").strip()
     if not url:
         return "sqlite:///firstlight-dev.db"
-    # Render (and Heroku) hand out postgres:// which SQLAlchemy 2.x rejects.
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
+    if url.startswith("postgresql://"):
+        url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
     return url
 
 

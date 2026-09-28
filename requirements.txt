@@ -4,7 +4,12 @@ Flask-Migrate>=4.0,<5
 Flask-Login>=0.6.3,<0.7
 Flask-WTF>=1.2,<2
 Flask-Limiter>=3.8,<5
-SQLAlchemy>=2.0,<3
+# 2.1 is tested and fine, but it is where the default Postgres driver moved
+# from psycopg2 to psycopg 3 — which took the site down on a deploy that
+# changed no code at all, because nothing here pins a driver by name. The
+# URL now says +psycopg2 (see app/config.py), and the ceiling keeps the next
+# release of a library this central from arriving unannounced.
+SQLAlchemy>=2.0,<2.2
 psycopg2-binary>=2.9,<3
 gunicorn>=22.0
 Markdown>=3.6,<4

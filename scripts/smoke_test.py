@@ -12311,6 +12311,34 @@ ok("Its address 404s afterwards, and so does one that never existed",
    _guest.get(f"/p/{_lp_slug}").status_code == 404
    and _guest.get("/p/no-such-landing-page-xyz").status_code == 404)
 
+# --- the database URL says which driver ------------------------------------
+# A bare postgresql:// means "whatever this version of SQLAlchemy calls the
+# default driver". In 2.1 that moved from psycopg2 to psycopg 3, and since
+# only psycopg2 is installed, every deploy died on `flask db upgrade` with
+# "No module named 'psycopg'" — with no code change behind it. The driver is
+# named outright now, and this is what keeps it named.
+from app.config import _database_url as _db_url  # noqa: E402
+
+_saved_db_url = os.environ.get("DATABASE_URL")
+try:
+    os.environ["DATABASE_URL"] = "postgres://u:p@host:5432/db"
+    ok("A Render-style postgres:// URL comes out naming psycopg2",
+       _db_url() == "postgresql+psycopg2://u:p@host:5432/db", _db_url())
+    os.environ["DATABASE_URL"] = "postgresql://u:p@host:5432/db"
+    ok("And so does a postgresql:// one",
+       _db_url() == "postgresql+psycopg2://u:p@host:5432/db", _db_url())
+    os.environ["DATABASE_URL"] = "postgresql+psycopg://u:p@host:5432/db"
+    ok("A URL that already names a driver is left exactly as it is",
+       _db_url() == "postgresql+psycopg://u:p@host:5432/db", _db_url())
+    os.environ["DATABASE_URL"] = ""
+    ok("And no URL at all still means the local SQLite file",
+       _db_url().startswith("sqlite:///"), _db_url())
+finally:
+    if _saved_db_url is None:
+        os.environ.pop("DATABASE_URL", None)
+    else:
+        os.environ["DATABASE_URL"] = _saved_db_url
+
 # --- the stylesheet is still readable text ---------------------------------
 # Twice now an edit has been saved with UTF-8 read back as Latin-1, which turns
 # a "–" in a `content:` rule into "â" and two boxes on the page. It is invisible
