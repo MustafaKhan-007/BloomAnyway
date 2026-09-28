@@ -421,43 +421,57 @@ Everything else is optional or auto-managed:
 ## 4i. Landing pages you build yourself
 
 - **Studio → Landing pages** (`/admin/landing`). *New landing page* gives you a
-  whole page already laid out — hero, numbers, cards, a quote, questions, a
-  call to action — rather than a blank canvas, because something to change is
-  much easier than something to start. It lives at `/p/<slug>`.
-- **A page is a list of blocks**, each one a type and a bag of words, kept as
-  JSON in `landing_pages.draft_json`. Ten types (`hero`, `text`, `image`,
-  `image_text`, `features`, `stats`, `quote`, `faq`, `cta`, `divider`), each
-  with a background, and some with repeating items you can add and remove.
+  whole page already laid out rather than a blank canvas, because something to
+  change is much easier than something to start. It lives at `/p/<slug>`.
+- **The builder** has three columns: the list of blocks on the left (click to
+  jump, drag to reorder, arrows and a bin on each), the page itself in the
+  middle, and whatever is selected on the right. Every block wears its own
+  toolbar — move, settings, duplicate, delete — and a **+** between any two
+  blocks adds one right there. None of it waits for a hover.
+- **Fifteen block types** (`hero`, `text`, `columns`, `image`, `image_text`,
+  `gallery`, `video`, `features`, `stats`, `quote`, `faq`, `buttons`, `cta`,
+  `divider`, `spacer`), each with its own background, spacing, alignment and
+  width, and several with repeating items you can add, reorder and remove.
   The whole schema is `BLOCK_DEFS` in `app/services/landing_pages.py`.
+- **Formatting.** Select any words on the page and a bar appears: bold,
+  italic, underline, strikethrough, bulleted and numbered lists, a link, six
+  colours, bigger/smaller, and clear. Ctrl+Z undoes a structural change;
+  inside a field the browser's own undo handles the typing.
+- **Page-wide settings** (the *Page* button above the block list): accent
+  colour, headings font, page width, whether the site header and footer show
+  at all, and the description and picture used when the link is shared.
 - **Save is not Publish.** `draft_json` is what Studio shows and Save writes;
   `published_json` is what a visitor gets, and only Publish copies one onto
   the other. A page that has never been published is a **404** to everyone
   else — so a half-built page can sit there for a week without anyone having
   to remember to hide it. The owner reads their own draft at
-  `/p/<slug>?preview=1`, which is the only way to see one before it goes out,
-  and a bar across the top says so. *Unpublish* takes a page off the site and
-  leaves the draft alone.
+  `/p/<slug>?preview=1`, with a bar across the top saying so.
 - **The canvas is the page.** `partials/landing_blocks.html` is the only thing
   that turns a block into markup, and both the live page and the builder call
-  it — the builder just passes `editing=True`, which adds contenteditable text,
-  picture buttons and item handles. So there is no second renderer to drift.
-  When something structural changes (a block added, a background picked, a
-  picture swapped) the browser posts the block to
-  `/admin/landing/render-block` and swaps in what comes back; only typing
-  stays in the browser, because a round trip per keystroke would be miserable.
-- **Nothing on a landing page is ever stored or rendered as HTML.** The editor
-  sends `innerText`, never `innerHTML`; the server keeps only fields it knows
-  about, drops block types it doesn't, forces every choice back onto its list,
-  and puts URLs through `clean_url` (which refuses `javascript:`, `data:` and
-  protocol-relative links). Jinja escapes the rest. That is what stops a page
-  built in Studio being a way to put script on the site.
+  it — the builder just passes `editing=True`. When something structural
+  changes, the browser posts the block to `/admin/landing/render-block` and
+  swaps in what comes back; only typing and formatting stay in the browser.
+- **What a text field may hold** is a short allow-list — bold, italic,
+  underline, strike, a link, a list, `mark`, and a `span` carrying one of the
+  `lp-t--*` classes — enforced with bleach in `landing_pages._sanitize`, on
+  the way in **and** again on the way out. `strip=False` is deliberate: a tag
+  we don't allow is escaped rather than deleted, so it shows as the words
+  somebody typed, and text stored back when these fields were plain still
+  reads exactly as it did. Links go through `clean_url` (no `javascript:`,
+  `data:` or protocol-relative). A `video` block is the one iframe a page can
+  draw, and only from a YouTube or Vimeo id this code extracted itself.
 - **Pictures** upload to `/admin/landing/images` and are kept in Postgres as
   `SiteImage` rows under an `lp_` key (like avatars), so they survive Render's
   ephemeral disk; they are served from `/media/site/<key>`. You can paste an
   external URL instead. Deleting a page sweeps the pictures no page points at
-  any more, draft or published.
+  any more — including the ones on gallery and card *items*, not just on the
+  blocks themselves.
 - Slugs are tidied (`Spring Launch!!` → `spring-launch`), made unique, and kept
   off paths something else already answers on (`RESERVED_SLUGS`).
+- **Storage shape.** A page is `{"blocks": [...], "settings": {...}}`. Pages
+  written before there were settings are a bare JSON list, and
+  `document_from_json` still reads that — no migration, and no page that has
+  to be opened and re-saved to keep working.
 
 ## 5. Security notes
 

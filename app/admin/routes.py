@@ -4234,10 +4234,13 @@ def landing_new():
 def landing_edit(page_id):
     page = _landing_or_404(page_id)
     context = lp_svc.editor_context()
+    doc = lp_svc.document_from_json(page.draft_json)
     return render_template(
         "admin/landing_editor.html", page=page,
-        blocks=lp_svc.blocks_from_json(page.draft_json),
-        defs=context["defs"], block_order=context["order"])
+        blocks=doc["blocks"], settings=doc["settings"],
+        defs=context["defs"], block_order=context["order"],
+        page_state={"settings": doc["settings"],
+                    "page_fields": context["page_fields"]})
 
 
 @bp.route("/landing/<int:page_id>/save", methods=["POST"])
@@ -4248,7 +4251,8 @@ def landing_save(page_id):
     try:
         lp_svc.save_draft(page, payload.get("blocks"),
                           title=payload.get("title"),
-                          slug=payload.get("slug"))
+                          slug=payload.get("slug"),
+                          settings=payload.get("settings"))
         db.session.commit()
     except Exception:
         db.session.rollback()

@@ -1,11 +1,16 @@
 """Landing pages the owner builds herself, block by block.
 
-A page is a list of blocks, each one a type and a bag of fields, kept as JSON.
-Nothing here is HTML: the editor sends back the *words*, and
-``partials/landing_blocks.html`` is the only thing that turns them into
-markup. That is what keeps a page built in Studio from being a way to put
-script on the site — everything below is text, a picked-from-a-list choice,
-or a URL that has been looked at.
+A page is a list of blocks, each one a type and a bag of fields, kept as JSON,
+plus a few page-wide settings. ``partials/landing_blocks.html`` is the only
+thing that turns any of it into markup.
+
+**On formatting.** Text fields hold a small, fixed set of HTML — bold, italic,
+underline, strikethrough, a link, a list, a coloured span — and nothing else.
+Everything that arrives is put through bleach against the allow-lists below,
+on the way in *and* again on the way out. ``strip=False`` is deliberate: a tag
+we don't allow is escaped rather than deleted, so it shows as the words
+somebody typed instead of vanishing, and text stored back when these fields
+were plain reads exactly as it did then.
 
 Every page has two copies of itself. ``draft_json`` is what Studio shows and
 Save writes; ``published_json`` is what visitors get, and only Publish moves
@@ -20,28 +25,139 @@ import re
 import secrets
 from urllib.parse import urlparse
 
+import bleach
+from markupsafe import Markup
+
 from ..extensions import db
 from ..models import LandingPage, utcnow
 
-#: Field kinds. ``line`` and ``rich`` are edited on the page itself and always
-#: come back as plain text — the editor sends innerText, never innerHTML.
-#: The rest are edited in the side panel.
-LINE, RICH, URL, IMAGE, CHOICE = "line", "rich", "url", "image", "choice"
+#: Field kinds. ``line`` and ``rich`` are typed on the page itself; the rest
+#: are set in the side panel.
+LINE, RICH, URL, IMAGE, CHOICE, NUMBER = (
+    "line", "rich", "url", "image", "choice", "number")
 
-MAX_LINE = 300
-MAX_RICH = 4000
+MAX_LINE = 1200      # generous: the cap is on markup, not on words
+MAX_RICH = 20000
 MAX_URL = 500
-MAX_BLOCKS = 60
-MAX_ITEMS = 20
+MAX_BLOCKS = 80
+MAX_ITEMS = 24
+
+
+# --- the formatting a text field may carry -----------------------------------
+
+#: Inline marks. ``b``/``i`` as well as ``strong``/``em`` because which one a
+#: browser writes for Ctrl+B is its own business.
+_INLINE_TAGS = ["strong", "b", "em", "i", "u", "s", "mark", "span", "br"]
+#: Blocks, for the fields with room for them.
+_BLOCK_TAGS = ["p", "ul", "ol", "li", "a"]
+
+LINE_TAGS = _INLINE_TAGS + ["a"]
+RICH_TAGS = _INLINE_TAGS + _BLOCK_TAGS
+
+#: Colours and sizes a span may carry. Classes, not inline styles — a style
+#: attribute is a whole grammar to have to police, and this is six words.
+TEXT_CLASSES = (
+    "lp-t--plum", "lp-t--berry", "lp-t--rose", "lp-t--gold", "lp-t--muted",
+    "lp-t--white", "lp-t--big", "lp-t--small", "lp-t--caps",
+)
+
+
+def _span_class_ok(tag, name, value):
+    if name != "class":
+        return False
+    return all(part in TEXT_CLASSES for part in str(value).split())
+
+
+def _link_attr_ok(tag, name, value):
+    if name == "href":
+        return bool(clean_url(value))
+    return name in ("target", "rel", "title")
+
+
+_ATTRS = {"span": _span_class_ok, "a": _link_attr_ok}
+_PROTOCOLS = ["http", "https", "mailto"]
+
+#: A browser writes a new line in a contenteditable as a div, and div is not
+#: a tag worth allowing. Turned into what it means before cleaning.
+_DIV_OPEN = re.compile(r"<div\b[^>]*>", re.I)
+_DIV_CLOSE = re.compile(r"</div\s*>", re.I)
+_BLOCK_SPLIT = re.compile(r"</(?:p|div|li)\s*>\s*<(?:p|div|li)\b[^>]*>", re.I)
+_ANY_BLOCK = re.compile(r"</?(?:p|div|ul|ol|li)\b[^>]*>", re.I)
+
+
+def _sanitize(raw, tags, *, single_line: bool) -> str:
+    """Clean one text field down to the marks we allow."""
+    text = str(raw if raw is not None else "")
+    text = text.replace(" ", " ").replace("\r\n", "\n").replace("\r", "\n")
+    if single_line:
+        # One line of writing: paragraph breaks become line breaks, and any
+        # block tag left over goes, so a heading can never contain a list.
+        text = _BLOCK_SPLIT.sub("<br>", text)
+        text = _ANY_BLOCK.sub("", text)
+    else:
+        text = _DIV_OPEN.sub("<p>", text)
+        text = _DIV_CLOSE.sub("</p>", text)
+    cleaned = bleach.clean(text, tags=tags, attributes=_ATTRS,
+                           protocols=_PROTOCOLS, strip=False)
+    # A field holding only empty markup is an empty field, so the editor's
+    # placeholder shows instead of a blank box nobody can find.
+    if not bleach.clean(cleaned, tags=[], strip=True).strip():
+        if "<img" not in cleaned:
+            return ""
+    return cleaned.strip()
+
+
+def clean_line(value) -> str:
+    return _sanitize(value, LINE_TAGS, single_line=True)[:MAX_LINE]
+
+
+def clean_rich(value) -> str:
+    return _sanitize(value, RICH_TAGS, single_line=False)[:MAX_RICH]
+
+
+def render_text(value, *, rich: bool = True) -> Markup:
+    """What the templates print. Cleaned again here, on purpose.
+
+    Cleaning on save is what makes the stored page safe; cleaning again on
+    the way out is what makes a row written by an older version of this file,
+    or edited by hand in the database, safe too. It costs a few microseconds
+    on a string the length of a headline.
+    """
+    tags = RICH_TAGS if rich else LINE_TAGS
+    return Markup(_sanitize(value, tags, single_line=not rich))
+
+
+def strip_marks(value) -> str:
+    """The words with no formatting — for titles, previews and alt text."""
+    return bleach.clean(str(value or ""), tags=[], strip=True).strip()
+
 
 #: Background treatments a block may be given. The value is a class suffix;
 #: anything not on this list is dropped back to the default.
-BACKGROUNDS = ("cream", "soft", "plum", "dark")
+BACKGROUNDS = ("cream", "soft", "plum", "dark", "accent", "none")
+PADDINGS = ("none", "small", "medium", "large", "huge")
+ALIGNMENTS = ("left", "center", "right")
+WIDTHS = ("narrow", "normal", "wide", "full")
 
 
 def _bg(default="cream"):
     return {"kind": CHOICE, "options": BACKGROUNDS, "default": default,
             "label": "Background"}
+
+
+def _pad(default="medium"):
+    return {"kind": CHOICE, "options": PADDINGS, "default": default,
+            "label": "Space around"}
+
+
+def _align(default="left"):
+    return {"kind": CHOICE, "options": ALIGNMENTS, "default": default,
+            "label": "Alignment"}
+
+
+def _width(default="normal"):
+    return {"kind": CHOICE, "options": WIDTHS, "default": default,
+            "label": "Content width"}
 
 
 #: Every block the builder can make, and every field it may carry. A field
@@ -50,63 +166,140 @@ def _bg(default="cream"):
 BLOCK_DEFS: dict[str, dict] = {
     "hero": {
         "label": "Hero",
+        "icon": "★",
         "hint": "Big opening — headline, a line under it, one button.",
         "fields": {
             "eyebrow": {"kind": LINE, "default": "A NEW ROUND IS OPEN"},
-            "heading": {"kind": LINE, "default": "You don't need an audience.\nYou need a plan."},
+            "heading": {"kind": LINE, "default": "You don't need an audience.<br>You need a plan."},
             "body": {"kind": RICH, "default": "Eight weeks, four stages, and a room full of women doing it with you."},
             "button_text": {"kind": LINE, "default": "Join the challenge"},
-            "button_url": {"kind": URL, "default": "/courses"},
+            "button_url": {"kind": URL, "default": "/courses", "label": "Button link"},
+            "button2_text": {"kind": LINE, "default": "", "label": "Second button"},
+            "button2_url": {"kind": URL, "default": "", "label": "Second button link"},
             "image": {"kind": IMAGE, "default": "", "label": "Background image"},
+            "overlay": {"kind": CHOICE, "options": ("dark", "light", "none"),
+                        "default": "dark", "label": "Darken the picture"},
+            "height": {"kind": CHOICE, "options": ("short", "tall", "full"),
+                       "default": "tall", "label": "Height"},
+            "align": _align("center"),
             "bg": _bg("plum"),
         },
     },
     "text": {
         "label": "Text",
+        "icon": "¶",
         "hint": "A heading and a paragraph.",
         "fields": {
             "heading": {"kind": LINE, "default": "A heading goes here"},
-            "body": {"kind": RICH, "default": "And the words that go under it. Write as much or as little as you like — press Enter for a new line."},
-            "align": {"kind": CHOICE, "options": ("left", "center"),
-                      "default": "left", "label": "Alignment"},
+            "body": {"kind": RICH, "default": "And the words that go under it. Select any of this to make it <strong>bold</strong>, <em>italic</em> or a link."},
+            "align": _align(),
+            "width": _width(),
+            "pad": _pad(),
             "bg": _bg(),
+        },
+    },
+    "columns": {
+        "label": "Columns",
+        "icon": "▥",
+        "hint": "Two or three columns of writing side by side.",
+        "fields": {
+            "heading": {"kind": LINE, "default": ""},
+            "count": {"kind": CHOICE, "options": ("2", "3"), "default": "2",
+                      "label": "Columns"},
+            "align": _align(),
+            "pad": _pad(),
+            "bg": _bg(),
+        },
+        "items": {
+            "label": "Column",
+            "max": 4,
+            "fields": {
+                "title": {"kind": LINE, "default": "A column"},
+                "body": {"kind": RICH, "default": "What goes in it."},
+            },
+            "default_count": 2,
         },
     },
     "image": {
         "label": "Image",
+        "icon": "▣",
         "hint": "One picture, with an optional caption.",
         "fields": {
             "image": {"kind": IMAGE, "default": ""},
+            "link": {"kind": URL, "default": "", "label": "Picture links to"},
             "caption": {"kind": LINE, "default": ""},
-            "width": {"kind": CHOICE, "options": ("narrow", "wide", "full"),
-                      "default": "wide", "label": "Width"},
+            "width": _width("wide"),
+            "rounded": {"kind": CHOICE, "options": ("yes", "no"),
+                        "default": "yes", "label": "Rounded corners"},
+            "pad": _pad(),
             "bg": _bg(),
+        },
+    },
+    "gallery": {
+        "label": "Gallery",
+        "icon": "▦",
+        "hint": "A grid of pictures.",
+        "fields": {
+            "heading": {"kind": LINE, "default": ""},
+            "count": {"kind": CHOICE, "options": ("2", "3", "4"), "default": "3",
+                      "label": "Per row"},
+            "pad": _pad(),
+            "bg": _bg(),
+        },
+        "items": {
+            "label": "Picture",
+            "max": 12,
+            "fields": {
+                "image": {"kind": IMAGE, "default": ""},
+                "caption": {"kind": LINE, "default": ""},
+            },
+            "default_count": 3,
         },
     },
     "image_text": {
         "label": "Image & text",
+        "icon": "◧",
         "hint": "A picture beside words.",
         "fields": {
             "image": {"kind": IMAGE, "default": ""},
             "heading": {"kind": LINE, "default": "Something worth showing"},
             "body": {"kind": RICH, "default": "Put the picture on whichever side reads better."},
             "button_text": {"kind": LINE, "default": ""},
-            "button_url": {"kind": URL, "default": ""},
+            "button_url": {"kind": URL, "default": "", "label": "Button link"},
             "side": {"kind": CHOICE, "options": ("left", "right"),
                      "default": "left", "label": "Picture on the"},
+            "ratio": {"kind": CHOICE, "options": ("even", "picture", "words"),
+                      "default": "even", "label": "Give more room to"},
+            "pad": _pad(),
+            "bg": _bg(),
+        },
+    },
+    "video": {
+        "label": "Video",
+        "icon": "▶",
+        "hint": "A YouTube or Vimeo video.",
+        "fields": {
+            "heading": {"kind": LINE, "default": ""},
+            "url": {"kind": URL, "default": "",
+                    "label": "YouTube or Vimeo link"},
+            "caption": {"kind": LINE, "default": ""},
+            "width": _width("wide"),
+            "pad": _pad(),
             "bg": _bg(),
         },
     },
     "stats": {
         "label": "Numbers",
+        "icon": "◆",
         "hint": "A row of figures worth shouting about.",
         "fields": {
             "heading": {"kind": LINE, "default": ""},
+            "pad": _pad(),
             "bg": _bg("soft"),
         },
         "items": {
             "label": "Number",
-            "max": 4,
+            "max": 6,
             "fields": {
                 "value": {"kind": LINE, "default": "100+"},
                 "label": {"kind": LINE, "default": "women through it"},
@@ -116,18 +309,24 @@ BLOCK_DEFS: dict[str, dict] = {
     },
     "features": {
         "label": "Cards",
+        "icon": "▤",
         "hint": "What's inside, one card each.",
         "fields": {
             "heading": {"kind": LINE, "default": "What's inside"},
             "body": {"kind": RICH, "default": ""},
-            "columns": {"kind": CHOICE, "options": ("2", "3"), "default": "3",
-                        "label": "Cards per row"},
+            "columns": {"kind": CHOICE, "options": ("2", "3", "4"),
+                        "default": "3", "label": "Cards per row"},
+            "card_style": {"kind": CHOICE, "options": ("raised", "outlined", "plain"),
+                           "default": "raised", "label": "Card style"},
+            "align": _align("center"),
+            "pad": _pad(),
             "bg": _bg(),
         },
         "items": {
             "label": "Card",
             "max": 12,
             "fields": {
+                "image": {"kind": IMAGE, "default": "", "label": "Picture"},
                 "title": {"kind": LINE, "default": "Stage one"},
                 "body": {"kind": RICH, "default": "What happens in it, in a sentence or two."},
             },
@@ -136,18 +335,25 @@ BLOCK_DEFS: dict[str, dict] = {
     },
     "quote": {
         "label": "Quote",
+        "icon": "❝",
         "hint": "Someone else's words.",
         "fields": {
             "quote": {"kind": RICH, "default": "I came in with nothing to sell and left with something people wanted."},
             "attribution": {"kind": LINE, "default": "— A member"},
+            "image": {"kind": IMAGE, "default": "", "label": "Their photo"},
+            "pad": _pad(),
             "bg": _bg("soft"),
         },
     },
     "faq": {
         "label": "Questions",
+        "icon": "?",
         "hint": "The things people ask before they buy.",
         "fields": {
             "heading": {"kind": LINE, "default": "Before you join"},
+            "style": {"kind": CHOICE, "options": ("open", "folded"),
+                      "default": "open", "label": "Answers"},
+            "pad": _pad(),
             "bg": _bg(),
         },
         "items": {
@@ -160,30 +366,87 @@ BLOCK_DEFS: dict[str, dict] = {
             "default_count": 3,
         },
     },
+    "buttons": {
+        "label": "Buttons",
+        "icon": "⬭",
+        "hint": "A row of links, on their own.",
+        "fields": {
+            "heading": {"kind": LINE, "default": ""},
+            "align": _align("center"),
+            "pad": _pad("small"),
+            "bg": _bg(),
+        },
+        "items": {
+            "label": "Button",
+            "max": 4,
+            "fields": {
+                "text": {"kind": LINE, "default": "Join now"},
+                "url": {"kind": URL, "default": "/courses", "label": "Links to"},
+                "style": {"kind": CHOICE, "options": ("solid", "outline", "quiet"),
+                          "default": "solid", "label": "Style"},
+            },
+            "default_count": 1,
+        },
+    },
     "cta": {
         "label": "Call to action",
+        "icon": "➜",
         "hint": "The ask, on its own.",
         "fields": {
             "heading": {"kind": LINE, "default": "Ready when you are"},
             "body": {"kind": RICH, "default": "Doors are open now."},
             "button_text": {"kind": LINE, "default": "Join now"},
-            "button_url": {"kind": URL, "default": "/courses"},
+            "button_url": {"kind": URL, "default": "/courses", "label": "Button link"},
+            "align": _align("center"),
+            "pad": _pad("large"),
             "bg": _bg("plum"),
         },
     },
     "divider": {
         "label": "Divider",
-        "hint": "A little breathing room.",
+        "icon": "—",
+        "hint": "A line across the page.",
         "fields": {
+            "style": {"kind": CHOICE, "options": ("line", "dots", "fade"),
+                      "default": "line", "label": "Style"},
+            "pad": _pad("small"),
             "bg": _bg(),
+        },
+    },
+    "spacer": {
+        "label": "Space",
+        "icon": "␣",
+        "hint": "An empty gap.",
+        "fields": {
+            "size": {"kind": CHOICE, "options": ("small", "medium", "large", "huge"),
+                     "default": "medium", "label": "Height"},
+            "bg": _bg("none"),
         },
     },
 }
 
-#: The order they appear in the "add a block" menu.
-BLOCK_ORDER = ("hero", "text", "image", "image_text", "features", "stats",
-               "quote", "faq", "cta", "divider")
+#: The order they appear in the "add a block" menu, grouped the way somebody
+#: building a page thinks about them rather than alphabetically.
+BLOCK_ORDER = ("hero", "text", "columns", "image", "image_text", "gallery",
+               "video", "features", "stats", "quote", "faq", "buttons", "cta",
+               "divider", "spacer")
 
+#: Page-wide settings. Same shape as a block's fields so the side panel can
+#: draw them with the code it already has.
+PAGE_SETTINGS: dict[str, dict] = {
+    "accent": {"kind": CHOICE,
+               "options": ("plum", "berry", "rose", "gold", "ink"),
+               "default": "plum", "label": "Accent colour"},
+    "font": {"kind": CHOICE, "options": ("brand", "serif", "sans"),
+             "default": "brand", "label": "Headings font"},
+    "width": {"kind": CHOICE, "options": ("normal", "wide", "full"),
+              "default": "normal", "label": "Page width"},
+    "nav": {"kind": CHOICE, "options": ("show", "hide"), "default": "show",
+            "label": "Site header & footer"},
+    "description": {"kind": LINE, "default": "",
+                    "label": "Search/social description"},
+    "share_image": {"kind": IMAGE, "default": "", "label": "Share picture"},
+}
 
 class LandingPageError(ValueError):
     pass
@@ -231,23 +494,6 @@ def default_blocks() -> list[dict]:
 
 # --- cleaning what the editor sends back --------------------------------------
 
-def _clean_line(value) -> str:
-    text = str(value if value is not None else "")
-    # Editors leave non-breaking spaces behind; they read as spaces but don't
-    # compare or wrap like them.
-    text = text.replace(" ", " ").replace("\r\n", "\n").replace("\r", "\n")
-    text = "\n".join(line.strip() for line in text.split("\n"))
-    return text.strip()[:MAX_LINE]
-
-
-def _clean_rich(value) -> str:
-    text = str(value if value is not None else "")
-    text = text.replace(" ", " ").replace("\r\n", "\n").replace("\r", "\n")
-    # Any run of blank lines is one blank line; nobody means seven.
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip()[:MAX_RICH]
-
-
 def clean_url(value) -> str:
     """A link we are willing to put on a page, or "".
 
@@ -282,9 +528,9 @@ def _clean_choice(value, options, default) -> str:
 def _clean_field(spec: dict, value):
     kind = spec["kind"]
     if kind == LINE:
-        return _clean_line(value)
+        return clean_line(value)
     if kind == RICH:
-        return _clean_rich(value)
+        return clean_rich(value)
     if kind == URL:
         return clean_url(value)
     if kind == IMAGE:
@@ -353,22 +599,57 @@ def normalize_blocks(raw) -> list[dict]:
     return out
 
 
-def blocks_from_json(text: str | None) -> list[dict]:
-    """Read stored JSON back, forgiving anything that isn't readable.
+def normalize_settings(raw) -> dict:
+    """Page-wide settings, cleaned the same way a block's fields are."""
+    raw = raw if isinstance(raw, dict) else {}
+    return {key: _clean_field(spec, raw.get(key, spec["default"]))
+            for key, spec in PAGE_SETTINGS.items()}
 
-    A page whose JSON will not parse renders as an empty page rather than a
-    500 — the owner can still open the editor and put it right.
+
+def default_settings() -> dict:
+    return {k: v["default"] for k, v in PAGE_SETTINGS.items()}
+
+
+def document_from_json(text: str | None) -> dict:
+    """Read a stored page back as ``{"blocks": [...], "settings": {...}}``.
+
+    Pages saved before there were settings are a bare JSON list, so that
+    shape is still read — there is no migration to run and no page that has
+    to be opened and re-saved to keep working.
+
+    A page whose JSON will not parse comes back empty rather than raising:
+    the owner can still open the builder and put it right, which they could
+    not do if the page 500'd.
     """
     if not text:
-        return []
+        return {"blocks": [], "settings": default_settings()}
     try:
-        return normalize_blocks(json.loads(text))
+        data = json.loads(text)
     except (ValueError, TypeError):
-        return []
+        return {"blocks": [], "settings": default_settings()}
+    if isinstance(data, list):
+        return {"blocks": normalize_blocks(data),
+                "settings": default_settings()}
+    if isinstance(data, dict):
+        return {"blocks": normalize_blocks(data.get("blocks")),
+                "settings": normalize_settings(data.get("settings"))}
+    return {"blocks": [], "settings": default_settings()}
 
 
-def blocks_json(blocks: list[dict]) -> str:
-    return json.dumps(blocks, ensure_ascii=False, separators=(",", ":"))
+def blocks_from_json(text: str | None) -> list[dict]:
+    """Just the blocks of a stored page."""
+    return document_from_json(text)["blocks"]
+
+
+def settings_from_json(text: str | None) -> dict:
+    """Just the page-wide settings of a stored page."""
+    return document_from_json(text)["settings"]
+
+
+def blocks_json(blocks: list[dict], settings: dict | None = None) -> str:
+    return json.dumps({"blocks": blocks,
+                       "settings": normalize_settings(settings or {})},
+                      ensure_ascii=False, separators=(",", ":"))
 
 
 # --- slugs -------------------------------------------------------------------
@@ -411,11 +692,11 @@ def unique_slug(text: str, *, exclude_id: int | None = None) -> str:
 
 def create(title: str = "") -> LandingPage:
     """A new page, already laid out and not yet published."""
-    name = _clean_line(title) or "Untitled landing page"
+    name = strip_marks(title) or "Untitled landing page"
     page = LandingPage(
         title=name[:160],
         slug=unique_slug(name),
-        draft_json=blocks_json(default_blocks()),
+        draft_json=blocks_json(default_blocks(), default_settings()),
         published_json="",
     )
     db.session.add(page)
@@ -423,11 +704,18 @@ def create(title: str = "") -> LandingPage:
     return page
 
 
-def save_draft(page: LandingPage, blocks_raw, *, title=None, slug=None) -> None:
+def save_draft(page: LandingPage, blocks_raw, *, title=None, slug=None,
+               settings=None) -> None:
     """Write what the editor sent to the draft. Visitors see none of it."""
-    page.draft_json = blocks_json(normalize_blocks(blocks_raw))
+    # Settings the editor didn't send keep whatever the draft already had,
+    # so an older editor tab saving a page cannot silently reset them.
+    current = settings_from_json(page.draft_json)
+    if isinstance(settings, dict):
+        current.update(settings)
+    page.draft_json = blocks_json(normalize_blocks(blocks_raw),
+                                  normalize_settings(current))
     if title is not None:
-        cleaned = _clean_line(title)
+        cleaned = strip_marks(title)
         if cleaned:
             page.title = cleaned[:160]
     if slug is not None:
@@ -474,13 +762,24 @@ def referenced_image_keys() -> set[str]:
     before you publish, should not be the moment the file goes.
     """
     keys: set[str] = set()
+
+    def note(bag):
+        for value in (bag or {}).values():
+            if isinstance(value, str) and IMAGE_PREFIX in value:
+                keys.add(value.rsplit("/", 1)[-1])
+
     for draft, published in db.session.query(LandingPage.draft_json,
                                              LandingPage.published_json).all():
         for text in (draft, published):
-            for block in blocks_from_json(text):
-                for value in list(block.get("fields", {}).values()):
-                    if isinstance(value, str) and IMAGE_PREFIX in value:
-                        keys.add(value.rsplit("/", 1)[-1])
+            doc = document_from_json(text)
+            note(doc["settings"])
+            for block in doc["blocks"]:
+                note(block.get("fields"))
+                # Cards and galleries keep their pictures on the items, so a
+                # sweep that only read the block's own fields would delete
+                # every picture in a gallery the moment it ran.
+                for item in block.get("items") or []:
+                    note(item)
     return keys
 
 
@@ -518,22 +817,28 @@ def editor_context() -> dict:
     panel in alphabetical order (Background, Button, Image) instead of the
     order the fields are declared in. A list keeps the order we meant.
     """
+    def field_rows(fields):
+        return [
+            {"key": k,
+             "kind": f["kind"],
+             "label": f.get("label", k.replace("_", " ").capitalize()),
+             "options": list(f.get("options", ()))}
+            for k, f in fields.items()
+        ]
+
     return {
         "order": list(BLOCK_ORDER),
+        "page_fields": field_rows(PAGE_SETTINGS),
         "defs": {
             key: {
                 "label": spec["label"],
+                "icon": spec.get("icon", "▦"),
                 "hint": spec.get("hint", ""),
-                "fields": [
-                    {"key": k,
-                     "kind": f["kind"],
-                     "label": f.get("label", k.replace("_", " ").capitalize()),
-                     "options": list(f.get("options", ()))}
-                    for k, f in spec["fields"].items()
-                ],
+                "fields": field_rows(spec["fields"]),
                 "items": bool(spec.get("items")),
                 "item_label": (spec.get("items") or {}).get("label", "Item"),
                 "item_max": (spec.get("items") or {}).get("max", 0),
+                "item_fields": field_rows((spec.get("items") or {}).get("fields", {})),
                 # What an added item starts as, so the browser can put one in
                 # without asking us what a blank one looks like.
                 "item_defaults": new_item(key),
@@ -541,3 +846,26 @@ def editor_context() -> dict:
             for key, spec in BLOCK_DEFS.items()
         },
     }
+
+
+# --- video embeds --------------------------------------------------------------
+
+_YT = re.compile(
+    r"(?:youtube\.com/(?:watch\?v=|embed/|shorts/)|youtu\.be/)([A-Za-z0-9_-]{6,20})")
+_VIMEO = re.compile(r"vimeo\.com/(?:video/)?(\d{6,12})")
+
+
+def video_embed_url(url: str | None) -> str:
+    """A YouTube or Vimeo link turned into one we can put in an iframe.
+
+    Only these two, and only the id out of the link — so what ends up in the
+    ``src`` is a URL this function built, never one somebody pasted.
+    """
+    raw = str(url or "")
+    found = _YT.search(raw)
+    if found:
+        return f"https://www.youtube-nocookie.com/embed/{found.group(1)}"
+    found = _VIMEO.search(raw)
+    if found:
+        return f"https://player.vimeo.com/video/{found.group(1)}"
+    return ""

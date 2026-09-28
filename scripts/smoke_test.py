@@ -12311,6 +12311,139 @@ ok("Its address 404s afterwards, and so does one that never existed",
    _guest.get(f"/p/{_lp_slug}").status_code == 404
    and _guest.get("/p/no-such-landing-page-xyz").status_code == 404)
 
+# --- formatting, and the rest of what the builder can do --------------------
+# The builder used to be able to change words and nothing else, because its
+# handles only appeared on hover and its "add" button was below a page-length
+# canvas. These check the controls are on the page whether or not anyone is
+# pointing at them, and that the marks a person applies survive the trip.
+
+_fmt = admin.post("/admin/landing/new", data={"title": "Format Test"},
+                  follow_redirects=True).get_data(as_text=True)
+with app.app_context():
+    _fp = _LP.query.filter_by(title="Format Test").first()
+    _fp_id, _fp_slug = _fp.id, _fp.slug
+
+ok("Every block carries its own toolbar, not one that waits for a hover",
+   _fmt.count("data-settings") >= 6 and _fmt.count("data-dupe") >= 6
+   and _fmt.count("data-remove") >= 6 and _fmt.count("data-up") >= 6)
+ok("There's a panel for the list of blocks to jump between and reorder",
+   "data-layers" in _fmt and "lp-ed__layers" in _fmt)
+ok("A block can be added between two others, not only at the end",
+   "data-add-here" in _fmt and _fmt.count("data-add-open") >= 2)
+ok("The picker offers every kind of block there is",
+   all(('data-add="%s"' % k) in _fmt for k in _lp.BLOCK_ORDER),
+   [k for k in _lp.BLOCK_ORDER if ('data-add="%s"' % k) not in _fmt])
+ok("There's a formatting bar, with the marks and the colours on it",
+   'data-cmd="bold"' in _fmt and 'data-cmd="italic"' in _fmt
+   and 'data-cmd="underline"' in _fmt and "data-link" in _fmt
+   and 'data-colour="lp-t--gold"' in _fmt)
+ok("And page-wide settings of its own",
+   "data-page-settings" in _fmt and "Accent colour" in
+   json.dumps(_lp.editor_context()["page_fields"]))
+ok("Text is editable for real, not plaintext-only — marks need it",
+   'contenteditable="true"' in _fmt and "plaintext-only" not in _fmt)
+
+_marked = [{
+    "id": "f1", "type": "text",
+    "fields": {
+        "heading": 'A <u>marked</u> heading',
+        "body": '<p><b>Bold</b>, <em>italic</em>, '
+                '<span class="lp-t--gold">gold</span> and '
+                '<a href="/courses">a link</a>.</p><ul><li>One</li><li>Two</li></ul>',
+        "align": "center", "width": "narrow", "pad": "large", "bg": "soft",
+    },
+}]
+admin.post(f"/admin/landing/{_fp_id}/save",
+           json={"blocks": _marked,
+                 "settings": {"accent": "gold", "width": "wide",
+                              "description": "A page about a thing"}})
+admin.post(f"/admin/landing/{_fp_id}/publish")
+_out = _guest.get(f"/p/{_fp_slug}").get_data(as_text=True)
+ok("Bold, italic, underline and a list all reach the page",
+   "<b>Bold</b>" in _out and "<em>italic</em>" in _out
+   and "<u>marked</u>" in _out and "<li>One</li>" in _out)
+ok("So does a colour picked from the bar",
+   '<span class="lp-t--gold">gold</span>' in _out)
+ok("And a link that was typed into the words",
+   '<a href="/courses">a link</a>' in _out)
+ok("The block's own spacing and alignment are on it",
+   "lp-pad--large" in _out and "lp-al--center" in _out and "lp-w--narrow" in _out)
+ok("The page-wide settings are on the page",
+   "lp-accent--gold" in _out and "lp-page--wide" in _out
+   and "A page about a thing" in _out)
+
+# The allow-list is the whole of what may come through.
+admin.post(f"/admin/landing/{_fp_id}/save", json={"blocks": [{
+    "id": "f2", "type": "text",
+    "fields": {"heading": '<span class="evil-class">x</span>',
+               "body": '<script>alert(1)</script>'
+                       '<a href="javascript:alert(2)">bad</a>'
+                       '<iframe src="https://evil.test"></iframe>'
+                       '<b onclick="alert(3)">click</b>',
+               "align": "left", "width": "normal", "pad": "medium", "bg": "cream"}}]})
+admin.post(f"/admin/landing/{_fp_id}/publish")
+_bad = _guest.get(f"/p/{_fp_slug}").get_data(as_text=True)
+ok("A class we don't have is dropped, and the words kept",
+   "evil-class" not in _bad and ">x<" in _bad)
+ok("A script tag is shown as words rather than run",
+   "<script>alert(1)</script>" not in _bad and "&lt;script&gt;" in _bad)
+ok("A javascript: link keeps the words and loses the address",
+   "javascript:" not in _bad and "bad" in _bad)
+ok("An iframe somebody typed is not an iframe",
+   "<iframe src=\"https://evil.test\"" not in _bad)
+ok("And an event handler on an allowed tag goes with it",
+   "onclick" not in _bad and "click" in _bad)
+
+# Videos are the one iframe a block may draw, and only from two places.
+ok("A YouTube link becomes an embed we built",
+   _lp.video_embed_url("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+   == "https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ")
+ok("A youtu.be one too, and Vimeo",
+   _lp.video_embed_url("https://youtu.be/abc123XYZ").endswith("/embed/abc123XYZ")
+   and _lp.video_embed_url("https://vimeo.com/123456789")
+   == "https://player.vimeo.com/video/123456789")
+ok("Anywhere else is not a video we will frame",
+   _lp.video_embed_url("https://evil.test/x") == ""
+   and _lp.video_embed_url("javascript:alert(1)") == "")
+from app import CSP as _app_csp  # noqa: E402
+ok("The page's own CSP allows those two to be framed",
+   "youtube-nocookie.com" in _app_csp and "player.vimeo.com" in _app_csp)
+
+# Pictures now live on items as well as blocks, and the sweep has to see both.
+_gal_png = io.BytesIO()
+_PILImage.new("RGB", (400, 400), (200, 120, 90)).save(_gal_png, format="PNG")
+_gal_png.seek(0)
+_gal_url = (admin.post("/admin/landing/images",
+                       data={"image": (_gal_png, "g.png")},
+                       content_type="multipart/form-data").get_json() or {}).get("url", "")
+admin.post(f"/admin/landing/{_fp_id}/save", json={"blocks": [{
+    "id": "g1", "type": "gallery",
+    "fields": {"heading": "Shots", "count": "3", "pad": "medium", "bg": "cream"},
+    "items": [{"image": _gal_url, "caption": "One"}]}]})
+with app.app_context():
+    ok("A picture on an item counts as one the page is using",
+       _gal_url.rsplit("/", 1)[-1] in _lp.referenced_image_keys())
+    _lp.sweep_unused_images()
+    db.session.commit()
+ok("So the sweep leaves it alone", _guest.get(_gal_url).status_code == 200)
+
+# Pages stored before there were settings are a bare list, and still open.
+with app.app_context():
+    _legacy = db.session.get(_LP, _fp_id)
+    _legacy.draft_json = json.dumps([{"id": "old1", "type": "text", "fields": {
+        "heading": "From before", "body": "Still here"}}])
+    db.session.commit()
+ok("A page saved before settings existed still reads back",
+   admin.get(f"/admin/landing/{_fp_id}").status_code == 200)
+with app.app_context():
+    _doc = _lp.document_from_json(db.session.get(_LP, _fp_id).draft_json)
+    ok("With its blocks intact and the settings defaulted",
+       len(_doc["blocks"]) == 1
+       and _doc["blocks"][0]["fields"]["heading"] == "From before"
+       and _doc["settings"]["accent"] == "plum")
+
+admin.post(f"/admin/landing/{_fp_id}/delete")
+
 # --- the database URL says which driver ------------------------------------
 # A bare postgresql:// means "whatever this version of SQLAlchemy calls the
 # default driver". In 2.1 that moved from psycopg2 to psycopg 3, and since

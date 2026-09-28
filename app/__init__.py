@@ -26,6 +26,7 @@ CSP = (
     "img-src 'self' https: data: blob:; "
     "media-src 'self' blob: mediastream: https://*.daily.co; "
     "frame-src 'self' blob: https://www.instagram.com https://instagram.com "
+    "https://www.youtube-nocookie.com https://player.vimeo.com "
     "https://challenges.cloudflare.com "
     "https://js.stripe.com https://hooks.stripe.com https://checkout.stripe.com "
     "https://*.daily.co https://daily.co; "
@@ -232,6 +233,17 @@ def create_app(config_class=None):
         return Markup(str(escaped).replace("\n", "<br>\n"))
 
     app.jinja_env.filters["nl2br"] = nl2br
+
+    # Landing-page text. These hold a small allow-list of marks (bold, a
+    # link, a coloured span) and are cleaned again here on the way out, so a
+    # row written by an older version of the code, or edited straight in the
+    # database, still cannot put markup of its own on the page.
+    from .services.landing_pages import render_text, strip_marks, video_embed_url
+
+    app.jinja_env.filters["lpline"] = lambda v: render_text(v, rich=False)
+    app.jinja_env.filters["lprich"] = lambda v: render_text(v, rich=True)
+    app.jinja_env.filters["lpplain"] = strip_marks
+    app.jinja_env.globals["lp_video_embed"] = video_embed_url
 
     from .services.social_graph import (
         linkify_mentions, recent_notifications, unread_notification_count,

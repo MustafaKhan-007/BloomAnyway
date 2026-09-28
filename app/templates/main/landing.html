@@ -1,6 +1,13 @@
 {% extends "base.html" %}
 {% from "partials/landing_blocks.html" import render_block %}
 {% block title %}{{ page.title }} — {{ site.site_title }}{% endblock %}
+{% block meta_description %}{{ settings.description|lpplain or page.title }}{% endblock %}
+{% block og %}
+<meta property="og:title" content="{{ page.title }}">
+<meta property="og:description" content="{{ settings.description|lpplain or page.title }}">
+{% if settings.share_image %}<meta property="og:image" content="{{ settings.share_image }}">{% endif %}
+<meta property="og:type" content="website">
+{% endblock %}
 
 {% block content %}
 {% if preview %}
@@ -12,10 +19,10 @@
   <a class="btn btn--secondary btn--sm" href="{{ url_for('admin.landing_edit', page_id=page.id) }}">Edit</a>
 </div>
 {% endif %}
-<div class="lp">
+<div class="lp lp-accent--{{ settings.accent|default('plum') }} lp-font--{{ settings.font|default('brand') }} lp-page--{{ settings.width|default('normal') }}{{ ' lp-bare' if settings.nav == 'hide' }}">
   {% for b in blocks %}{{ render_block(b) }}{% endfor %}
   {% if not blocks %}
-  <section class="lp-block lp-bg--cream"><div class="lp-wrap lp-align--center">
+  <section class="lp-block lp-bg--cream lp-pad--large"><div class="lp-wrap lp-al--center">
     <h1 class="lp-h2">Nothing here yet</h1>
     <p class="lp-body">This page hasn't been built out.</p>
   </div></section>

@@ -3273,16 +3273,18 @@ def landing(slug):
         page = LandingPage.query.filter_by(slug=slug).first()
         if page is None:
             abort(404)
+        doc = lp_svc.document_from_json(page.draft_json)
         return render_template(
             "main/landing.html", page=page, preview=True,
-            blocks=lp_svc.blocks_from_json(page.draft_json))
+            blocks=doc["blocks"], settings=doc["settings"])
 
     page = lp_svc.public_page(slug)
     if page is None:
         abort(404)
+    doc = lp_svc.document_from_json(page.published_json)
     return render_template(
         "main/landing.html", page=page, preview=False,
-        blocks=lp_svc.blocks_from_json(page.published_json))
+        blocks=doc["blocks"], settings=doc["settings"])
 
 
 @bp.route("/privacy")

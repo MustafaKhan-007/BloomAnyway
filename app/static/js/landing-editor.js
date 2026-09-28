@@ -6,9 +6,10 @@
  * back, so a block can't look one way while it's being built and another
  * once it's out.
  *
- * Typing is the exception — that stays here, because a round trip per
- * keystroke would be miserable. Text is read back as innerText, never
- * innerHTML, so what reaches the server is words rather than markup.
+ * Typing and formatting are the exception — those stay here, because a round
+ * trip per keystroke would be miserable. What gets sent back is innerHTML,
+ * and the server cleans it against a small allow-list of marks before it is
+ * stored and again before it is drawn.
  */
 (function () {
   "use strict";
@@ -20,10 +21,15 @@
   var panel = root.querySelector("[data-panel]");
   var panelBody = root.querySelector("[data-panel-body]");
   var panelTitle = root.querySelector("[data-panel-title]");
+  var layerList = root.querySelector("[data-layers]");
+  var picker = root.querySelector("[data-picker]");
+  var formatBar = root.querySelector("[data-format]");
   var stateEl = root.querySelector("[data-state]");
   var titleInput = root.querySelector('input[name="title"]');
   var slugInput = root.querySelector('input[name="slug"]');
   var saveBtn = root.querySelector("[data-save]");
+  var undoBtn = root.querySelector("[data-undo]");
+  var redoBtn = root.querySelector("[data-redo]");
   var publishForm = root.querySelector("[data-publish-form]");
   var previewLink = root.querySelector("[data-preview]");
   var csrf = (document.body && document.body.getAttribute("data-csrf")) || "";
@@ -40,22 +46,27 @@
 
   var blocks = readJsonTag("[data-lp-blocks]", []);
   var defs = readJsonTag("[data-lp-defs]", {});
-  var dirty = root.getAttribute("data-dirty") === "yes";
-  var openBlockId = "";
+  var pageState = readJsonTag("[data-lp-page]", { settings: {}, page_fields: [] });
+  var settings = pageState.settings || {};
+  var pageFields = pageState.page_fields || [];
+
+  var dirty = false;
+  var selectedId = "";
+  var showingPage = false;
+  var addAfterId = "";      // where the picker will insert
+  var busy = false;
 
   /* ---- little helpers ---- */
 
   function post(url, body, asForm) {
     var headers = { "X-CSRFToken": csrf, "X-Requested-With": "fetch" };
     if (!asForm) headers["Content-Type"] = "application/json";
-    return fetch(url, {
-      method: "POST",
-      headers: headers,
-      body: asForm ? body : JSON.stringify(body)
-    }).then(function (resp) {
-      return resp.json().catch(function () { return {}; })
-        .then(function (data) { return { ok: resp.ok, data: data }; });
-    });
+    return fetch(url, { method: "POST", headers: headers,
+                        body: asForm ? body : JSON.stringify(body) })
+      .then(function (resp) {
+        return resp.json().catch(function () { return {}; })
+          .then(function (data) { return { ok: resp.ok, data: data }; });
+      });
   }
 
   function blockById(id) {
@@ -73,33 +84,76 @@
   }
 
   function slotFor(id) {
-    return canvas.querySelector('[data-slot-id="' + id + '"]');
+    return canvas.querySelector('[data-slot-id="' + CSS.escape(id) + '"]');
   }
 
-  function textOf(el) {
-    // innerText, not innerHTML: the page keeps words, never markup.
-    var value = el.innerText || "";
-    return value.replace(/ /g, " ").replace(/\s+$/, "");
+  function newId() {
+    return "b" + Math.random().toString(16).slice(2, 14);
   }
 
   function markDirty() {
     dirty = true;
-    if (stateEl) {
-      stateEl.textContent = stateEl.getAttribute("data-live") === "yes"
-        ? "Live · unsaved changes" : "Draft · unsaved changes";
-      stateEl.classList.add("is-dirty");
-    }
+    if (!stateEl) return;
+    stateEl.textContent = stateEl.getAttribute("data-live") === "yes"
+      ? "Live · unsaved" : "Draft · unsaved";
+    stateEl.classList.add("is-dirty");
   }
 
   function markClean(status) {
     dirty = false;
-    if (stateEl) {
-      stateEl.textContent = status || "Saved";
-      stateEl.classList.remove("is-dirty");
-    }
+    if (!stateEl) return;
+    stateEl.textContent = status || "Saved";
+    stateEl.classList.remove("is-dirty");
+  }
+
+  /* ---- undo ----
+     A snapshot of the blocks before anything that changes their shape. Text
+     typing is left to the browser's own undo inside the field. */
+
+  var history = [];
+  var future = [];
+
+  function snapshot() {
+    syncFromDom();
+    history.push(JSON.stringify(blocks));
+    if (history.length > 40) history.shift();
+    future.length = 0;
+    refreshUndoButtons();
+  }
+
+  function refreshUndoButtons() {
+    if (undoBtn) undoBtn.disabled = history.length === 0;
+    if (redoBtn) redoBtn.disabled = future.length === 0;
+  }
+
+  function restore(json) {
+    blocks = JSON.parse(json);
+    return redrawAll().then(function () { markDirty(); });
+  }
+
+  function undo() {
+    if (!history.length) return;
+    syncFromDom();
+    future.push(JSON.stringify(blocks));
+    restore(history.pop()).then(refreshUndoButtons);
+  }
+
+  function redo() {
+    if (!future.length) return;
+    syncFromDom();
+    history.push(JSON.stringify(blocks));
+    restore(future.pop()).then(refreshUndoButtons);
   }
 
   /* ---- reading the canvas back into state ---- */
+
+  function fieldValue(el) {
+    // innerHTML: the marks are the point. The server decides which survive.
+    return (el.innerHTML || "")
+      .replace(/ /g, " ")
+      .replace(/<br\s*\/?>\s*$/i, "")
+      .trim();
+  }
 
   function readSlot(slot) {
     var block = blockById(slot.getAttribute("data-slot-id"));
@@ -109,7 +163,7 @@
       if (el.closest("[data-item]")) return;   // belongs to a repeating item
       var key = el.getAttribute("data-f");
       if (block.fields && Object.prototype.hasOwnProperty.call(block.fields, key)) {
-        block.fields[key] = textOf(el);
+        block.fields[key] = fieldValue(el);
       }
     });
 
@@ -125,7 +179,7 @@
         }
       }
       Array.prototype.forEach.call(row.querySelectorAll("[data-f]"), function (el) {
-        base[el.getAttribute("data-f")] = textOf(el);
+        base[el.getAttribute("data-f")] = fieldValue(el);
       });
       next.push(base);
     });
@@ -133,8 +187,8 @@
   }
 
   function syncFromDom() {
+    if (!canvas) return;
     Array.prototype.forEach.call(canvas.querySelectorAll("[data-slot]"), readSlot);
-    // The canvas is the order of record; state follows it.
     var ordered = [];
     Array.prototype.forEach.call(canvas.querySelectorAll("[data-slot]"), function (slot) {
       var b = blockById(slot.getAttribute("data-slot-id"));
@@ -145,38 +199,84 @@
 
   /* ---- asking the server to redraw ---- */
 
+  function fetchSlot(block) {
+    return post(renderUrl, { block: block }).then(function (res) {
+      if (!res.ok || !res.data.html) return null;
+      var holder = document.createElement("div");
+      holder.innerHTML = res.data.html;
+      return holder.firstElementChild;
+    });
+  }
+
   function redraw(block) {
     var slot = slotFor(block.id);
-    return post(renderUrl, { block: block }).then(function (res) {
-      if (!res.ok || !res.data.html) return;
-      var holder = document.createElement("div");
-      holder.innerHTML = res.data.html;
-      var fresh = holder.firstElementChild;
+    return fetchSlot(block).then(function (fresh) {
       if (!fresh || !slot) return;
       slot.replaceWith(fresh);
-      if (openBlockId === block.id) openPanel(block.id);
+      if (selectedId === block.id) paintSelection();
+      renderLayers();
     });
   }
 
-  function addBlock(type, afterId) {
-    syncFromDom();
-    return post(renderUrl, { type: type }).then(function (res) {
-      if (!res.ok || !res.data.html) return;
-      var holder = document.createElement("div");
-      holder.innerHTML = res.data.html;
-      var fresh = holder.firstElementChild;
-      if (!fresh) return;
-      var at = afterId ? indexOfId(afterId) + 1 : blocks.length;
-      blocks.splice(at, 0, res.data.block);
-      var afterSlot = afterId ? slotFor(afterId) : null;
-      if (afterSlot) afterSlot.insertAdjacentElement("afterend", fresh);
-      else canvas.appendChild(fresh);
-      markDirty();
-      fresh.scrollIntoView({ behavior: "smooth", block: "center" });
+  function redrawAll() {
+    var jobs = blocks.map(function (b) { return fetchSlot(b); });
+    return Promise.all(jobs).then(function (nodes) {
+      canvas.innerHTML = "";
+      nodes.forEach(function (n) { if (n) canvas.appendChild(n); });
+      paintSelection();
+      renderLayers();
     });
   }
 
-  /* ---- the side panel: everything that isn't typed on the page ---- */
+  /* ---- the list of blocks down the left ---- */
+
+  function blockSummary(block) {
+    var f = block.fields || {};
+    var raw = f.heading || f.eyebrow || f.quote || f.title || f.caption || "";
+    var tmp = document.createElement("div");
+    tmp.innerHTML = raw;
+    var text = (tmp.textContent || "").trim();
+    return text.length > 34 ? text.slice(0, 34) + "…" : text;
+  }
+
+  function renderLayers() {
+    if (!layerList) return;
+    layerList.innerHTML = "";
+    blocks.forEach(function (block, i) {
+      var def = defs[block.type] || {};
+      var li = document.createElement("li");
+      li.className = "lp-ed__layer" + (block.id === selectedId ? " is-on" : "");
+      li.setAttribute("data-layer", block.id);
+      li.setAttribute("draggable", "true");
+      li.innerHTML =
+        '<span class="lp-ed__layer-icon" aria-hidden="true"></span>' +
+        '<span class="lp-ed__layer-text">' +
+        '<span class="lp-ed__layer-name"></span>' +
+        '<span class="lp-ed__layer-sub"></span></span>' +
+        '<span class="lp-ed__layer-tools">' +
+        '<button type="button" data-layer-up title="Move up" aria-label="Move up">&uarr;</button>' +
+        '<button type="button" data-layer-down title="Move down" aria-label="Move down">&darr;</button>' +
+        '<button type="button" data-layer-drop title="Delete" aria-label="Delete">&times;</button>' +
+        "</span>";
+      li.querySelector(".lp-ed__layer-icon").textContent = def.icon || "▦";
+      li.querySelector(".lp-ed__layer-name").textContent = def.label || block.type;
+      li.querySelector(".lp-ed__layer-sub").textContent = blockSummary(block);
+      if (i === 0) li.classList.add("is-first");
+      if (i === blocks.length - 1) li.classList.add("is-last");
+      layerList.appendChild(li);
+    });
+  }
+
+  function paintSelection() {
+    Array.prototype.forEach.call(canvas.querySelectorAll("[data-slot]"), function (s) {
+      s.classList.toggle("is-on", s.getAttribute("data-slot-id") === selectedId);
+    });
+    Array.prototype.forEach.call(root.querySelectorAll("[data-layer]"), function (l) {
+      l.classList.toggle("is-on", l.getAttribute("data-layer") === selectedId);
+    });
+  }
+
+  /* ---- the side panel ---- */
 
   function fieldRow(labelText, control) {
     var wrap = document.createElement("label");
@@ -188,90 +288,156 @@
     return wrap;
   }
 
-  function buildPanel(block) {
-    var def = defs[block.type] || { fields: [] };
-    panelBody.innerHTML = "";
-    panelTitle.textContent = def.label || block.type;
+  function niceOption(value) {
+    return value.charAt(0).toUpperCase() + value.slice(1).replace(/_/g, " ");
+  }
 
-    (def.fields || []).forEach(function (spec) {
+  function controlsFor(specs, bag, onChange, container) {
+    specs.forEach(function (spec) {
       var key = spec.key;
-      if (spec.kind === "line" || spec.kind === "rich") return;  // typed on the page
+      if (spec.kind === "line" || spec.kind === "rich") {
+        if (!/description/.test(key)) return;   // typed on the page itself
+      }
 
       if (spec.kind === "choice") {
-        var select = document.createElement("select");
+        var pills = document.createElement("div");
+        pills.className = "lp-ed__pills";
         (spec.options || []).forEach(function (opt) {
-          var o = document.createElement("option");
-          o.value = opt;
-          o.textContent = opt.charAt(0).toUpperCase() + opt.slice(1);
-          if (block.fields[key] === opt) o.selected = true;
-          select.appendChild(o);
+          var b = document.createElement("button");
+          b.type = "button";
+          b.className = "lp-ed__pill" + (bag[key] === opt ? " is-on" : "");
+          b.textContent = niceOption(opt);
+          b.addEventListener("click", function () {
+            bag[key] = opt;
+            onChange();
+          });
+          pills.appendChild(b);
         });
-        select.addEventListener("change", function () {
-          syncFromDom();
-          block.fields[key] = select.value;
-          markDirty();
-          redraw(block);
-        });
-        panelBody.appendChild(fieldRow(spec.label, select));
+        container.appendChild(fieldRow(spec.label, pills));
         return;
       }
 
       var input = document.createElement("input");
       input.type = "text";
-      input.value = block.fields[key] || "";
+      input.value = bag[key] || "";
       input.placeholder = spec.kind === "image"
-        ? "https://… or upload below" : "/courses or https://…";
+        ? "https://… or upload below"
+        : (spec.kind === "url" ? "/courses or https://…" : "");
       input.addEventListener("change", function () {
-        syncFromDom();
-        block.fields[key] = input.value.trim();
-        markDirty();
-        redraw(block);
+        bag[key] = input.value.trim();
+        onChange();
       });
-      panelBody.appendChild(fieldRow(spec.label, input));
+      container.appendChild(fieldRow(spec.label, input));
 
       if (spec.kind === "image") {
+        var row = document.createElement("div");
+        row.className = "lp-ed__field lp-ed__field--btn";
         var pick = document.createElement("button");
         pick.type = "button";
         pick.className = "btn btn--secondary btn--sm";
-        pick.textContent = "Upload a picture";
-        pick.addEventListener("click", function () { chooseImage(block, key); });
-        var row = document.createElement("div");
-        row.className = "lp-ed__field lp-ed__field--btn";
+        pick.textContent = bag[key] ? "Replace picture" : "Upload a picture";
+        pick.addEventListener("click", function () {
+          chooseImage(function (url) { bag[key] = url; onChange(); });
+        });
         row.appendChild(pick);
-        panelBody.appendChild(row);
+        if (bag[key]) {
+          var clear = document.createElement("button");
+          clear.type = "button";
+          clear.className = "btn btn--quiet btn--sm";
+          clear.textContent = "Remove";
+          clear.addEventListener("click", function () { bag[key] = ""; onChange(); });
+          row.appendChild(clear);
+        }
+        container.appendChild(row);
       }
     });
+  }
+
+  function buildBlockPanel(block) {
+    var def = defs[block.type] || { fields: [] };
+    panelBody.innerHTML = "";
+    panelTitle.textContent = def.label || block.type;
+
+    controlsFor(def.fields || [], block.fields, function () {
+      snapshot();
+      markDirty();
+      redraw(block);
+    }, panelBody);
 
     var note = document.createElement("p");
     note.className = "field-help";
-    note.textContent = "Words are changed on the page itself — click them.";
+    note.textContent = "Words are changed on the page itself — click them, "
+      + "and select any of them to make them bold or a link.";
+    panelBody.appendChild(note);
+
+    var actions = document.createElement("div");
+    actions.className = "lp-ed__panel-actions";
+    [["Duplicate", function () { duplicate(block.id); }],
+     ["Delete", function () { removeBlock(block.id); }]].forEach(function (pair) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "btn btn--quiet btn--sm";
+      b.textContent = pair[0];
+      b.addEventListener("click", pair[1]);
+      actions.appendChild(b);
+    });
+    panelBody.appendChild(actions);
+  }
+
+  function buildPagePanel() {
+    panelBody.innerHTML = "";
+    panelTitle.textContent = "Whole page";
+    controlsFor(pageFields, settings, function () {
+      markDirty();
+      applyPageSettings();
+      buildPagePanel();
+    }, panelBody);
+    var note = document.createElement("p");
+    note.className = "field-help";
+    note.textContent = "These apply to every block on the page.";
     panelBody.appendChild(note);
   }
 
-  function openPanel(id) {
-    var block = blockById(id);
-    if (!block) return;
-    openBlockId = id;
-    buildPanel(block);
-    panel.hidden = false;
-    Array.prototype.forEach.call(canvas.querySelectorAll("[data-slot]"), function (s) {
-      s.classList.toggle("is-open", s.getAttribute("data-slot-id") === id);
-    });
+  function applyPageSettings() {
+    var lp = canvas;
+    if (!lp) return;
+    lp.className = lp.className.replace(/\blp-(accent|font|page)--\S+/g, "").trim();
+    lp.classList.add("lp");
+    lp.classList.add("lp-accent--" + (settings.accent || "plum"));
+    lp.classList.add("lp-font--" + (settings.font || "brand"));
+    lp.classList.add("lp-page--" + (settings.width || "normal"));
   }
 
-  function closePanel() {
-    openBlockId = "";
-    panel.hidden = true;
-    Array.prototype.forEach.call(canvas.querySelectorAll(".is-open"), function (s) {
-      s.classList.remove("is-open");
-    });
+  function selectBlock(id) {
+    selectedId = id;
+    showingPage = false;
+    var block = blockById(id);
+    if (!block) return;
+    buildBlockPanel(block);
+    paintSelection();
+  }
+
+  function selectPage() {
+    selectedId = "";
+    showingPage = true;
+    buildPagePanel();
+    paintSelection();
+  }
+
+  function clearSelection() {
+    selectedId = "";
+    showingPage = false;
+    panelTitle.textContent = "Nothing selected";
+    panelBody.innerHTML =
+      '<p class="field-help">Click any block on the page to change how it looks.</p>';
+    paintSelection();
   }
 
   /* ---- pictures ---- */
 
   var filePicker = null;
 
-  function chooseImage(block, key) {
+  function chooseImage(done) {
     if (!filePicker) {
       filePicker = document.createElement("input");
       filePicker.type = "file";
@@ -288,98 +454,307 @@
       syncFromDom();
       post(uploadUrl, fd, true).then(function (res) {
         if (!res.ok || !res.data.url) {
-          window.alert(res.data.error || "That picture didn't go up.");
+          window.alert((res.data && res.data.error) || "That picture didn't go up.");
           return;
         }
-        block.fields[key] = res.data.url;
-        markDirty();
-        redraw(block);
+        done(res.data.url);
       });
     };
     filePicker.click();
   }
 
-  /* ---- one listener for the whole canvas, so redraws need no rewiring ---- */
+  /* ---- structural edits ---- */
+
+  function addBlock(type, afterId) {
+    if (busy) return;
+    busy = true;
+    snapshot();
+    post(renderUrl, { type: type }).then(function (res) {
+      busy = false;
+      if (!res.ok || !res.data.html) return;
+      var holder = document.createElement("div");
+      holder.innerHTML = res.data.html;
+      var fresh = holder.firstElementChild;
+      if (!fresh) return;
+      var at = afterId ? indexOfId(afterId) + 1 : blocks.length;
+      blocks.splice(at, 0, res.data.block);
+      var afterSlot = afterId ? slotFor(afterId) : null;
+      if (afterSlot) afterSlot.insertAdjacentElement("afterend", fresh);
+      else canvas.appendChild(fresh);
+      markDirty();
+      renderLayers();
+      selectBlock(res.data.block.id);
+      fresh.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }
+
+  function duplicate(id) {
+    var block = blockById(id);
+    if (!block) return;
+    snapshot();
+    var copy = JSON.parse(JSON.stringify(block));
+    copy.id = newId();
+    post(renderUrl, { block: copy }).then(function (res) {
+      if (!res.ok || !res.data.html) return;
+      var holder = document.createElement("div");
+      holder.innerHTML = res.data.html;
+      var fresh = holder.firstElementChild;
+      if (!fresh) return;
+      blocks.splice(indexOfId(id) + 1, 0, res.data.block);
+      var slot = slotFor(id);
+      if (slot) slot.insertAdjacentElement("afterend", fresh);
+      markDirty();
+      renderLayers();
+      selectBlock(res.data.block.id);
+    });
+  }
+
+  function removeBlock(id) {
+    var block = blockById(id);
+    if (!block) return;
+    var def = defs[block.type] || {};
+    if (!window.confirm("Take the " + (def.label || "block").toLowerCase()
+                        + " off the page?")) return;
+    snapshot();
+    var at = indexOfId(id);
+    if (at >= 0) blocks.splice(at, 1);
+    var slot = slotFor(id);
+    if (slot) slot.remove();
+    if (selectedId === id) clearSelection();
+    markDirty();
+    renderLayers();
+  }
+
+  function move(id, up) {
+    snapshot();
+    var i = indexOfId(id);
+    var j = up ? i - 1 : i + 1;
+    if (i < 0 || j < 0 || j >= blocks.length) return;
+    blocks.splice(j, 0, blocks.splice(i, 1)[0]);
+    var slot = slotFor(id);
+    var sibling = up ? slot.previousElementSibling : slot.nextElementSibling;
+    if (sibling) { if (up) sibling.before(slot); else sibling.after(slot); }
+    markDirty();
+    renderLayers();
+    slot.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  /* ---- the block picker ---- */
+
+  function openPicker(afterId) {
+    addAfterId = afterId || "";
+    picker.hidden = false;
+    var first = picker.querySelector("[data-add]");
+    if (first) first.focus();
+  }
+
+  function closePicker() { picker.hidden = true; }
+
+  /* ---- formatting ---- */
+
+  var activeField = null;
+
+  function fieldOf(node) {
+    if (!node) return null;
+    var el = node.nodeType === 1 ? node : node.parentElement;
+    return el ? el.closest("[data-f]") : null;
+  }
+
+  function showFormatBar() {
+    var sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount) { formatBar.hidden = true; return; }
+    var field = fieldOf(sel.anchorNode);
+    if (!field || !root.contains(field)) { formatBar.hidden = true; return; }
+    activeField = field;
+    var rect = sel.getRangeAt(0).getBoundingClientRect();
+    if (!rect.width && !rect.height) { formatBar.hidden = true; return; }
+    formatBar.hidden = false;
+    var barW = formatBar.offsetWidth || 420;
+    var left = Math.max(8, Math.min(
+      window.innerWidth - barW - 8, rect.left + rect.width / 2 - barW / 2));
+    var top = rect.top - formatBar.offsetHeight - 10;
+    if (top < 8) top = rect.bottom + 10;
+    formatBar.style.left = left + "px";
+    formatBar.style.top = (top + window.scrollY) + "px";
+    // A heading takes marks but not lists; say so by dimming what won't apply.
+    var rich = field.hasAttribute("data-rich");
+    Array.prototype.forEach.call(
+      formatBar.querySelectorAll('[data-cmd$="List"]'), function (b) {
+        b.disabled = !rich;
+      });
+  }
+
+  // Pressing a button in the bar must not take the selection with it. The
+  // browser moves focus on mousedown, which collapses what was selected, and
+  // by the time the click arrives there is nothing left to embolden.
+  if (formatBar) {
+    formatBar.addEventListener("mousedown", function (e) { e.preventDefault(); });
+  }
+
+  function runCmd(cmd) {
+    if (!activeField) return;
+    document.execCommand(cmd, false, null);
+    markDirty();
+    window.requestAnimationFrame(showFormatBar);
+  }
+
+  function wrapSelection(className) {
+    var sel = window.getSelection();
+    if (!sel || !sel.rangeCount || sel.isCollapsed || !activeField) return;
+    var range = sel.getRangeAt(0);
+    // Peel off any colour/size span already on this run, so the swatches
+    // replace each other rather than nesting six deep.
+    var existing = fieldOf(sel.anchorNode);
+    var frag = range.extractContents();
+    var plain = document.createElement("div");
+    plain.appendChild(frag);
+    Array.prototype.forEach.call(plain.querySelectorAll("span"), function (s) {
+      if (/\blp-t--/.test(s.className)) {
+        while (s.firstChild) s.parentNode.insertBefore(s.firstChild, s);
+        s.remove();
+      }
+    });
+    var node;
+    if (className) {
+      node = document.createElement("span");
+      node.className = className;
+      while (plain.firstChild) node.appendChild(plain.firstChild);
+    } else {
+      node = document.createDocumentFragment();
+      while (plain.firstChild) node.appendChild(plain.firstChild);
+    }
+    range.insertNode(node);
+    sel.removeAllRanges();
+    if (existing) existing.normalize();
+    markDirty();
+    formatBar.hidden = true;
+  }
+
+  function addLink() {
+    var sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !activeField) return;
+    // Hold the range: a prompt takes the selection away with it.
+    var saved = sel.getRangeAt(0).cloneRange();
+    var url = window.prompt("Where should this link go?\n\nA path like /courses, "
+                            + "or a full address like https://…");
+    if (url === null) return;
+    url = url.trim();
+    activeField.focus();
+    sel.removeAllRanges();
+    sel.addRange(saved);
+    if (!url) { document.execCommand("unlink", false, null); }
+    else { document.execCommand("createLink", false, url); }
+    markDirty();
+    formatBar.hidden = true;
+  }
+
+  /* ---- one listener for the whole editor, so redraws need no rewiring ---- */
 
   root.addEventListener("click", function (e) {
-    var target = e.target;
+    var t = e.target;
 
-    if (target.closest("[data-panel-close]")) { closePanel(); return; }
+    if (t.closest("[data-panel-close]")) { clearSelection(); return; }
+    if (t.closest("[data-picker-close]") || t === picker) { closePicker(); return; }
+    if (t.closest("[data-page-settings]")) { selectPage(); return; }
+    if (t.closest("[data-undo]")) { undo(); return; }
+    if (t.closest("[data-redo]")) { redo(); return; }
 
-    var add = target.closest("[data-add]");
-    if (add) { addBlock(add.getAttribute("data-add")); return; }
+    var addOpen = t.closest("[data-add-open]");
+    if (addOpen) {
+      openPicker(addOpen.hasAttribute("data-at-end") ? "" : selectedId);
+      return;
+    }
+    var addHere = t.closest("[data-add-here]");
+    if (addHere) {
+      var hereSlot = addHere.closest("[data-slot]");
+      openPicker(hereSlot ? hereSlot.getAttribute("data-slot-id") : "");
+      return;
+    }
+    var pick = t.closest("[data-add]");
+    if (pick) {
+      closePicker();
+      addBlock(pick.getAttribute("data-add"), addAfterId);
+      return;
+    }
 
-    var slot = target.closest("[data-slot]");
+    // formatting bar
+    var cmd = t.closest("[data-cmd]");
+    if (cmd) { e.preventDefault(); runCmd(cmd.getAttribute("data-cmd")); return; }
+    var colour = t.closest("[data-colour]");
+    if (colour) { e.preventDefault(); wrapSelection(colour.getAttribute("data-colour")); return; }
+    if (t.closest("[data-link]")) { e.preventDefault(); addLink(); return; }
+    if (t.closest("[data-unlink]")) { e.preventDefault(); runCmd("unlink"); return; }
+    if (t.closest("[data-clear]")) { e.preventDefault(); runCmd("removeFormat"); return; }
+
+    // the list down the left
+    var layer = t.closest("[data-layer]");
+    if (layer) {
+      var lid = layer.getAttribute("data-layer");
+      if (t.closest("[data-layer-up]")) { move(lid, true); return; }
+      if (t.closest("[data-layer-down]")) { move(lid, false); return; }
+      if (t.closest("[data-layer-drop]")) { removeBlock(lid); return; }
+      selectBlock(lid);
+      var target = slotFor(lid);
+      if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+
+    var slot = t.closest("[data-slot]");
     if (!slot) return;
     var id = slot.getAttribute("data-slot-id");
     var block = blockById(id);
     if (!block) return;
 
-    if (target.closest("[data-settings]")) {
-      if (openBlockId === id) closePanel(); else openPanel(id);
-      return;
-    }
-    if (target.closest("[data-up]") || target.closest("[data-down]")) {
-      var up = !!target.closest("[data-up]");
-      syncFromDom();
-      var i = indexOfId(id);
-      var j = up ? i - 1 : i + 1;
-      if (i < 0 || j < 0 || j >= blocks.length) return;
-      blocks.splice(j, 0, blocks.splice(i, 1)[0]);
-      var sibling = up ? slot.previousElementSibling : slot.nextElementSibling;
-      if (sibling) {
-        if (up) sibling.before(slot); else sibling.after(slot);
-      }
-      markDirty();
-      slot.scrollIntoView({ behavior: "smooth", block: "center" });
-      return;
-    }
-    if (target.closest("[data-dupe]")) {
-      syncFromDom();
-      var copy = JSON.parse(JSON.stringify(block));
-      copy.id = "b" + Math.random().toString(16).slice(2, 14);
-      post(renderUrl, { block: copy }).then(function (res) {
-        if (!res.ok || !res.data.html) return;
-        var holder = document.createElement("div");
-        holder.innerHTML = res.data.html;
-        var fresh = holder.firstElementChild;
-        if (!fresh) return;
-        blocks.splice(indexOfId(id) + 1, 0, res.data.block);
-        slot.insertAdjacentElement("afterend", fresh);
+    if (t.closest("[data-settings]")) { selectBlock(id); return; }
+    if (t.closest("[data-up]")) { move(id, true); return; }
+    if (t.closest("[data-down]")) { move(id, false); return; }
+    if (t.closest("[data-dupe]")) { duplicate(id); return; }
+    if (t.closest("[data-remove]")) { removeBlock(id); return; }
+
+    if (t.closest("[data-img-pick]")) {
+      var holder = t.closest("[data-img]");
+      var item = t.closest("[data-item]");
+      if (!holder) return;
+      var key = holder.getAttribute("data-img");
+      chooseImage(function (url) {
+        snapshot();
+        if (item) {
+          var rows = Array.prototype.slice.call(
+            item.parentElement.querySelectorAll("[data-item]"));
+          var at = rows.indexOf(item);
+          if (block.items && block.items[at]) block.items[at][key] = url;
+        } else {
+          block.fields[key] = url;
+        }
         markDirty();
+        redraw(block);
       });
       return;
     }
-    if (target.closest("[data-remove]")) {
-      if (!window.confirm("Take this block off the page?")) return;
-      syncFromDom();
-      var at = indexOfId(id);
-      if (at >= 0) blocks.splice(at, 1);
-      if (openBlockId === id) closePanel();
-      slot.remove();
-      markDirty();
-      return;
-    }
-    if (target.closest("[data-img-pick]")) {
-      var picker = target.closest("[data-img]");
-      if (picker) chooseImage(block, picker.getAttribute("data-img"));
-      return;
-    }
-    if (target.closest("[data-img-clear]")) {
-      var holder2 = target.closest("[data-img]");
+    if (t.closest("[data-img-clear]")) {
+      var holder2 = t.closest("[data-img]");
+      var item2 = t.closest("[data-item]");
       if (!holder2) return;
-      syncFromDom();
-      block.fields[holder2.getAttribute("data-img")] = "";
+      snapshot();
+      var key2 = holder2.getAttribute("data-img");
+      if (item2) {
+        var rows2 = Array.prototype.slice.call(
+          item2.parentElement.querySelectorAll("[data-item]"));
+        var at2 = rows2.indexOf(item2);
+        if (block.items && block.items[at2]) block.items[at2][key2] = "";
+      } else {
+        block.fields[key2] = "";
+      }
       markDirty();
       redraw(block);
       return;
     }
-    if (target.closest("[data-item-add]")) {
+
+    if (t.closest("[data-item-add]")) {
       var def = defs[block.type] || {};
-      var max = def.item_max || 0;
-      syncFromDom();
+      snapshot();
       block.items = block.items || [];
-      if (max && block.items.length >= max) {
+      if (def.item_max && block.items.length >= def.item_max) {
         window.alert("That's as many as this block takes.");
         return;
       }
@@ -388,31 +763,48 @@
       redraw(block);
       return;
     }
-    if (target.closest("[data-item-drop]")) {
-      var row = target.closest("[data-item]");
-      if (!row) return;
-      var rows = Array.prototype.slice.call(
+    var itemBtn = t.closest("[data-item-drop], [data-item-up], [data-item-down], [data-item-dupe]");
+    if (itemBtn) {
+      var row = t.closest("[data-item]");
+      if (!row || !block.items) return;
+      var all = Array.prototype.slice.call(
         row.parentElement.querySelectorAll("[data-item]"));
-      var at2 = rows.indexOf(row);
-      syncFromDom();
-      if (at2 >= 0 && block.items) block.items.splice(at2, 1);
+      var at3 = all.indexOf(row);
+      if (at3 < 0) return;
+      snapshot();
+      if (itemBtn.hasAttribute("data-item-drop")) {
+        block.items.splice(at3, 1);
+      } else if (itemBtn.hasAttribute("data-item-dupe")) {
+        block.items.splice(at3 + 1, 0,
+                           JSON.parse(JSON.stringify(block.items[at3])));
+      } else {
+        var to = itemBtn.hasAttribute("data-item-up") ? at3 - 1 : at3 + 1;
+        if (to < 0 || to >= block.items.length) return;
+        block.items.splice(to, 0, block.items.splice(at3, 1)[0]);
+      }
       markDirty();
       redraw(block);
       return;
     }
+
+    // Clicking anywhere else on a block selects it.
+    selectBlock(id);
   });
 
   /* ---- typing ---- */
 
   root.addEventListener("input", function (e) {
-    if (e.target.closest && e.target.closest("[data-f]")) markDirty();
+    if (e.target.closest && e.target.closest("[data-f]")) {
+      markDirty();
+      renderLayers();
+    }
   });
   [titleInput, slugInput].forEach(function (el) {
     if (el) el.addEventListener("input", markDirty);
   });
 
   // Paste as words. Without this, pasting from a document brings its markup
-  // with it, and the editor would send back something it can't store.
+  // with it, and most of that is not markup we keep.
   root.addEventListener("paste", function (e) {
     var field = e.target.closest && e.target.closest("[data-f]");
     if (!field) return;
@@ -421,28 +813,40 @@
     document.execCommand("insertText", false, text);
   });
 
-  /* ---- dragging a block to a new place ---- */
+  document.addEventListener("selectionchange", function () {
+    if (!formatBar) return;
+    window.requestAnimationFrame(showFormatBar);
+  });
+  root.addEventListener("keydown", function (e) {
+    var field = e.target.closest && e.target.closest("[data-f]");
+    if (!field) return;
+    // A heading is one line; Enter in one would make a paragraph we then
+    // have to throw away, so it just moves on instead.
+    if (e.key === "Enter" && !field.hasAttribute("data-rich") && !e.shiftKey) {
+      e.preventDefault();
+      field.blur();
+    }
+  });
+
+  /* ---- dragging, on the canvas and in the list ---- */
 
   var dragging = null;
-  root.addEventListener("mousedown", function (e) {
-    var grip = e.target.closest && e.target.closest("[data-drag]");
-    if (!grip) return;
-    var slot = grip.closest("[data-slot]");
-    if (slot) slot.setAttribute("draggable", "true");
-  });
+
   root.addEventListener("dragstart", function (e) {
+    var layer = e.target.closest && e.target.closest("[data-layer]");
     var slot = e.target.closest && e.target.closest("[data-slot]");
-    if (!slot) return;
-    dragging = slot;
-    slot.classList.add("is-dragging");
-    try { e.dataTransfer.setData("text/plain", slot.getAttribute("data-slot-id")); } catch (err) {}
+    dragging = layer || slot;
+    if (!dragging) return;
+    dragging.classList.add("is-dragging");
+    try { e.dataTransfer.setData("text/plain", "b"); } catch (err) {}
     e.dataTransfer.effectAllowed = "move";
   });
   root.addEventListener("dragover", function (e) {
     if (!dragging) return;
-    e.preventDefault();
-    var over = e.target.closest && e.target.closest("[data-slot]");
+    var sel = dragging.hasAttribute("data-layer") ? "[data-layer]" : "[data-slot]";
+    var over = e.target.closest && e.target.closest(sel);
     if (!over || over === dragging) return;
+    e.preventDefault();
     var box = over.getBoundingClientRect();
     var after = (e.clientY - box.top) > box.height / 2;
     if (after) over.after(dragging); else over.before(dragging);
@@ -451,9 +855,25 @@
   root.addEventListener("dragend", function () {
     if (!dragging) return;
     dragging.classList.remove("is-dragging");
-    dragging.removeAttribute("draggable");
+    var wasLayer = dragging.hasAttribute("data-layer");
     dragging = null;
-    syncFromDom();
+    if (wasLayer) {
+      // The list is the order of record now; put the canvas in step.
+      var order = Array.prototype.map.call(
+        root.querySelectorAll("[data-layer]"),
+        function (l) { return l.getAttribute("data-layer"); });
+      syncFromDom();
+      blocks.sort(function (a, b) {
+        return order.indexOf(a.id) - order.indexOf(b.id);
+      });
+      order.forEach(function (id) {
+        var s = slotFor(id);
+        if (s) canvas.appendChild(s);
+      });
+    } else {
+      syncFromDom();
+    }
+    renderLayers();
     markDirty();
   });
 
@@ -464,6 +884,7 @@
     if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = "Saving…"; }
     return post(saveUrl, {
       blocks: blocks,
+      settings: settings,
       title: titleInput ? titleInput.value : undefined,
       slug: slugInput ? slugInput.value : undefined
     }).then(function (res) {
@@ -472,7 +893,6 @@
         window.alert((res.data && res.data.error) || "That didn't save. Try again.");
         return false;
       }
-      // The server may have tidied the address (or given us a free one).
       if (slugInput && res.data.slug) slugInput.value = res.data.slug;
       if (previewLink && res.data.slug) {
         previewLink.href = "/p/" + res.data.slug + "?preview=1";
@@ -489,9 +909,7 @@
     publishForm.addEventListener("submit", function (e) {
       if (!dirty) return;
       e.preventDefault();
-      save().then(function (ok) {
-        if (ok) publishForm.submit();
-      });
+      save().then(function (ok) { if (ok) publishForm.submit(); });
     });
   }
 
@@ -501,11 +919,26 @@
     e.returnValue = "";
   });
 
-  // Ctrl/Cmd+S saves, because everybody tries it.
   document.addEventListener("keydown", function (e) {
-    if ((e.metaKey || e.ctrlKey) && (e.key === "s" || e.key === "S")) {
+    var meta = e.metaKey || e.ctrlKey;
+    if (!meta) {
+      if (e.key === "Escape") { closePicker(); formatBar.hidden = true; }
+      return;
+    }
+    var k = (e.key || "").toLowerCase();
+    if (k === "s") { e.preventDefault(); save(); return; }
+    if (k === "z") {
+      var inField = document.activeElement
+        && document.activeElement.closest
+        && document.activeElement.closest("[data-f]");
+      if (inField) return;          // let the browser undo the typing
       e.preventDefault();
-      save();
+      if (e.shiftKey) redo(); else undo();
     }
   });
+
+  /* ---- go ---- */
+  renderLayers();
+  applyPageSettings();
+  refreshUndoButtons();
 })();
