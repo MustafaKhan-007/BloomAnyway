@@ -41,6 +41,13 @@
             <a class="btn btn--quiet btn--sm"
                href="{{ url_for('main.landing', slug=p.slug) }}{{ '' if p.is_published() else '?preview=1' }}"
                target="_blank" rel="noopener">{{ 'Open' if p.is_published() else 'Preview' }}</a>
+            {# Starting a second version of a page that works beats starting
+               a blank one, and it is how two of anything get compared. #}
+            <form method="post" action="{{ url_for('admin.landing_duplicate', page_id=p.id) }}"
+                  style="display:inline;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn--quiet btn--sm">Duplicate</button>
+            </form>
             {% if p.is_published() %}
             <form method="post" action="{{ url_for('admin.landing_unpublish', page_id=p.id) }}"
                   style="display:inline;">

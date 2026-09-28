@@ -93,6 +93,7 @@
 
   function markDirty() {
     dirty = true;
+    scheduleAutosave();
     if (!stateEl) return;
     stateEl.textContent = stateEl.getAttribute("data-live") === "yes"
       ? "Live · unsaved" : "Draft · unsaved";
@@ -113,9 +114,16 @@
   var history = [];
   var future = [];
 
-  function snapshot() {
+  // Settings travel with the blocks. Changing the accent colour and then
+  // pressing undo used to undo the last thing you did to a *block*, which
+  // is a strange answer to "put that back".
+  function state() {
     syncFromDom();
-    history.push(JSON.stringify(blocks));
+    return JSON.stringify({ blocks: blocks, settings: settings });
+  }
+
+  function snapshot() {
+    history.push(state());
     if (history.length > 40) history.shift();
     future.length = 0;
     refreshUndoButtons();
@@ -127,21 +135,25 @@
   }
 
   function restore(json) {
-    blocks = JSON.parse(json);
-    return redrawAll().then(function () { markDirty(); });
+    var was = JSON.parse(json);
+    blocks = was.blocks || [];
+    settings = was.settings || settings;
+    return redrawAll().then(function () {
+      applyPageSettings();
+      if (showingPage) buildPagePanel();
+      markDirty();
+    });
   }
 
   function undo() {
     if (!history.length) return;
-    syncFromDom();
-    future.push(JSON.stringify(blocks));
+    future.push(state());
     restore(history.pop()).then(refreshUndoButtons);
   }
 
   function redo() {
     if (!future.length) return;
-    syncFromDom();
-    history.push(JSON.stringify(blocks));
+    history.push(state());
     restore(future.pop()).then(refreshUndoButtons);
   }
 
@@ -153,6 +165,19 @@
       .replace(/ /g, " ")
       .replace(/<br\s*\/?>\s*$/i, "")
       .trim();
+  }
+
+  /* Every repeating row is stamped with where it started in the block's own
+     list. Reading a row back used to pair DOM position with state position,
+     which is the same thing right up until a row is dragged somewhere else
+     — and then the words moved with the card while its picture and its link
+     stayed behind, because those aren't typed on the page and were being
+     taken from whatever used to be in that slot. */
+  function stampItems(node) {
+    if (!node) return node;
+    Array.prototype.forEach.call(node.querySelectorAll("[data-item]"),
+      function (row, i) { row.setAttribute("data-item-i", String(i)); });
+    return node;
   }
 
   function readSlot(slot) {
@@ -170,9 +195,10 @@
     if (!block.items) return;
     var rows = slot.querySelectorAll("[data-item]");
     var next = [];
-    Array.prototype.forEach.call(rows, function (row, i) {
+    Array.prototype.forEach.call(rows, function (row) {
       var base = {};
-      var existing = block.items[i];
+      var from = parseInt(row.getAttribute("data-item-i"), 10);
+      var existing = block.items[isNaN(from) ? next.length : from];
       if (existing) {
         for (var k in existing) {
           if (Object.prototype.hasOwnProperty.call(existing, k)) base[k] = existing[k];
@@ -184,6 +210,9 @@
       next.push(base);
     });
     block.items = next;
+    // Back in step with the list that was just rebuilt, so a second drag
+    // before any redraw reads the right rows.
+    stampItems(slot);
   }
 
   function syncFromDom() {
@@ -204,7 +233,7 @@
       if (!res.ok || !res.data.html) return null;
       var holder = document.createElement("div");
       holder.innerHTML = res.data.html;
-      return holder.firstElementChild;
+      return stampItems(holder.firstElementChild);
     });
   }
 
@@ -234,20 +263,38 @@
     var f = block.fields || {};
     var raw = f.heading || f.eyebrow || f.quote || f.title || f.caption || "";
     var tmp = document.createElement("div");
-    tmp.innerHTML = raw;
-    var text = (tmp.textContent || "").trim();
-    return text.length > 34 ? text.slice(0, 34) + "…" : text;
+    // A line break is a space once the marks are gone. Reading textContent
+    // straight off gave "an audience.You need a plan" — two sentences run
+    // together at exactly the place the heading was split.
+    tmp.innerHTML = String(raw).replace(/<br\s*\/?>/gi, " ");
+    var text = (tmp.textContent || "").replace(/\s+/g, " ").trim();
+    return text.length > 40 ? text.slice(0, 40).trim() + "…" : text;
+  }
+
+  /* Which slot is top and which is bottom, so the canvas hides the arrows
+     that would do nothing — the list on the left has always done this, and
+     a disabled-looking arrow in one place and a live one in the other for
+     the same block reads as a bug. */
+  function markEnds() {
+    var slots = canvas.querySelectorAll("[data-slot]");
+    Array.prototype.forEach.call(slots, function (s, i) {
+      s.classList.toggle("is-first", i === 0);
+      s.classList.toggle("is-last", i === slots.length - 1);
+    });
   }
 
   function renderLayers() {
+    markEnds();
     if (!layerList) return;
     // Rebuilding the list mid-drag would destroy the row being dragged.
-    if (dragging) return;
+    if (drag) return;
     layerList.innerHTML = "";
     blocks.forEach(function (block, i) {
       var def = defs[block.type] || {};
+      var off = (block.fields || {}).visible === "hide";
       var li = document.createElement("li");
-      li.className = "lp-ed__layer" + (block.id === selectedId ? " is-on" : "");
+      li.className = "lp-ed__layer" + (block.id === selectedId ? " is-on" : "")
+        + (off ? " is-off" : "");
       li.setAttribute("data-layer", block.id);
       li.setAttribute("draggable", "true");
       li.innerHTML =
@@ -256,13 +303,18 @@
         '<span class="lp-ed__layer-name"></span>' +
         '<span class="lp-ed__layer-sub"></span></span>' +
         '<span class="lp-ed__layer-tools">' +
+        '<button type="button" data-layer-hide aria-label="Show or hide"></button>' +
         '<button type="button" data-layer-up title="Move up" aria-label="Move up">&uarr;</button>' +
         '<button type="button" data-layer-down title="Move down" aria-label="Move down">&darr;</button>' +
         '<button type="button" data-layer-drop title="Delete" aria-label="Delete">&times;</button>' +
         "</span>";
       li.querySelector(".lp-ed__layer-icon").textContent = def.icon || "▦";
       li.querySelector(".lp-ed__layer-name").textContent = def.label || block.type;
-      li.querySelector(".lp-ed__layer-sub").textContent = blockSummary(block);
+      li.querySelector(".lp-ed__layer-sub").textContent =
+        off ? "Hidden — " + blockSummary(block) : blockSummary(block);
+      var eye = li.querySelector("[data-layer-hide]");
+      eye.textContent = off ? "🚫" : "👁";
+      eye.title = off ? "Show this block again" : "Hide this block from visitors";
       if (i === 0) li.classList.add("is-first");
       if (i === blocks.length - 1) li.classList.add("is-last");
       layerList.appendChild(li);
@@ -294,11 +346,73 @@
     return value.charAt(0).toUpperCase() + value.slice(1).replace(/_/g, " ");
   }
 
-  function controlsFor(specs, bag, onChange, container) {
+  /* ``before`` is called just ahead of every write, ``onChange`` just
+     after. Two hooks rather than one because undo needs the page as it was
+     a moment ago: taking the snapshot in onChange recorded the change that
+     had already happened, so pressing undo after picking a colour put back
+     the colour you had just picked. */
+  function controlsFor(specs, bag, onChange, container, before) {
+    function edit(write) {
+      if (before) before();
+      write();
+      onChange();
+    }
     specs.forEach(function (spec) {
       var key = spec.key;
       if (spec.kind === "line" || spec.kind === "rich") {
         if (!/description/.test(key)) return;   // typed on the page itself
+      }
+
+      // A colour of her own, past the six the theme offers. Two controls
+      // for one value: the swatch to pick with, the box to paste a brand
+      // hex into — and an empty box means "whatever the theme says", which
+      // a colour well on its own has no way of expressing.
+      if (spec.kind === "color") {
+        var well = document.createElement("span");
+        well.className = "lp-ed__colour";
+        var swatch = document.createElement("input");
+        swatch.type = "color";
+        swatch.value = bag[key] || "#ffffff";
+        swatch.setAttribute("aria-label", spec.label);
+        var hex = document.createElement("input");
+        hex.type = "text";
+        hex.className = "lp-ed__hex";
+        hex.placeholder = "theme";
+        hex.maxLength = 7;
+        hex.value = bag[key] || "";
+        hex.setAttribute("aria-label", spec.label + " as a hex code");
+        var clear = document.createElement("button");
+        clear.type = "button";
+        clear.className = "lp-ed__colour-clear";
+        clear.textContent = "×";
+        clear.title = "Back to the theme colour";
+        function setColour(value) {
+          edit(function () { bag[key] = value; });
+          hex.value = value;
+          if (value) swatch.value = value;
+          clear.hidden = !value;
+        }
+        swatch.addEventListener("input", function () { setColour(swatch.value); });
+        hex.addEventListener("change", function () {
+          var typed = hex.value.trim().toLowerCase();
+          if (typed && typed.charAt(0) !== "#") typed = "#" + typed;
+          setColour(/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/.test(typed) ? typed : "");
+        });
+        clear.addEventListener("click", function () { setColour(""); });
+        clear.hidden = !bag[key];
+        well.appendChild(swatch);
+        well.appendChild(hex);
+        well.appendChild(clear);
+        container.appendChild(fieldRow(spec.label, well));
+        if (key === "text_color") {
+          var note = document.createElement("p");
+          note.className = "field-help lp-ed__hint";
+          note.textContent = "Leave this empty and the words follow the "
+            + "background on their own — light on a dark colour, dark on a "
+            + "light one.";
+          container.appendChild(note);
+        }
+        return;
       }
 
       if (spec.kind === "choice") {
@@ -311,7 +425,6 @@
           b.setAttribute("aria-pressed", bag[key] === opt ? "true" : "false");
           b.textContent = niceOption(opt);
           b.addEventListener("click", function () {
-            bag[key] = opt;
             // Move the highlight here and now. Redrawing the block doesn't
             // rebuild this panel, so without this the pill you pressed did
             // the thing and the old one went on looking like the answer.
@@ -320,7 +433,7 @@
               other.classList.toggle("is-on", on);
               other.setAttribute("aria-pressed", on ? "true" : "false");
             });
-            onChange();
+            edit(function () { bag[key] = opt; });
           });
           pills.appendChild(b);
         });
@@ -333,12 +446,22 @@
       input.value = bag[key] || "";
       input.placeholder = spec.kind === "image"
         ? "https://… or upload below"
-        : (spec.kind === "url" ? "/courses or https://…" : "");
+        : (spec.kind === "url" ? "/courses or https://…"
+           : (spec.kind === "anchor" ? "pricing" : ""));
       input.addEventListener("change", function () {
-        bag[key] = input.value.trim();
-        onChange();
+        edit(function () { bag[key] = input.value.trim(); });
       });
       container.appendChild(fieldRow(spec.label, input));
+
+      if (spec.kind === "anchor") {
+        var tip = document.createElement("p");
+        tip.className = "field-help lp-ed__hint";
+        tip.textContent = bag[key]
+          ? 'Link a button to "#' + bag[key] + '" and it jumps here.'
+          : "Name this section and a button anywhere on the page can jump "
+            + "straight to it.";
+        container.appendChild(tip);
+      }
 
       if (spec.kind === "image") {
         var row = document.createElement("div");
@@ -348,16 +471,18 @@
         pick.className = "btn btn--secondary btn--sm";
         pick.textContent = bag[key] ? "Replace picture" : "Upload a picture";
         pick.addEventListener("click", function () {
-          chooseImage(function (url) { bag[key] = url; onChange(); });
+          chooseImage(function (url) { edit(function () { bag[key] = url; }); });
         });
         row.appendChild(pick);
         if (bag[key]) {
-          var clear = document.createElement("button");
-          clear.type = "button";
-          clear.className = "btn btn--quiet btn--sm";
-          clear.textContent = "Remove";
-          clear.addEventListener("click", function () { bag[key] = ""; onChange(); });
-          row.appendChild(clear);
+          var drop = document.createElement("button");
+          drop.type = "button";
+          drop.className = "btn btn--quiet btn--sm";
+          drop.textContent = "Remove";
+          drop.addEventListener("click", function () {
+            edit(function () { bag[key] = ""; });
+          });
+          row.appendChild(drop);
         }
         container.appendChild(row);
       }
@@ -370,10 +495,9 @@
     panelTitle.textContent = def.label || block.type;
 
     controlsFor(def.fields || [], block.fields, function () {
-      snapshot();
       markDirty();
       redraw(block);
-    }, panelBody);
+    }, panelBody, snapshot);
 
     var note = document.createElement("p");
     note.className = "field-help";
@@ -402,7 +526,7 @@
       markDirty();
       applyPageSettings();
       buildPagePanel();
-    }, panelBody);
+    }, panelBody, snapshot);
     var note = document.createElement("p");
     note.className = "field-help";
     note.textContent = "These apply to every block on the page.";
@@ -537,10 +661,13 @@
   }
 
   function move(id, up) {
-    snapshot();
     var i = indexOfId(id);
     var j = up ? i - 1 : i + 1;
+    // Checked before the snapshot, not after: pressing "up" on the top
+    // block used to push a step onto the undo stack and then do nothing,
+    // so undo had to be pressed twice to get anywhere.
     if (i < 0 || j < 0 || j >= blocks.length) return;
+    snapshot();
     blocks.splice(j, 0, blocks.splice(i, 1)[0]);
     var slot = slotFor(id);
     var sibling = up ? slot.previousElementSibling : slot.nextElementSibling;
@@ -548,6 +675,35 @@
     markDirty();
     renderLayers();
     slot.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  /* A block taken off the page without being thrown away. Keeping a
+     section for next month used to mean deleting it and writing it again,
+     so people kept a second copy of the whole page instead. */
+  function toggleHidden(id) {
+    var block = blockById(id);
+    if (!block) return;
+    snapshot();
+    block.fields.visible = block.fields.visible === "hide" ? "show" : "hide";
+    markDirty();
+    redraw(block);
+  }
+
+  /* ---- what a visitor's screen does to this ----
+     The canvas is the page, so narrowing the canvas is the honest way to
+     ask the question: no second rendering that could disagree with the
+     first, and the words stay editable at every width. */
+
+  function setDevice(name) {
+    var frame = root.querySelector("[data-device-frame]");
+    if (frame) frame.setAttribute("data-device", name);
+    Array.prototype.forEach.call(
+      root.querySelectorAll("[data-set-device]"), function (b) {
+        var on = b.getAttribute("data-set-device") === name;
+        b.classList.toggle("is-on", on);
+        b.setAttribute("aria-pressed", on ? "true" : "false");
+      });
+    try { window.localStorage.setItem("lp-device", name); } catch (err) {}
   }
 
   /* ---- the block picker ---- */
@@ -669,6 +825,8 @@
     if (t.closest("[data-page-settings]")) { selectPage(); return; }
     if (t.closest("[data-undo]")) { undo(); return; }
     if (t.closest("[data-redo]")) { redo(); return; }
+    var device = t.closest("[data-set-device]");
+    if (device) { setDevice(device.getAttribute("data-set-device")); return; }
 
     var addOpen = t.closest("[data-add-open]");
     if (addOpen) {
@@ -703,6 +861,7 @@
       var lid = layer.getAttribute("data-layer");
       if (t.closest("[data-layer-up]")) { move(lid, true); return; }
       if (t.closest("[data-layer-down]")) { move(lid, false); return; }
+      if (t.closest("[data-layer-hide]")) { toggleHidden(lid); return; }
       if (t.closest("[data-layer-drop]")) { removeBlock(lid); return; }
       selectBlock(lid);
       var target = slotFor(lid);
@@ -719,6 +878,7 @@
     if (t.closest("[data-settings]")) { selectBlock(id); return; }
     if (t.closest("[data-up]")) { move(id, true); return; }
     if (t.closest("[data-down]")) { move(id, false); return; }
+    if (t.closest("[data-hide]")) { toggleHidden(id); return; }
     if (t.closest("[data-dupe]")) { duplicate(id); return; }
     if (t.closest("[data-remove]")) { removeBlock(id); return; }
 
@@ -843,47 +1003,116 @@
     }
   });
 
-  /* ---- dragging, on the canvas and in the list ----
-     A block can't simply be draggable="true" all the time: a draggable
-     ancestor stops you selecting the text inside it, and the whole point of
-     this canvas is that the words are editable. So the attribute goes on
-     when the grip is pressed and comes off the moment the drag is over. */
+  /* ---- dragging ----
 
-  var dragging = null;
+     Three things can be picked up, and all three go through here: a row in
+     the list on the left, a block on the canvas, and one repeating item —
+     a card, a number, a question — inside a block.
 
-  function endDragArming() {
+     Nothing is draggable="true" sitting still. A draggable ancestor stops
+     you selecting the words inside it, and the words are the whole point of
+     this canvas, so the attribute goes on when a grip is pressed and comes
+     off the moment the drag is done with. The list on the left has no words
+     to select, so its rows are draggable anywhere.
+
+     Small things move live as you pass them, which reads as the thing
+     itself moving. A block on the canvas is often taller than the screen,
+     so shuffling it live would haul the page around under the pointer —
+     those get a line showing where it will land instead. */
+
+  var drag = null;
+  var dropLine = null;
+
+  function disarm() {
     Array.prototype.forEach.call(
-      canvas.querySelectorAll('[data-slot][draggable="true"]'),
-      function (s) { s.removeAttribute("draggable"); });
+      root.querySelectorAll('[data-slot][draggable="true"],'
+                            + ' [data-item][draggable="true"]'),
+      function (el) { el.removeAttribute("draggable"); });
   }
 
   root.addEventListener("mousedown", function (e) {
-    var grip = e.target.closest && e.target.closest("[data-drag]");
-    endDragArming();
+    var t = e.target;
+    disarm();
+    if (!t.closest) return;
+    var itemGrip = t.closest("[data-item-drag]");
+    if (itemGrip) {
+      var row = itemGrip.closest("[data-item]");
+      if (row) row.setAttribute("draggable", "true");
+      return;
+    }
+    var grip = t.closest("[data-drag]");
     if (!grip) return;
     var slot = grip.closest("[data-slot]");
     if (slot) slot.setAttribute("draggable", "true");
   });
-  // A press that never became a drag must not leave the block armed.
+
+  // A press that never became a drag must not leave anything armed.
   document.addEventListener("mouseup", function () {
-    window.setTimeout(function () { if (!dragging) endDragArming(); }, 0);
+    window.setTimeout(function () { if (!drag) disarm(); }, 0);
   });
 
+  // Down a column, or across a row? Cards sit three abreast and questions
+  // sit one under another, and which it is decides whether the pointer's
+  // left-of-centre or its above-centre means "in front of this one".
+  function laidOutInRows(container, sel) {
+    if (!container) return false;
+    var kids = [];
+    Array.prototype.forEach.call(container.children, function (el) {
+      if (el.matches && el.matches(sel)) kids.push(el);
+    });
+    if (kids.length < 2) return false;
+    var a = kids[0].getBoundingClientRect();
+    var b = kids[1].getBoundingClientRect();
+    return b.left > a.left + 1
+      && Math.abs(b.top - a.top) < Math.max(8, a.height / 2);
+  }
+
+  function theLine() {
+    if (!dropLine) {
+      dropLine = document.createElement("div");
+      dropLine.className = "lp-ed__dropline";
+      dropLine.setAttribute("aria-hidden", "true");
+    }
+    return dropLine;
+  }
+
+  function clearLine() {
+    if (dropLine && dropLine.parentNode) dropLine.remove();
+  }
+
   root.addEventListener("dragstart", function (e) {
-    var layer = e.target.closest && e.target.closest("[data-layer]");
-    var slot = e.target.closest && e.target.closest('[data-slot][draggable="true"]');
-    dragging = layer || slot;
-    if (!dragging) return;
-    dragging.classList.add("is-dragging");
+    var t = e.target;
+    if (!t.closest) return;
+    var found = null;
+    // Nearest first: an item lives inside a slot, so an armed item wins
+    // over the slot around it.
+    var layer = t.closest("[data-layer]");
+    var item = t.closest('[data-item][draggable="true"]');
+    var slot = t.closest('[data-slot][draggable="true"]');
+    if (layer) {
+      found = { node: layer, kind: "layer", sel: "[data-layer]", home: layerList };
+    } else if (item) {
+      found = { node: item, kind: "item", sel: "[data-item]",
+                home: item.parentElement };
+    } else if (slot) {
+      found = { node: slot, kind: "block", sel: "[data-slot]", home: canvas };
+    }
+    if (!found) return;
+    // Take the page as it stands first, so undo puts the drag back.
+    snapshot();
+    found.rows = found.kind === "item"
+      ? laidOutInRows(found.home, found.sel) : false;
+    drag = found;
+    drag.node.classList.add("is-dragging");
     root.classList.add("is-dragging-block");
     try { e.dataTransfer.setData("text/plain", "block"); } catch (err) {}
     e.dataTransfer.effectAllowed = "move";
   });
 
   root.addEventListener("dragover", function (e) {
-    if (!dragging) return;
-    // Always allow the drop while a block is in hand, or the pointer shows
-    // "no" over the very gaps you are trying to drop into.
+    if (!drag) return;
+    // Always allow the drop while something is in hand, or the pointer
+    // shows "no" over the very gaps you are trying to drop into.
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
 
@@ -893,27 +1122,51 @@
     if (e.clientY < edge) window.scrollBy(0, -18);
     else if (e.clientY > window.innerHeight - edge) window.scrollBy(0, 18);
 
-    var sel = dragging.hasAttribute("data-layer") ? "[data-layer]" : "[data-slot]";
-    var over = e.target.closest && e.target.closest(sel);
-    if (!over || over === dragging) return;
+    var over = e.target.closest && e.target.closest(drag.sel);
+    if (!over || over === drag.node) return;
+    // A card belongs to its own block, and a block to the canvas. Without
+    // this a card could be dropped into the cards of a different block,
+    // where the state behind it has nowhere to go.
+    if (drag.home && over.parentElement !== drag.home) return;
+
     var box = over.getBoundingClientRect();
-    var after = (e.clientY - box.top) > box.height / 2;
-    if (after) over.after(dragging); else over.before(dragging);
+    var after = drag.rows
+      ? (e.clientX - box.left) > box.width / 2
+      : (e.clientY - box.top) > box.height / 2;
+
+    if (drag.kind === "block") {
+      if (after) over.after(theLine()); else over.before(theLine());
+      return;
+    }
+    if (after) over.after(drag.node); else over.before(drag.node);
   });
 
-  root.addEventListener("drop", function (e) { if (dragging) e.preventDefault(); });
+  root.addEventListener("drop", function (e) {
+    if (drag) e.preventDefault();
+  });
 
+  // The move is made here rather than on drop, and dragend is the reason:
+  // it always fires. A drop does not — let go a shade outside the canvas,
+  // or over something the browser reads as no man's land, and the whole
+  // gesture ends with dragend alone. Doing the work there means the block
+  // goes where the line said it would every time, which is the promise the
+  // line makes the moment it appears.
   root.addEventListener("dragend", function () {
-    if (!dragging) return;
-    dragging.classList.remove("is-dragging");
+    if (!drag) return;
+    var done = drag;
+    drag = null;
+    if (done.kind === "block" && dropLine && dropLine.parentNode) {
+      dropLine.replaceWith(done.node);
+    }
+    clearLine();
+    done.node.classList.remove("is-dragging");
     root.classList.remove("is-dragging-block");
-    var wasLayer = dragging.hasAttribute("data-layer");
-    dragging = null;
-    endDragArming();
-    if (wasLayer) {
-      // The list is the order of record now; put the canvas in step.
+    disarm();
+
+    if (done.kind === "layer") {
+      // The list is the order of record; put the canvas in step behind it.
       var order = Array.prototype.map.call(
-        root.querySelectorAll("[data-layer]"),
+        layerList.querySelectorAll("[data-layer]"),
         function (l) { return l.getAttribute("data-layer"); });
       syncFromDom();
       blocks.sort(function (a, b) {
@@ -924,6 +1177,9 @@
         if (s) canvas.appendChild(s);
       });
     } else {
+      // Blocks and items are both read straight back off the canvas: the
+      // block order from the slots, and each block's items from the stamps
+      // its rows carry with them.
       syncFromDom();
     }
     renderLayers();
@@ -932,18 +1188,27 @@
 
   /* ---- saving ---- */
 
-  function save() {
+  function save(quiet) {
     syncFromDom();
-    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = "Saving…"; }
+    if (saveBtn && !quiet) {
+      saveBtn.disabled = true;
+      saveBtn.textContent = "Saving…";
+    }
     return post(saveUrl, {
       blocks: blocks,
       settings: settings,
       title: titleInput ? titleInput.value : undefined,
       slug: slugInput ? slugInput.value : undefined
     }).then(function (res) {
-      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = "Save changes"; }
+      if (saveBtn && !quiet) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = "Save changes";
+      }
       if (!res.ok) {
-        window.alert((res.data && res.data.error) || "That didn't save. Try again.");
+        if (!quiet) {
+          window.alert((res.data && res.data.error)
+                       || "That didn't save. Try again.");
+        }
         return false;
       }
       if (slugInput && res.data.slug) slugInput.value = res.data.slug;
@@ -956,6 +1221,31 @@
   }
 
   if (saveBtn) saveBtn.addEventListener("click", save);
+
+  /* ---- saving on its own ----
+     Only ever to the draft, which no visitor can reach, so the worst an
+     autosave can do here is keep a half-written sentence somebody was
+     going to finish anyway. Against that: a builder is where an afternoon
+     goes, and a closed tab that takes it with it is the thing people
+     never quite forgive.
+
+     Quiet when it fails. A page left dirty is saved by the next keystroke,
+     or by the Save button, or refused again at Publish — none of which
+     needs a dialog in the middle of writing. */
+  var autosaveTimer = null;
+
+  function scheduleAutosave() {
+    if (autosaveTimer) window.clearTimeout(autosaveTimer);
+    // Two and a half seconds after the last change, so it waits for a
+    // pause rather than firing between two keystrokes. The number is
+    // written here rather than in a variable above because markDirty can
+    // reach this function before the top of the file has finished running.
+    autosaveTimer = window.setTimeout(function () {
+      autosaveTimer = null;
+      if (!dirty || busy || drag) return;
+      save(true);
+    }, 2500);
+  }
 
   // Publishing sends what was saved, so save first or the press is a lie.
   if (publishForm) {
@@ -973,6 +1263,16 @@
   });
 
   document.addEventListener("keydown", function (e) {
+    // Alt and an arrow moves whatever is selected. Dragging is quicker once
+    // you know it is there, but it is also the one way of reordering a
+    // keyboard can't do, and nudging one block past another is fiddlier
+    // with a mouse than it looks.
+    if (e.altKey && selectedId
+        && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+      e.preventDefault();
+      move(selectedId, e.key === "ArrowUp");
+      return;
+    }
     var meta = e.metaKey || e.ctrlKey;
     if (!meta) {
       if (e.key === "Escape") { closePicker(); formatBar.hidden = true; }
@@ -991,7 +1291,12 @@
   });
 
   /* ---- go ---- */
+  Array.prototype.forEach.call(canvas.querySelectorAll("[data-slot]"), stampItems);
   renderLayers();
   applyPageSettings();
   refreshUndoButtons();
+  var lastDevice = "wide";
+  try { lastDevice = window.localStorage.getItem("lp-device") || "wide"; }
+  catch (err) {}
+  setDevice(lastDevice);
 })();

@@ -10,15 +10,20 @@
    a block added after the page loaded is the same markup as one that was
    there when it opened. #}
 {% from "partials/landing_blocks.html" import render_block %}
-<div class="lp-ed__slot" data-slot data-slot-id="{{ b.id }}" tabindex="0"
-     aria-label="{{ label }} block">
+{% set off = b.fields.visible == 'hide' %}
+<div class="lp-ed__slot{{ ' is-off' if off }}" data-slot data-slot-id="{{ b.id }}"
+     tabindex="0" aria-label="{{ label }} block">
   <div class="lp-ed__chrome">
-    <span class="lp-ed__tag" data-drag title="Drag to move">
+    <span class="lp-ed__tag" data-drag title="Drag to move this block">
       <span class="lp-ed__grip" aria-hidden="true">&#10247;</span>{{ label }}
+      {%- if off %}<span class="lp-ed__tag-off">hidden</span>{% endif %}
     </span>
     <span class="lp-ed__chrome-tools">
       <button type="button" data-up title="Move up" aria-label="Move up">&uarr;</button>
       <button type="button" data-down title="Move down" aria-label="Move down">&darr;</button>
+      <button type="button" data-hide aria-pressed="{{ 'true' if off else 'false' }}"
+              title="{{ 'Show this block again' if off else 'Hide this block from visitors' }}"
+              aria-label="{{ 'Show this block again' if off else 'Hide this block from visitors' }}">{{ '&#128374;'|safe if off else '&#128065;'|safe }}</button>
       <button type="button" data-settings title="Block settings" aria-label="Block settings">&#9881;</button>
       <button type="button" data-dupe title="Duplicate" aria-label="Duplicate">&#9099;</button>
       <button type="button" class="lp-ed__drop" data-remove title="Delete block" aria-label="Delete block">&#128465;</button>

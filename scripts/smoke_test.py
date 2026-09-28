@@ -12461,19 +12461,193 @@ ok("Pressing a choice moves the highlight onto it there and then",
    'aria-pressed' in _ed_js
    and 'other.classList.toggle("is-on", on)' in _ed_js)
 
-# A block can't be draggable all the time — that stops you selecting the text
-# inside it — so it is armed from the grip and disarmed afterwards.
+# Nothing on the canvas can be draggable all the time — that stops you
+# selecting the words inside it — so it is armed from a grip and disarmed
+# afterwards. Three things can be picked up, and all three go one way.
 ok("A block is armed for dragging when its grip is pressed",
    '[data-drag]' in _ed_js and 'setAttribute("draggable", "true")' in _ed_js
-   and "endDragArming" in _ed_js)
-ok("And the canvas allows the drop rather than refusing it",
+   and "function disarm()" in _ed_js)
+ok("And so is one card, or number, or question, inside a block",
+   "[data-item-drag]" in _ed_js
+   and '[data-item][draggable="true"]' in _ed_js)
+ok("The canvas allows the drop rather than refusing it",
    'dropEffect = "move"' in _ed_js)
+# Let go a shade outside the canvas and Chromium ends the gesture with
+# dragend and no drop at all. The line had already promised where it would
+# land, so the move is made where that promise can always be kept.
+ok("A dragged block is moved on dragend, not only on drop",
+   re.search(r'addEventListener\("dragend".*?dropLine\.replaceWith',
+             _ed_js, re.S) is not None)
+ok("A card knows which one it is, so its picture moves with its words",
+   'setAttribute("data-item-i"' in _ed_js
+   and 'getAttribute("data-item-i")' in _ed_js)
+ok("Something dropped into another block's items is refused",
+   "over.parentElement !== drag.home" in _ed_js)
+ok("A row of cards reads left-to-right, a list of questions top-to-bottom",
+   "function laidOutInRows" in _ed_js and "e.clientX - box.left" in _ed_js)
+
+# The list of blocks is a grid, and a grid column left on `auto` is as wide
+# as the widest thing in it — so one long title pushed every row out past
+# the panel and the rest were cut off mid-word against its edge.
+ok("The list of blocks is held to the width of the panel around it",
+   re.search(r"\.lp-ed__layer-list\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)",
+             _ed_css) is not None)
+ok("And that panel never scrolls sideways",
+   re.search(r"\.lp-ed__layers\s*\{[^}]*overflow-x:\s*hidden", _ed_css) is not None)
+ok("Both lines of a row are shortened to fit rather than clipped",
+   re.search(r"\.lp-ed__layer-name\s*\{[^}]*text-overflow:\s*ellipsis",
+             _ed_css) is not None
+   and re.search(r"\.lp-ed__layer-sub\s*\{[^}]*text-overflow:\s*ellipsis",
+                 _ed_css) is not None)
+
+# A heading is one line that may be broken; the summary of it is one line
+# that may not. Reading it straight off ran the two halves together.
+ok("A heading broken over two lines summarises as a sentence",
+   "replace(/<br" in _ed_js)
 
 # A frame callback never runs in a background tab, which left the formatting
 # bar showing the wrong selection when somebody came back to the page.
 ok("The formatting bar doesn't wait on a frame callback",
    "requestAnimationFrame(" not in _ed_js       # the word is in a comment
    and "window.setTimeout(showFormatBar, 0)" in _ed_js)
+
+# --- taking a block off the page without throwing it away ------------------
+# Keeping a section for next month used to mean deleting it and writing it
+# again, so people kept a second copy of the whole page instead.
+admin.post(f"/admin/landing/{_fp_id}/save", json={"blocks": [
+    {"id": "v1", "type": "text",
+     "fields": {"heading": "Everyone sees this", "body": "Yes", "bg": "cream"}},
+    {"id": "v2", "type": "text",
+     "fields": {"heading": "Not just yet", "body": "No", "bg": "cream",
+                "visible": "hide"}}]})
+admin.post(f"/admin/landing/{_fp_id}/publish")
+_vis = _guest.get(f"/p/{_fp_slug}").get_data(as_text=True)
+ok("A hidden block is not drawn for a visitor",
+   "Everyone sees this" in _vis and "Not just yet" not in _vis)
+with app.app_context():
+    _vdoc = _lp.document_from_json(db.session.get(_LP, _fp_id).draft_json)
+    ok("But it is still on the page, waiting",
+       len(_vdoc["blocks"]) == 2
+       and _vdoc["blocks"][1]["fields"]["visible"] == "hide")
+    ok("A block that says nothing about it is shown",
+       _lp.is_visible({"fields": {}}) is True)
+_ved = admin.get(f"/admin/landing/{_fp_id}").get_data(as_text=True)
+ok("And the builder still shows it, faded, so it can be found again",
+   "Not just yet" in _ved and "is-off" in _ved and "hidden" in _ved)
+
+# --- a colour of her own, past the six the theme offers --------------------
+ok("A hex is taken, in either shape and either case",
+   _lp.clean_color("#A41F6B") == "#a41f6b"
+   and _lp.clean_color("a41f6b") == "#a41f6b"
+   and _lp.clean_color("#abc") == "#abc")
+ok("Anything that isn't one is not a colour",
+   _lp.clean_color("red") == "" and _lp.clean_color("") == ""
+   and _lp.clean_color("#12345") == ""
+   and _lp.clean_color("#fff;background:url(x)") == ""
+   and _lp.clean_color('#fff" onload="alert(1)') == "")
+ok("The style a block carries is built from what survived that",
+   _lp.block_style({"bg_color": "#112233", "text_color": "#ffffff"})
+   == "background:#112233;color:#ffffff"
+   and _lp.block_style({"bg_color": "javascript:x"}) == "")
+
+# A background of her own with nothing said about the words is the one
+# combination that comes out unreadable: a dark green section still
+# carrying the near-black the cream preset was using.
+ok("A dark colour of her own gets light words without being asked",
+   _lp.block_ink({"bg_color": "#2f5d50"}) == _lp.INK_ON_DARK,
+   _lp.block_ink({"bg_color": "#2f5d50"}))
+ok("And a pale one gets dark words",
+   _lp.block_ink({"bg_color": "#f3e9da"}) == _lp.INK_ON_LIGHT
+   and _lp.block_ink({"bg_color": "#ffffff"}) == _lp.INK_ON_LIGHT)
+ok("Saying one outright always beats what would have been worked out",
+   _lp.block_ink({"bg_color": "#000000", "text_color": "#ff0000"}) == "#ff0000")
+ok("And no background of her own leaves the theme to it",
+   _lp.block_ink({}) == "" and _lp.block_ink({"text_color": "nonsense"}) == "")
+# A hash is added to anything missing one, so a pasted "a41f6b" works. Which
+# does mean a word that is six hex letters is a colour — "facade" is a real
+# one. Harmless: the swatch beside the box is the way most people pick.
+ok("A hex pasted without its hash is still a hex",
+   _lp.clean_color("a41f6b") == "#a41f6b" and _lp.clean_color("zzz") == "")
+
+admin.post(f"/admin/landing/{_fp_id}/save", json={"blocks": [
+    {"id": "c1", "type": "text",
+     "fields": {"heading": "Her colours", "body": "Yes", "bg": "cream",
+                "bg_color": "#123456", "text_color": "nonsense",
+                "anchor": "Special Offer!!"}}]})
+admin.post(f"/admin/landing/{_fp_id}/publish")
+_col = _guest.get(f"/p/{_fp_slug}").get_data(as_text=True)
+ok("A colour she chose reaches the page as a style of its own",
+   "background:#123456" in _col and "lp-block--tinted" in _col)
+ok("A text colour that wasn't one leaves no trace of itself",
+   "nonsense" not in _col)
+ok("But the words are still made readable on the colour she did choose",
+   f"color:{_lp.INK_ON_DARK}" in _col and "lp-block--inked" in _col)
+ok("An anchor is cut down to something a link can jump to",
+   'id="special-offer"' in _col)
+with app.app_context():
+    ok("A name with nothing usable in it is no anchor at all",
+       _lp.clean_anchor("!!!") == "" and _lp.clean_anchor("  A b  ") == "a-b")
+
+# The dark backgrounds paint their captions and card titles by hand, so a
+# colour of her own has to be handed those back or it changes the
+# paragraphs and leaves everything around them as it was.
+ok("Her text colour reaches the parts the presets paint themselves",
+   re.search(r"\.lp-block--inked[^{]*\.lp-caption[^{]*\{[^}]*color:\s*inherit",
+             _ed_css) is not None)
+
+# --- a second copy of a page that works ------------------------------------
+with app.app_context():
+    _dupe_from = db.session.get(_LP, _fp_id).draft_json
+r = admin.post(f"/admin/landing/{_fp_id}/duplicate", follow_redirects=True)
+ok("Duplicating a page opens the copy in the builder",
+   r.status_code == 200 and "data-lp-editor" in r.get_data(as_text=True))
+with app.app_context():
+    _copy = (_LP.query.filter(_LP.title.like("%(copy)%"))
+             .order_by(_LP.id.desc()).first())
+    ok("The copy holds everything the original was holding",
+       _copy is not None and _copy.draft_json == _dupe_from)
+    ok("Under an address of its own",
+       _copy.slug != _fp_slug and _copy.slug.startswith("format-test-copy"),
+       _copy.slug)
+    ok("And is a draft however live the original was",
+       not _copy.is_published() and db.session.get(_LP, _fp_id).is_published(),
+       f"original live: {db.session.get(_LP, _fp_id).is_published()}")
+    _copy_id, _copy_slug = _copy.id, _copy.slug
+ok("So a visitor can't reach the copy until it is published in its own right",
+   _guest.get(f"/p/{_copy_slug}").status_code == 404)
+admin.post(f"/admin/landing/{_copy_id}/delete")
+ok("A member can't duplicate a page",
+   client.post(f"/admin/landing/{_fp_id}/duplicate").status_code in (302, 404))
+
+# --- what the builder now offers -------------------------------------------
+_ed2 = admin.get(f"/admin/landing/{_fp_id}").get_data(as_text=True)
+ok("Every block can be dragged by a grip and hidden with a press",
+   "data-drag" in _ed2 and "data-hide" in _ed2)
+ok("There's a phone, a tablet and a desktop to look at it on",
+   all(('data-set-device="%s"' % d) in _ed2
+       for d in ("wide", "tablet", "phone"))
+   and "data-device-frame" in _ed2)
+ok("And the list of blocks says what to do with it",
+   "Drag to reorder" in _ed2)
+_cards_html = (admin.post("/admin/landing/render-block", json={"type": "features"})
+               .get_json() or {}).get("html", "")
+ok("A block of cards draws a grip on every card",
+   _cards_html.count("data-item-drag") == 3, _cards_html.count("data-item-drag"))
+with app.app_context():
+    _every = _lp.editor_context()["defs"]
+    ok("Every kind of block offers the same four ways to style it",
+       all(set(k["key"] for k in _every[t]["fields"])
+           >= {"visible", "bg_color", "text_color", "anchor"}
+           for t in _lp.BLOCK_ORDER),
+       [t for t in _lp.BLOCK_ORDER
+        if "bg_color" not in [k["key"] for k in _every[t]["fields"]]])
+    ok("With what the block is first and how it looks after",
+       [k["key"] for k in _every["quote"]["fields"]][-4:]
+       == ["visible", "bg_color", "text_color", "anchor"],
+       [k["key"] for k in _every["quote"]["fields"]])
+
+ok("The pages list offers a copy of any of them",
+   'Duplicate</button>' in admin.get("/admin/landing").get_data(as_text=True))
 
 admin.post(f"/admin/landing/{_fp_id}/delete")
 

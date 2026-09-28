@@ -41,9 +41,14 @@
 {%- endif -%}
 {%- endmacro -%}
 
+{# The arrows stay. Dragging is quicker once you know it is there, but it
+   is also the one way of reordering that a keyboard can't do and a shaky
+   hand gets wrong, so it is never the only way. #}
 {%- macro item_chrome(editing, label='Item') -%}
 {%- if editing -%}
 <span class="lp-item__tools">
+  <span class="lp-item__grip" data-item-drag role="button" tabindex="-1"
+        title="Drag to move this {{ label|lower }}" aria-hidden="true">&#10247;</span>
   <button type="button" data-item-up title="Move {{ label|lower }} up" aria-label="Move {{ label|lower }} up">&uarr;</button>
   <button type="button" data-item-down title="Move {{ label|lower }} down" aria-label="Move {{ label|lower }} down">&darr;</button>
   <button type="button" data-item-dupe title="Duplicate {{ label|lower }}" aria-label="Duplicate {{ label|lower }}">&#9099;</button>
@@ -63,7 +68,16 @@
 {%- set f = b.fields -%}
 {%- set pad = f.pad|default('medium') -%}
 {%- set align = f.align|default('') -%}
-<section class="lp-block lp-block--{{ b.type }} lp-bg--{{ f.bg|default('cream') }} lp-pad--{{ pad }}{% if align %} lp-al--{{ align }}{% endif %}"
+{%- set style = lp_block_style(f) -%}
+{#- A hidden block is simply not drawn for a visitor. In the builder it is
+    drawn faded, because "where did my section go" is the question a hide
+    that vanishes always produces.
+
+    ``--inked`` exists because the dark backgrounds colour their captions
+    and card titles by hand. A colour of her own has to reach those too, or
+    picking one changes the paragraphs and leaves everything else behind. -#}
+<section class="lp-block lp-block--{{ b.type }} lp-bg--{{ f.bg|default('cream') }} lp-pad--{{ pad }}{% if align %} lp-al--{{ align }}{% endif %}{% if f.bg_color %} lp-block--tinted{% endif %}{% if lp_block_ink(f) %} lp-block--inked{% endif %}"
+         {% if f.anchor %}id="{{ f.anchor }}" {% endif %}{% if style %}style="{{ style }}" {% endif %}
          data-block="{{ b.id }}" data-type="{{ b.type }}">
 
 {%- if b.type == 'hero' %}

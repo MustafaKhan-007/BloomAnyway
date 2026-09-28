@@ -35,6 +35,10 @@ from ..models import LandingPage, utcnow
 #: are set in the side panel.
 LINE, RICH, URL, IMAGE, CHOICE, NUMBER = (
     "line", "rich", "url", "image", "choice", "number")
+#: A colour of her own, and a name to link to. Both end up in an attribute
+#: rather than between tags, so both are cleaned down to a shape that cannot
+#: carry anything but what they are for.
+COLOR, ANCHOR = "color", "anchor"
 
 MAX_LINE = 1200      # generous: the cap is on markup, not on words
 MAX_RICH = 20000
@@ -158,6 +162,43 @@ def _align(default="left"):
 def _width(default="normal"):
     return {"kind": CHOICE, "options": WIDTHS, "default": default,
             "label": "Content width"}
+
+
+#: What every block carries whatever kind it is. Declared once rather than
+#: repeated down each of the fifteen definitions below, and merged in
+#: wherever a block's fields are read.
+#:
+#: ``visible`` is a hide, not a delete. Taking a section off the page for a
+#: fortnight used to mean deleting it and writing it again afterwards, so
+#: people kept a second copy of the page instead.
+COMMON_FIELDS: dict[str, dict] = {
+    "visible": {"kind": CHOICE, "options": ("show", "hide"),
+                "default": "show", "label": "On the page"},
+    "bg_color": {"kind": COLOR, "default": "", "label": "Background colour"},
+    "text_color": {"kind": COLOR, "default": "", "label": "Text colour"},
+    "anchor": {"kind": ANCHOR, "default": "", "label": "Link to this as"},
+}
+
+
+def block_fields(block_type: str) -> dict:
+    """Every field this kind of block has, its own and the common ones.
+
+    The common ones go last so the side panel reads as what this block *is*
+    first and how it looks second.
+    """
+    spec = BLOCK_DEFS.get(block_type)
+    if spec is None:
+        return {}
+    return {**spec["fields"], **COMMON_FIELDS}
+
+
+def is_visible(block: dict) -> bool:
+    """Whether this block goes out to a visitor."""
+    return (block.get("fields") or {}).get("visible", "show") != "hide"
+
+
+def visible_blocks(blocks) -> list[dict]:
+    return [b for b in (blocks or []) if is_visible(b)]
 
 
 #: Every block the builder can make, and every field it may carry. A field
@@ -472,7 +513,8 @@ def new_block(block_type: str) -> dict:
     if spec is None:
         raise LandingPageError("There's no block of that kind.")
     block = {"id": _new_id(), "type": block_type,
-             "fields": {k: f["default"] for k, f in spec["fields"].items()}}
+             "fields": {k: f["default"]
+                        for k, f in block_fields(block_type).items()}}
     if spec.get("items"):
         count = spec["items"].get("default_count", 1)
         block["items"] = [new_item(block_type) for _ in range(count)]
@@ -525,6 +567,93 @@ def _clean_choice(value, options, default) -> str:
     return text if text in options else default
 
 
+_HEX = re.compile(r"#(?:[0-9a-f]{3}|[0-9a-f]{6})\Z")
+
+
+def clean_color(value) -> str:
+    """``#a41f6b`` or nothing.
+
+    This one is printed into a ``style`` attribute, which is the only place
+    on a landing page where anything typed by a person ends up as CSS. A
+    strict shape rather than a filter: there is no half-valid colour, and
+    nothing shaped like this can close the attribute or start a second
+    declaration.
+    """
+    raw = str(value if value is not None else "").strip().lower()
+    if not raw:
+        return ""
+    if not raw.startswith("#"):
+        raw = "#" + raw
+    return raw if _HEX.match(raw) else ""
+
+
+def clean_anchor(value) -> str:
+    """A name a link can jump to: lowercase letters, digits and dashes.
+
+    Goes into an ``id``, so it is cut to the characters that can only ever
+    be a name — no spaces to break the attribute, nothing to confuse a
+    selector with.
+    """
+    raw = re.sub(r"[^a-z0-9-]+", "-", str(value or "").strip().lower())
+    return raw.strip("-")[:60]
+
+
+def _lightness(colour: str) -> float:
+    """Roughly how light a colour reads, 0 for black and 1 for white."""
+    raw = colour.lstrip("#")
+    if len(raw) == 3:
+        raw = "".join(c * 2 for c in raw)
+    red, green, blue = (int(raw[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+
+
+#: Near-black and near-white, taken from the theme so a worked-out text
+#: colour still looks like it belongs to this site.
+INK_ON_LIGHT = "#2b2622"
+INK_ON_DARK = "#faf5ee"
+
+#: Where the one flips to the other. A shade above the middle, because dark
+#: text on a mid-tone reads worse than light text does.
+INK_FLIP_AT = 0.55
+
+
+def block_ink(fields) -> str:
+    """The text colour a block will use: hers, or one worked out for her.
+
+    A background of her own with nothing said about the words is the one
+    combination that comes out unreadable — a dark green section still
+    carrying the near-black the cream preset was using. So a chosen
+    background with no chosen text colour gets whichever of near-black and
+    near-white can actually be read on it, and saying one outright always
+    wins over that.
+    """
+    bag = fields or {}
+    chosen = clean_color(bag.get("text_color"))
+    if chosen:
+        return chosen
+    background = clean_color(bag.get("bg_color"))
+    if not background:
+        return ""
+    return INK_ON_LIGHT if _lightness(background) > INK_FLIP_AT else INK_ON_DARK
+
+
+def block_style(fields) -> str:
+    """The inline style a block's own colours need, or "".
+
+    Every value here has been through :func:`clean_color`, so each is a
+    hash and three or six hex digits or it is not here at all.
+    """
+    bag = fields or {}
+    bits = []
+    background = clean_color(bag.get("bg_color"))
+    if background:
+        bits.append(f"background:{background}")
+    ink = block_ink(bag)
+    if ink:
+        bits.append(f"color:{ink}")
+    return ";".join(bits)
+
+
 def _clean_field(spec: dict, value):
     kind = spec["kind"]
     if kind == LINE:
@@ -537,6 +666,10 @@ def _clean_field(spec: dict, value):
         return _clean_image(value)
     if kind == CHOICE:
         return _clean_choice(value, spec["options"], spec["default"])
+    if kind == COLOR:
+        return clean_color(value)
+    if kind == ANCHOR:
+        return clean_anchor(value)
     return ""
 
 
@@ -553,7 +686,7 @@ def normalize_block(raw) -> dict | None:
     if not isinstance(raw_fields, dict):
         raw_fields = {}
     fields = {}
-    for key, field_spec in spec["fields"].items():
+    for key, field_spec in block_fields(block_type).items():
         if key in raw_fields:
             fields[key] = _clean_field(field_spec, raw_fields[key])
         else:
@@ -704,6 +837,29 @@ def create(title: str = "") -> LandingPage:
     return page
 
 
+def duplicate(page: LandingPage) -> LandingPage:
+    """A second copy of a page, as a draft, under a name of its own.
+
+    What the copy is of is the *draft*, not what is live: the draft is the
+    one being worked on, and copying a page is nearly always the start of
+    a variation on the work in progress rather than on last month's.
+
+    The copy is never published, whatever the original is. Two pages going
+    live at once because one was duplicated is not something anybody asks
+    for, and it is a hard thing to notice has happened.
+    """
+    name = f"{page.title} (copy)"[:160]
+    copy = LandingPage(
+        title=name,
+        slug=unique_slug(name),
+        draft_json=page.draft_json or blocks_json([], default_settings()),
+        published_json="",
+    )
+    db.session.add(copy)
+    db.session.flush()
+    return copy
+
+
 def save_draft(page: LandingPage, blocks_raw, *, title=None, slug=None,
                settings=None) -> None:
     """Write what the editor sent to the draft. Visitors see none of it."""
@@ -834,7 +990,7 @@ def editor_context() -> dict:
                 "label": spec["label"],
                 "icon": spec.get("icon", "▦"),
                 "hint": spec.get("hint", ""),
-                "fields": field_rows(spec["fields"]),
+                "fields": field_rows(block_fields(key)),
                 "items": bool(spec.get("items")),
                 "item_label": (spec.get("items") or {}).get("label", "Item"),
                 "item_max": (spec.get("items") or {}).get("max", 0),

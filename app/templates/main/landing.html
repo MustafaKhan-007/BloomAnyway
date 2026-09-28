@@ -20,7 +20,9 @@
 </div>
 {% endif %}
 <div class="lp lp-accent--{{ settings.accent|default('plum') }} lp-font--{{ settings.font|default('brand') }} lp-page--{{ settings.width|default('normal') }}{{ ' lp-bare' if settings.nav == 'hide' }}">
-  {% for b in blocks %}{{ render_block(b) }}{% endfor %}
+  {# Hidden blocks are not drawn at all out here — not drawn and then
+     covered up, which would still send the words down the wire. #}
+  {% for b in blocks if b.fields.visible != 'hide' %}{{ render_block(b) }}{% endfor %}
   {% if not blocks %}
   <section class="lp-block lp-bg--cream lp-pad--large"><div class="lp-wrap lp-al--center">
     <h1 class="lp-h2">Nothing here yet</h1>

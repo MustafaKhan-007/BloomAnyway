@@ -11088,6 +11088,31 @@ details.lp-faq__row[open] > summary.lp-faq__q::after { content: " \2212"; }
 .lp-spacer--large  { height: 96px; }
 .lp-spacer--huge   { height: 160px; }
 
+/* A colour she chose herself, on one block.
+   The background arrives as an inline style, which beats the preset on its
+   own. The text colour needs this: the dark presets above paint their
+   captions, card titles and figures by hand, so without handing those back
+   to `inherit` picking a text colour would change the paragraphs and leave
+   everything around them the colour it was. Last in the file on purpose —
+   these tie with the .lp-bg-- rules above on specificity, and a tie goes to
+   whichever was written later. */
+.lp-block--inked,
+.lp-block--inked .lp-h2, .lp-block--inked .lp-hero__title,
+.lp-block--inked .lp-hero__eyebrow, .lp-block--inked .lp-card__title,
+.lp-block--inked .lp-col__title, .lp-block--inked .lp-faq__q,
+.lp-block--inked .lp-caption, .lp-block--inked .lp-stat__value,
+.lp-block--inked .lp-stat__label, .lp-block--inked .lp-quote__by,
+.lp-block--inked .lp-quote__words, .lp-block--inked .lp-body {
+  color: inherit;
+}
+/* A card drawn for a dark preset is a pale wash of white. Over a colour of
+   her own that wash is whatever it lands on, which is the right answer for
+   any background rather than only the two it was written for. */
+.lp-block--tinted .lp-card {
+  background: rgba(255, 255, 255, 0.10);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
 /* The bar an owner sees over a draft. */
 .lp-preview-bar {
   display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
@@ -11157,7 +11182,11 @@ details.lp-faq__row[open] > summary.lp-faq__q::after { content: " \2212"; }
 .lp-ed__layers {
   background: #fff; border: 1px solid rgba(61, 20, 49, 0.12);
   border-radius: var(--radius-card); padding: 12px;
-  position: sticky; top: 76px; max-height: calc(100vh - 100px); overflow: auto;
+  position: sticky; top: 76px; max-height: calc(100vh - 100px);
+  /* Down the page only. Sideways, there is nothing worth reaching: the
+     names are shortened to fit, and a panel that scrolls both ways hides
+     half a title behind an edge nobody thinks to drag. */
+  overflow-y: auto; overflow-x: hidden;
 }
 .lp-ed__layers-head {
   display: flex; align-items: center; justify-content: space-between;
@@ -11169,26 +11198,49 @@ details.lp-faq__row[open] > summary.lp-faq__q::after { content: " \2212"; }
   cursor: pointer; color: var(--plum);
 }
 .lp-ed__pagebtn:hover { border-color: var(--plum); }
-.lp-ed__layer-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
-.lp-ed__layer {
-  display: flex; align-items: center; gap: 8px; cursor: pointer;
-  padding: 7px 8px; border-radius: 10px; border: 1px solid transparent;
-  background: var(--dawn-ivory);
+.lp-ed__layers-hint {
+  margin: -4px 0 8px; font-size: 11px; color: var(--ink-soft);
 }
+/* minmax(0, 1fr), not the default: a grid column left on `auto` is as wide
+   as the widest thing in it, and one long block title pushed every row out
+   past the panel — so the names underneath were cut off mid-word against an
+   edge rather than shortened to fit inside it. */
+.lp-ed__layer-list {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px;
+}
+.lp-ed__layer {
+  position: relative;
+  display: flex; align-items: center; gap: 8px; cursor: grab;
+  padding: 7px 8px; border-radius: 10px; border: 1px solid transparent;
+  background: var(--dawn-ivory); min-width: 0; overflow: hidden;
+}
+.lp-ed__layer:active { cursor: grabbing; }
 .lp-ed__layer:hover { border-color: rgba(122, 46, 98, 0.35); }
 .lp-ed__layer.is-on { border-color: var(--plum); background: #fff; }
 .lp-ed__layer.is-dragging { opacity: .4; }
 .lp-ed__layer-icon { flex: none; width: 18px; text-align: center; color: var(--plum); }
-.lp-ed__layer-text { min-width: 0; flex: 1; display: block; }
+.lp-ed__layer-text { min-width: 0; flex: 1 1 0; display: block; }
 .lp-ed__layer-name {
   display: block; font-size: 12px; font-weight: 800; color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .lp-ed__layer-sub {
   display: block; font-size: 11px; color: var(--ink-soft);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.lp-ed__layer-tools { display: flex; gap: 1px; flex: none; opacity: 0; }
-.lp-ed__layer:hover .lp-ed__layer-tools, .lp-ed__layer.is-on .lp-ed__layer-tools { opacity: 1; }
+/* Floated over the row's end rather than sitting in the row. Holding a
+   lane open for four buttons that are invisible most of the time spent a
+   third of a narrow panel on nothing, and left the titles to fight over
+   what was left. */
+.lp-ed__layer-tools {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  display: flex; gap: 1px; padding: 2px; border-radius: 999px;
+  background: #fff; box-shadow: 0 1px 7px rgba(43, 38, 34, 0.22);
+  opacity: 0; transition: opacity .12s; pointer-events: none;
+}
+.lp-ed__layer:hover .lp-ed__layer-tools, .lp-ed__layer.is-on .lp-ed__layer-tools,
+.lp-ed__layer-tools:focus-within { opacity: 1; pointer-events: auto; }
 .lp-ed__layer-tools button {
   border: 0; background: transparent; cursor: pointer; width: 20px; height: 20px;
   border-radius: 5px; font-size: 11px; line-height: 1; color: var(--ink-soft);
@@ -11206,10 +11258,29 @@ details.lp-faq__row[open] > summary.lp-faq__q::after { content: " \2212"; }
 .lp-ed__addbig:hover { background: rgba(122, 46, 98, 0.08); border-style: solid; }
 
 /* --- middle: the page --- */
+/* The frame is what narrows; the canvas inside it is the page itself. A
+   phone width is the real page at a phone's width, not a picture of one. */
+.lp-ed__frame { min-width: 0; display: block; }
+.lp-ed__frame[data-device="tablet"] { max-width: 820px; margin: 0 auto; }
+.lp-ed__frame[data-device="phone"] { max-width: 420px; margin: 0 auto; }
+.lp-ed__frame[data-device="tablet"] .lp-ed__canvas,
+.lp-ed__frame[data-device="phone"] .lp-ed__canvas {
+  box-shadow: 0 8px 34px rgba(43, 38, 34, 0.22);
+}
 .lp-ed__canvas {
   border: 1px solid rgba(61, 20, 49, 0.12); border-radius: var(--radius-card);
   overflow: hidden; background: var(--dawn-ivory); min-width: 0;
 }
+.lp-ed__devices {
+  display: inline-flex; gap: 2px; padding: 2px; border-radius: 999px;
+  background: var(--dawn-ivory); border: 1px solid rgba(61, 20, 49, 0.14);
+}
+.lp-ed__device {
+  border: 0; background: transparent; cursor: pointer; border-radius: 999px;
+  width: 30px; height: 26px; font-size: 13px; line-height: 1; color: var(--ink-soft);
+}
+.lp-ed__device:hover { background: rgba(122, 46, 98, 0.12); }
+.lp-ed__device.is-on { background: #fff; color: var(--plum); box-shadow: 0 1px 4px rgba(43,38,34,.16); }
 .lp-ed__blank { text-align: center; padding: 40px 16px; color: var(--ink-soft); }
 .lp-ed__tail { padding: 16px; background: #fff; border-top: 1px solid rgba(61,20,49,.12); }
 .lp-ed__tail .lp-ed__addbig { margin: 0; }
@@ -11222,6 +11293,29 @@ details.lp-faq__row[open] > summary.lp-faq__q::after { content: " \2212"; }
 .lp-ed__slot.is-on { outline-color: var(--plum); }
 .lp-ed__slot:focus-visible { outline-color: var(--plum); }
 .lp-ed__slot.is-dragging { opacity: 0.45; }
+.lp-ed__slot.is-first [data-up], .lp-ed__slot.is-last [data-down] {
+  visibility: hidden;
+}
+/* Where a block will land. A block is often taller than the screen, so
+   shuffling it live as the pointer passed would haul the page around
+   underneath the hand holding it. */
+.lp-ed__dropline {
+  height: 0; border-top: 4px solid var(--plum); border-radius: 4px;
+  margin: -2px 0; position: relative; z-index: 12;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.85);
+}
+.lp-ed__dropline::before {
+  content: ""; position: absolute; left: 0; top: -7px;
+  width: 10px; height: 10px; border-radius: 50%; background: var(--plum);
+}
+/* A block that is on the page but not out to anybody. Faded rather than
+   gone: "where did my section go" is the question a hide that vanishes
+   always produces. */
+.lp-ed__slot.is-off .lp-block { opacity: 0.4; filter: grayscale(0.55); }
+.lp-ed__tag-off {
+  margin-left: 6px; padding: 1px 6px; border-radius: 999px;
+  background: rgba(166, 75, 63, 0.16); color: var(--error); font-size: 10px;
+}
 .lp-ed__chrome {
   position: absolute; top: 0; left: 0; right: 0; z-index: 8;
   display: flex; align-items: center; justify-content: space-between;
@@ -11332,10 +11426,17 @@ details.lp-faq__row[open] > summary.lp-faq__q::after { content: " \2212"; }
 }
 .lp-ed [data-item]:hover .lp-item__tools,
 .lp-item__tools:focus-within { opacity: 1; }
-.lp-item__tools button {
+.lp-ed [data-item].is-dragging { opacity: 0.4; }
+.lp-item__tools button, .lp-item__grip {
   width: 21px; height: 21px; border: 0; background: transparent; cursor: pointer;
   border-radius: 999px; font-size: 11px; line-height: 1; color: var(--ink-soft);
 }
+.lp-item__grip {
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: grab; font-size: 13px;
+}
+.lp-item__grip:active { cursor: grabbing; }
+.lp-item__grip:hover { background: rgba(122, 46, 98, 0.14); color: var(--plum); }
 .lp-item__tools button:hover { background: rgba(122,46,98,.14); color: var(--plum); }
 .lp-item__tools .lp-item__drop:hover { background: rgba(166,75,63,.16); color: var(--error); }
 .lp-item__add {
@@ -11372,6 +11473,25 @@ details.lp-faq__row[open] > summary.lp-faq__q::after { content: " \2212"; }
   border: 1px solid rgba(61, 20, 49, 0.18); font-size: 13px; background: #fff;
 }
 .lp-ed__field--btn { display: flex; gap: 6px; margin-top: -4px; }
+.lp-ed__hint { margin: -8px 0 12px; font-size: 11px; }
+/* A swatch to pick with and a box to paste a brand hex into. Empty means
+   "whatever the theme says", which a colour well on its own cannot say —
+   it always holds some colour, even before anyone has chosen one. */
+.lp-ed__colour { display: flex; gap: 6px; align-items: center; }
+.lp-ed__colour input[type="color"] {
+  width: 34px; height: 30px; padding: 2px; flex: none; cursor: pointer;
+  border-radius: 8px; border: 1px solid rgba(61, 20, 49, 0.18); background: #fff;
+}
+.lp-ed__colour .lp-ed__hex {
+  flex: 1 1 auto; min-width: 0;
+  font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px;
+}
+.lp-ed__colour-clear {
+  flex: none; width: 26px; height: 26px; border-radius: 999px; cursor: pointer;
+  border: 1px solid rgba(61, 20, 49, 0.18); background: #fff;
+  font-size: 14px; line-height: 1; color: var(--ink-soft);
+}
+.lp-ed__colour-clear:hover { border-color: var(--error); color: var(--error); }
 .lp-ed__pills { display: flex; flex-wrap: wrap; gap: 4px; }
 .lp-ed__pill {
   border: 1px solid rgba(61, 20, 49, 0.18); background: var(--dawn-ivory);
