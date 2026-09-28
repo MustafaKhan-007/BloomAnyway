@@ -1,0 +1,4 @@
+{# What the builder's Preview shows: the page body and nothing else, out of
+   the same macro that draws it at /p/<slug>. #}
+{% from "partials/landing_page.html" import landing_body %}
+{{ landing_body(blocks, settings) }}

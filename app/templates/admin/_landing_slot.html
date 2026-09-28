@@ -11,7 +11,12 @@
    there when it opened. #}
 {% from "partials/landing_blocks.html" import render_block %}
 {% set off = b.fields.visible == 'hide' %}
+{# The wrapper carries the block's place on the twelve-column grid, because
+   in here the wrapper is the grid item and out there the block itself is.
+   Both are given the same placement, so the builder and the page it is
+   building lay out identically. #}
 <div class="lp-ed__slot{{ ' is-off' if off }}" data-slot data-slot-id="{{ b.id }}"
+     {% if lp_grid_style(b.fields) %}style="{{ lp_grid_style(b.fields) }}" {% endif %}
      tabindex="0" aria-label="{{ label }} block">
   <div class="lp-ed__chrome">
     <span class="lp-ed__tag" data-drag title="Drag to move this block">
@@ -30,6 +35,11 @@
     </span>
   </div>
   {{ render_block(b, editing=True) }}
+  {# Drag this edge to make the block narrower and let something sit beside
+     it. The arrows and the sliders in the panel do the same thing for
+     anyone not using a mouse. #}
+  <span class="lp-ed__grab" data-grab-width role="presentation"
+        title="Drag to change how wide this block is"></span>
   <div class="lp-ed__rail">
     <button type="button" class="lp-ed__rail-btn" data-add-here
             title="Add a block here" aria-label="Add a block here">+</button>

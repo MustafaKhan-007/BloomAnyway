@@ -4338,6 +4338,24 @@ def landing_render_block():
     return jsonify({"html": html, "block": block})
 
 
+@bp.route("/landing/preview", methods=["POST"])
+@admin_required
+def landing_preview_html():
+    """The page as a visitor would get it, for the builder to show.
+
+    Not a save: the browser hands over what is on the canvas right now and
+    gets back the same macro the public page uses, run with the editing
+    hooks off. That is what makes Preview exact rather than a likeness —
+    there is one piece of code drawing both, so there is nowhere for them
+    to disagree.
+    """
+    payload = request.get_json(silent=True) or {}
+    blocks = lp_svc.normalize_blocks(payload.get("blocks"))
+    settings = lp_svc.normalize_settings(payload.get("settings"))
+    return jsonify({"html": render_template(
+        "admin/_landing_preview.html", blocks=blocks, settings=settings)})
+
+
 @bp.route("/landing/images", methods=["POST"])
 @admin_required
 def landing_image_upload():
