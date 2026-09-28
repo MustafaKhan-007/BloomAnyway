@@ -404,6 +404,14 @@
         well.appendChild(hex);
         well.appendChild(clear);
         container.appendChild(fieldRow(spec.label, well));
+        if (key === "text_color") {
+          var note = document.createElement("p");
+          note.className = "field-help lp-ed__hint";
+          note.textContent = "Leave this empty and the words follow the "
+            + "background on their own — light on a dark colour, dark on a "
+            + "light one.";
+          container.appendChild(note);
+        }
         return;
       }
 

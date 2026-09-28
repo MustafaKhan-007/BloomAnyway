@@ -598,18 +598,57 @@ def clean_anchor(value) -> str:
     return raw.strip("-")[:60]
 
 
+def _lightness(colour: str) -> float:
+    """Roughly how light a colour reads, 0 for black and 1 for white."""
+    raw = colour.lstrip("#")
+    if len(raw) == 3:
+        raw = "".join(c * 2 for c in raw)
+    red, green, blue = (int(raw[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+
+
+#: Near-black and near-white, taken from the theme so a worked-out text
+#: colour still looks like it belongs to this site.
+INK_ON_LIGHT = "#2b2622"
+INK_ON_DARK = "#faf5ee"
+
+#: Where the one flips to the other. A shade above the middle, because dark
+#: text on a mid-tone reads worse than light text does.
+INK_FLIP_AT = 0.55
+
+
+def block_ink(fields) -> str:
+    """The text colour a block will use: hers, or one worked out for her.
+
+    A background of her own with nothing said about the words is the one
+    combination that comes out unreadable — a dark green section still
+    carrying the near-black the cream preset was using. So a chosen
+    background with no chosen text colour gets whichever of near-black and
+    near-white can actually be read on it, and saying one outright always
+    wins over that.
+    """
+    bag = fields or {}
+    chosen = clean_color(bag.get("text_color"))
+    if chosen:
+        return chosen
+    background = clean_color(bag.get("bg_color"))
+    if not background:
+        return ""
+    return INK_ON_LIGHT if _lightness(background) > INK_FLIP_AT else INK_ON_DARK
+
+
 def block_style(fields) -> str:
     """The inline style a block's own colours need, or "".
 
-    Both values have been through :func:`clean_color`, so each is a hash and
-    six hex digits or it is not here at all.
+    Every value here has been through :func:`clean_color`, so each is a
+    hash and three or six hex digits or it is not here at all.
     """
     bag = fields or {}
     bits = []
     background = clean_color(bag.get("bg_color"))
-    ink = clean_color(bag.get("text_color"))
     if background:
         bits.append(f"background:{background}")
+    ink = block_ink(bag)
     if ink:
         bits.append(f"color:{ink}")
     return ";".join(bits)

@@ -12550,6 +12550,25 @@ ok("The style a block carries is built from what survived that",
    == "background:#112233;color:#ffffff"
    and _lp.block_style({"bg_color": "javascript:x"}) == "")
 
+# A background of her own with nothing said about the words is the one
+# combination that comes out unreadable: a dark green section still
+# carrying the near-black the cream preset was using.
+ok("A dark colour of her own gets light words without being asked",
+   _lp.block_ink({"bg_color": "#2f5d50"}) == _lp.INK_ON_DARK,
+   _lp.block_ink({"bg_color": "#2f5d50"}))
+ok("And a pale one gets dark words",
+   _lp.block_ink({"bg_color": "#f3e9da"}) == _lp.INK_ON_LIGHT
+   and _lp.block_ink({"bg_color": "#ffffff"}) == _lp.INK_ON_LIGHT)
+ok("Saying one outright always beats what would have been worked out",
+   _lp.block_ink({"bg_color": "#000000", "text_color": "#ff0000"}) == "#ff0000")
+ok("And no background of her own leaves the theme to it",
+   _lp.block_ink({}) == "" and _lp.block_ink({"text_color": "nonsense"}) == "")
+# A hash is added to anything missing one, so a pasted "a41f6b" works. Which
+# does mean a word that is six hex letters is a colour — "facade" is a real
+# one. Harmless: the swatch beside the box is the way most people pick.
+ok("A hex pasted without its hash is still a hex",
+   _lp.clean_color("a41f6b") == "#a41f6b" and _lp.clean_color("zzz") == "")
+
 admin.post(f"/admin/landing/{_fp_id}/save", json={"blocks": [
     {"id": "c1", "type": "text",
      "fields": {"heading": "Her colours", "body": "Yes", "bg": "cream",
@@ -12558,9 +12577,11 @@ admin.post(f"/admin/landing/{_fp_id}/save", json={"blocks": [
 admin.post(f"/admin/landing/{_fp_id}/publish")
 _col = _guest.get(f"/p/{_fp_slug}").get_data(as_text=True)
 ok("A colour she chose reaches the page as a style of its own",
-   'style="background:#123456"' in _col and "lp-block--tinted" in _col, _col[:0])
-ok("A colour that wasn't one leaves no trace",
-   "nonsense" not in _col and "lp-block--inked" not in _col)
+   "background:#123456" in _col and "lp-block--tinted" in _col)
+ok("A text colour that wasn't one leaves no trace of itself",
+   "nonsense" not in _col)
+ok("But the words are still made readable on the colour she did choose",
+   f"color:{_lp.INK_ON_DARK}" in _col and "lp-block--inked" in _col)
 ok("An anchor is cut down to something a link can jump to",
    'id="special-offer"' in _col)
 with app.app_context():
