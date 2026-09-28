@@ -28,6 +28,17 @@
       </div>
     </div>
     <div class="lp-ed__bar-right">
+      {# What a visitor's screen will do to this. The canvas is the page, so
+         narrowing the canvas is the honest way to ask the question — no
+         second rendering that could disagree with the first. #}
+      <span class="lp-ed__devices" role="group" aria-label="Preview width">
+        <button type="button" class="lp-ed__device is-on" data-set-device="wide"
+                aria-pressed="true" title="Desktop" aria-label="Desktop width">&#128421;</button>
+        <button type="button" class="lp-ed__device" data-set-device="tablet"
+                aria-pressed="false" title="Tablet" aria-label="Tablet width">&#128444;</button>
+        <button type="button" class="lp-ed__device" data-set-device="phone"
+                aria-pressed="false" title="Phone" aria-label="Phone width">&#128241;</button>
+      </span>
       <button type="button" class="lp-ed__icon" data-undo title="Undo (Ctrl+Z)" aria-label="Undo" disabled>&#8630;</button>
       <button type="button" class="lp-ed__icon" data-redo title="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled>&#8631;</button>
       <span class="lp-ed__state" data-state
@@ -57,23 +68,29 @@
         <button type="button" class="lp-ed__pagebtn" data-page-settings
                 title="Page settings">&#9881; Page</button>
       </div>
+      <p class="lp-ed__layers-hint">Drag to reorder.</p>
       <ol class="lp-ed__layer-list" data-layers></ol>
       <button type="button" class="lp-ed__addbig" data-add-open>+ Add a block</button>
     </aside>
 
-    {# ---- middle: the page ---- #}
-    <div class="lp-ed__canvas">
-      <div class="lp" data-canvas>
-        {% for b in blocks %}
-          {% set label = defs[b.type].label if b.type in defs else b.type %}
-          {% include "admin/_landing_slot.html" with context %}
-        {% endfor %}
-      </div>
-      {% if not blocks %}
-      <p class="lp-ed__blank">This page has no blocks yet. Add one below.</p>
-      {% endif %}
-      <div class="lp-ed__tail">
-        <button type="button" class="lp-ed__addbig" data-add-open data-at-end>+ Add a block at the end</button>
+    {# ---- middle: the page ----
+       The device frame narrows the canvas rather than swapping in a second
+       rendering of the page, so what is being looked at on a phone width
+       is the same markup, still typeable. #}
+    <div class="lp-ed__frame" data-device-frame data-device="wide">
+      <div class="lp-ed__canvas">
+        <div class="lp" data-canvas>
+          {% for b in blocks %}
+            {% set label = defs[b.type].label if b.type in defs else b.type %}
+            {% include "admin/_landing_slot.html" with context %}
+          {% endfor %}
+        </div>
+        {% if not blocks %}
+        <p class="lp-ed__blank">This page has no blocks yet. Add one below.</p>
+        {% endif %}
+        <div class="lp-ed__tail">
+          <button type="button" class="lp-ed__addbig" data-add-open data-at-end>+ Add a block at the end</button>
+        </div>
       </div>
     </div>
 
@@ -145,5 +162,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/landing-editor.js', v='20260929b') }}" defer></script>
+<script src="{{ url_for('static', filename='js/landing-editor.js', v='20260930a') }}" defer></script>
 {% endblock %}

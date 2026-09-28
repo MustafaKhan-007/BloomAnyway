@@ -4288,6 +4288,17 @@ def landing_unpublish(page_id):
     return redirect(request.referrer or url_for("admin.landing_pages"))
 
 
+@bp.route("/landing/<int:page_id>/duplicate", methods=["POST"])
+@admin_required
+def landing_duplicate(page_id):
+    page = _landing_or_404(page_id)
+    copy = lp_svc.duplicate(page)
+    db.session.commit()
+    flash(f"Copied “{page.title[:50]}”. This one is a draft — change what you "
+          "like and publish it when you're ready.", "success")
+    return redirect(url_for("admin.landing_edit", page_id=copy.id))
+
+
 @bp.route("/landing/<int:page_id>/delete", methods=["POST"])
 @admin_required
 def landing_delete(page_id):
