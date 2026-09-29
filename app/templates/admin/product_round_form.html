@@ -1,0 +1,241 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}{{ row.label() }} — {{ product.title }}{% endblock %}
+
+{% block content %}
+<div class="studio-page studio-product-form">
+  <div class="page-head">
+    <div>
+      <p class="eyebrow">
+        <a href="{{ url_for('admin.product_rounds', product_id=product.id) }}">&larr; Rounds</a>
+      </p>
+      <h1>{{ row.label() }}</h1>
+      <p class="field-help" style="margin:6px 0 0; max-width:640px;">
+        Dates for this run of <strong>{{ product.title }}</strong>. The lessons,
+        the price and everything on the product page come from the product, so
+        there is nothing to copy here.
+        {% if held %}
+        <strong>{{ held }} {{ 'person is' if held == 1 else 'people are' }} on
+        this round</strong> — changing a date below moves
+        {{ 'her' if held == 1 else 'them' }}.
+        {% endif %}
+      </p>
+    </div>
+  </div>
+
+  {% if row.is_live() and selling and selling.id != row.id %}
+  <div class="studio-callout studio-callout--warn">
+    <strong>{{ selling.label() }} is what shoppers see.</strong>
+    Only the newest open round is offered, so this one is open to nobody new.
+    Everybody already on it keeps these dates.
+  </div>
+  {% endif %}
+
+  <form method="post" class="studio-product-form__main" data-round-dates>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <details class="admin-panel studio-card studio-section" open>
+      <summary class="studio-section__head">
+        <h2>This round</h2>
+        <p class="field-help studio-section__lede">What to call it, and whether it is the one being sold.</p>
+      </summary>
+      <div class="form-row">
+        <div class="field" style="flex:2;">
+          <label for="title">Name</label>
+          <input type="text" id="title" name="title" maxlength="120"
+                 value="{{ row.title or '' }}" placeholder="e.g. Spring cohort">
+          <p class="field-help">
+            Optional. Shown to buyers on the product page and in their reader,
+            so they know which run they are on. Left empty it is
+            &ldquo;Round {{ row.number }}&rdquo;.
+          </p>
+        </div>
+        <div class="field" style="padding-top:28px;">
+          <label class="checkline">
+            <input type="checkbox" name="live" value="1" {{ 'checked' if row.is_live() }}>
+            Open for new buyers
+          </label>
+          <p class="field-help" style="margin:6px 0 0;">
+            Opening this closes the one before it to anybody new — the newest
+            open round is the only one a shopper is offered. Nobody already on
+            an earlier round is moved.
+          </p>
+        </div>
+        <div class="field">
+          <label for="off_shelf_date">Take off the shelves on</label>
+          <div class="studio-accent-row">
+            <input type="date" id="off_shelf_date" name="off_shelf_date"
+                   value="{{ row.off_shelf_at|localtime('%Y-%m-%d') if row.off_shelf_at else '' }}">
+            <input type="time" id="off_shelf_time" name="off_shelf_time"
+                   value="{{ row.off_shelf_at|localtime('%H:%M') if row.off_shelf_at else '23:59' }}">
+          </div>
+          <p class="field-help">
+            Optional. After this the product stops selling unless a newer round
+            is open. Everybody who bought into this one keeps it for good.
+            {{ countdown(row.off_shelf_at, zero='Off the shelves now') }}
+          </p>
+        </div>
+      </div>
+    </details>
+
+    {% if product.perk_tier() %}
+    <details class="admin-panel studio-card studio-section" open>
+      <summary class="studio-section__head">
+        <h2>Free membership</h2>
+        <p class="field-help studio-section__lede">
+          Buyers on this round get {{ product.perk_tier()|title }} membership free.
+          Which tier is set on the product; how long it runs is this round's.
+        </p>
+      </summary>
+      <div class="form-row">
+        <div class="field">
+          <label for="perk_months">Free for</label>
+          <div class="studio-accent-row">
+            <input type="number" id="perk_months" name="perk_months" min="1" max="60"
+                   style="max-width:100px;"
+                   value="{{ row.perk_months() if row.perk_months() else 3 }}">
+            <span class="field-help" style="margin:0;">months</span>
+          </div>
+          <p class="field-help">
+            Each buyer gets this long from their own start. An end date beside
+            it is used instead, if you set one.
+          </p>
+        </div>
+        <div class="field">
+          <label for="perk_starts_date">Membership starts</label>
+          <label class="checkline" style="margin:0 0 8px;">
+            <input type="checkbox" id="perk_start_on_buy" name="perk_start_on_buy"
+                   value="1" data-perk-buy
+                   {{ 'checked' if not row.perk_starts_at }}>
+            When they buy
+          </label>
+          <div class="studio-accent-row" data-perk-start
+               {{ 'hidden' if not row.perk_starts_at }}>
+            <input type="date" id="perk_starts_date" name="perk_starts_date"
+                   value="{{ row.perk_starts_at|localtime('%Y-%m-%d') if row.perk_starts_at else '' }}">
+            <input type="time" id="perk_starts_time" name="perk_starts_time"
+                   value="{{ row.perk_starts_at|localtime('%H:%M') if row.perk_starts_at else '09:00' }}">
+          </div>
+          <p class="field-help">
+            Untick to hold it back to a day of your choosing. Anybody buying
+            after that day starts at the counter anyway.
+          </p>
+        </div>
+        <div class="field">
+          <label for="perk_ends_date">Membership ends on</label>
+          <div class="studio-accent-row">
+            <input type="date" id="perk_ends_date" name="perk_ends_date"
+                   value="{{ row.perk_ends_at|localtime('%Y-%m-%d') if row.perk_ends_at else '' }}">
+            <input type="time" id="perk_ends_time" name="perk_ends_time"
+                   value="{{ row.perk_ends_at|localtime('%H:%M') if row.perk_ends_at else '23:59' }}">
+          </div>
+          <p class="field-help">
+            Optional, and it takes the place of the months: everybody on this
+            round stops on this day, whenever they bought.
+          </p>
+        </div>
+      </div>
+    </details>
+    {% endif %}
+
+    {% if modules %}
+    <details class="admin-panel studio-card studio-section" open>
+      <summary class="studio-section__head">
+        <h2>When the modules open</h2>
+        <p class="field-help studio-section__lede">
+          The {{ modules|length }} module{{ '' if modules|length == 1 else 's' }}
+          are the product's. Only their timing is this round's.
+          {%- if not product.drip_enabled %}
+          <strong>Drip-feeding is off on the product</strong>, so all of them
+          open at once and nothing below is read until you turn it on.
+          {%- endif %}
+        </p>
+      </summary>
+      <div class="form-row studio-modules__drip">
+        <div class="field" style="flex:1 1 100%;">
+          <span class="field__label">How they are spaced</span>
+          <div class="drip-modes">
+            {% for key, label in drip_modes.items() %}
+            <label class="checkline checkline--sm">
+              <input type="radio" name="drip_mode" value="{{ key }}"
+                     {{ 'checked' if row.drip_mode_key() == key }}>
+              <span>{{ label }}</span>
+            </label>
+            {% endfor %}
+          </div>
+          <p class="field-help" data-drip-note="interval">One gap, used between every module.</p>
+          <p class="field-help" data-drip-note="dates">
+            Each module below gets its own date, the same for everybody on this
+            round. Leave one empty and it comes out with the module above it.
+          </p>
+          <p class="field-help" data-drip-note="gaps">
+            Each module waits its own number of days after the one above it,
+            counted from when each buyer bought.
+          </p>
+        </div>
+      </div>
+      <div class="form-row studio-modules__drip" data-drip-only="interval">
+        <div class="field">
+          <label for="drip_interval_days">Release one every</label>
+          <div class="studio-accent-row">
+            <input type="number" id="drip_interval_days" name="drip_interval_days"
+                   min="1" max="365" style="max-width:96px;"
+                   value="{{ row.drip_days() }}">
+            <span class="field-help" style="margin:0;">days</span>
+          </div>
+        </div>
+      </div>
+      <div class="form-row studio-modules__drip" data-drip-only="interval gaps">
+        <div class="field">
+          <label for="drip_starts_date">Open module 1 on</label>
+          <div class="studio-accent-row">
+            <input type="date" id="drip_starts_date" name="drip_starts_date"
+                   value="{{ row.drip_starts_at|localtime('%Y-%m-%d') if row.drip_starts_at else '' }}">
+            <input type="time" id="drip_starts_time" name="drip_starts_time"
+                   value="{{ row.drip_starts_at|localtime('%H:%M') if row.drip_starts_at else '09:00' }}">
+          </div>
+          <p class="field-help">
+            The day this run begins. Leave it empty and everybody on this round
+            starts the day they buy instead.
+            {{ countdown(row.drip_starts_at, zero='Module 1 is open now') }}
+          </p>
+        </div>
+      </div>
+      {% for mod in modules %}
+      <div class="form-row studio-modules__when">
+        <div class="field" style="flex:2;">
+          <span class="field__label">Module {{ mod.number }}</span>
+          <p class="field-help" style="margin:0;">{{ mod.title }}</p>
+        </div>
+        <div class="field" data-drip-only="dates">
+          <label for="mod{{ mod.number }}_release_date">Comes out on</label>
+          <div class="studio-accent-row">
+            <input type="date" id="mod{{ mod.number }}_release_date"
+                   name="mod{{ mod.number }}_release_date"
+                   value="{{ mod.release_at|localtime('%Y-%m-%d') if mod.release_at else '' }}">
+            <input type="time" id="mod{{ mod.number }}_release_time"
+                   name="mod{{ mod.number }}_release_time"
+                   value="{{ mod.release_at|localtime('%H:%M') if mod.release_at else '09:00' }}">
+          </div>
+        </div>
+        <div class="field" data-drip-only="gaps">
+          <label for="mod{{ mod.number }}_gap_days">Opens this long after the one above</label>
+          <div class="studio-accent-row">
+            <input type="number" id="mod{{ mod.number }}_gap_days"
+                   name="mod{{ mod.number }}_gap_days"
+                   min="0" max="365" style="max-width:96px;"
+                   value="{{ mod.gap_days or 0 }}">
+            <span class="field-help" style="margin:0;">days</span>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </details>
+    {% endif %}
+
+    <div class="studio-product-form__save">
+      <button class="btn btn--primary" type="submit">Save this round</button>
+      <a class="btn btn--secondary" href="{{ url_for('admin.product_rounds', product_id=product.id) }}">Back to rounds</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

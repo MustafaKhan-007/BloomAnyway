@@ -1533,6 +1533,16 @@ class ProductRound(db.Model):
     def is_live(self) -> bool:
         return self.status == "live"
 
+    def spacing(self) -> str:
+        """How the modules are spread out on this run, in a few words."""
+        mode = self.drip_mode_key()
+        if mode == "dates":
+            return "each on its own date"
+        if mode == "gaps":
+            return "each its own wait after the one before"
+        days = self.drip_days()
+        return f"one every {days} day{'' if days == 1 else 's'}"
+
     # --- the same questions a product answers about its own dates ------------
     # Named to match Product's, so anything working out a schedule can be
     # handed either one and never has to ask which it got.

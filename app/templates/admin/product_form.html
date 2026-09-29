@@ -64,6 +64,20 @@
         <a href="{{ url_for('main.course_detail', slug=product.slug) }}" target="_blank" rel="noopener">Preview page</a>
         {% endif %}
       </p>
+      <p class="field-help" style="margin:6px 0 0;">
+        {%- set selling = product.selling_round() %}
+        {%- if selling %}
+        Sold in rounds — buyers are on <strong>{{ selling.label() }}</strong>, and
+        the dates on this page are only for the people who bought before there
+        were rounds.
+        {%- elif product.rounds %}
+        Sold in rounds, though none is open, so buyers are on the dates below.
+        {%- else %}
+        Running this again later? Rounds give each run its own dates, with one
+        set of lessons between them.
+        {%- endif %}
+        <a href="{{ url_for('admin.product_rounds', product_id=product.id) }}">Rounds</a>
+      </p>
       {% endif %}
     </div>
   </div>

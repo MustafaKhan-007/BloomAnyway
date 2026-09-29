@@ -37,6 +37,7 @@ from ..services import reel_of_week as rotw_svc
 from ..services import reel_reviews as reel_svc
 from ..services import reel_uploads as reel_up
 from ..services import review_uploads as review_up
+from ..services import rounds as rounds_svc
 from ..services import stats
 from ..services import mailer
 from ..services.mailer import (last_send_error, send_customer_support_email,
@@ -1274,6 +1275,143 @@ def product_edit(product_id):
         **_stripe_form_context(),
         **_upload_limits(),
     )
+
+
+# ---------------------------- running it again -------------------------------
+# A round is a set of dates for one run of a product; everything a buyer reads
+# still comes from the product itself. See :class:`ProductRound`.
+
+def _round_pair(product_id, round_id):
+    """The product and one of its rounds, or ``(None, None)`` if either is gone."""
+    product = db.session.get(Product, product_id)
+    if product is None:
+        flash("That product was already gone.", "info")
+        return None, None
+    row = product.round_by_id(round_id)
+    if row is None:
+        flash("That round was already gone.", "info")
+        return product, None
+    return product, row
+
+
+@bp.route("/products/<int:product_id>/rounds")
+@admin_required
+def product_rounds(product_id):
+    product = db.session.get(Product, product_id)
+    if product is None:
+        flash("That product was already gone.", "info")
+        return redirect(url_for("admin.products"))
+    return render_template(
+        "admin/product_rounds.html",
+        product=product,
+        rows=product.rounds,
+        selling=product.selling_round(),
+        held={r.id: rounds_svc.buyers(r) for r in product.rounds},
+        # Bought before there were rounds, so still on the product's own dates.
+        unstamped=rounds_svc.unstamped(product),
+    )
+
+
+@bp.route("/products/<int:product_id>/rounds/new", methods=["POST"])
+@admin_required
+def product_round_new(product_id):
+    product = db.session.get(Product, product_id)
+    if product is None:
+        flash("That product was already gone.", "info")
+        return redirect(url_for("admin.products"))
+    row = rounds_svc.add(product)
+    db.session.commit()
+    flash(f"Started {row.label()} on a copy of the dates you had. Change them, "
+          "then open it when you're ready to sell it.", "success")
+    return redirect(url_for("admin.product_round_edit",
+                            product_id=product.id, round_id=row.id))
+
+
+@bp.route("/products/<int:product_id>/rounds/<int:round_id>",
+          methods=["GET", "POST"])
+@admin_required
+def product_round_edit(product_id, round_id):
+    product, row = _round_pair(product_id, round_id)
+    if product is None:
+        return redirect(url_for("admin.products"))
+    if row is None:
+        return redirect(url_for("admin.product_rounds", product_id=product.id))
+
+    if request.method == "POST":
+        from ..services.timefmt import account_timezone
+
+        notes: list[str] = []
+        rounds_svc.apply_fields(row, request.form, account_timezone(current_user),
+                                notes)
+        rounds_svc.set_live(row, bool(request.form.get("live")))
+        db.session.commit()
+        for note in notes:
+            flash(note, "info")
+        flash(f"Saved {row.label()}.", "success")
+        return redirect(url_for("admin.product_round_edit",
+                                product_id=product.id, round_id=row.id))
+
+    timing = row.module_timing()
+    modules = []
+    for i, mod in enumerate(product.curriculum()):
+        when = timing[i] if i < len(timing) else {}
+        try:
+            release = (datetime.fromisoformat(when["release_at"])
+                       if when.get("release_at") else None)
+        except ValueError:
+            release = None
+        modules.append({"number": i + 1, "title": mod["title"],
+                        "release_at": release,
+                        "gap_days": when.get("gap_days") or 0})
+    return render_template(
+        "admin/product_round_form.html",
+        product=product,
+        row=row,
+        modules=modules,
+        drip_modes=DRIP_MODES,
+        held=rounds_svc.buyers(row),
+        selling=product.selling_round(),
+    )
+
+
+@bp.route("/products/<int:product_id>/rounds/<int:round_id>/live",
+          methods=["POST"])
+@admin_required
+def product_round_live(product_id, round_id):
+    product, row = _round_pair(product_id, round_id)
+    if product is None:
+        return redirect(url_for("admin.products"))
+    if row is not None:
+        live = not row.is_live()
+        rounds_svc.set_live(row, live)
+        db.session.commit()
+        if live:
+            flash(f"{row.label()} is what new buyers get from now on. Everybody "
+                  "already on an earlier round keeps its dates.", "success")
+        else:
+            flash(f"{row.label()} is closed to new buyers. Anyone who bought "
+                  "into it keeps it.", "success")
+    return redirect(url_for("admin.product_rounds", product_id=product_id))
+
+
+@bp.route("/products/<int:product_id>/rounds/<int:round_id>/delete",
+          methods=["POST"])
+@admin_required
+def product_round_delete(product_id, round_id):
+    product, row = _round_pair(product_id, round_id)
+    if product is None:
+        return redirect(url_for("admin.products"))
+    if row is not None:
+        label = row.label()
+        try:
+            rounds_svc.remove(row)
+        except rounds_svc.RoundError as exc:
+            db.session.rollback()
+            flash(str(exc), "error")
+            return redirect(url_for("admin.product_rounds", product_id=product_id))
+        db.session.commit()
+        flash(f"Removed {label}.", "success")
+    return redirect(url_for("admin.product_rounds", product_id=product_id))
 
 
 @bp.route("/products/<int:product_id>/assets", methods=["POST"])
