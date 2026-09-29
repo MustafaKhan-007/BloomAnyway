@@ -11010,9 +11010,15 @@ body:has(.lp-bare) .site-header, body:has(.lp-bare) .site-footer { display: none
   letter-spacing: 0.16em; text-transform: uppercase; opacity: 0.72;
   display: flex; align-items: center; gap: 12px;
 }
-.lp-eyebrow::before {
-  content: ""; flex: none; width: 24px; border-top: 1px solid currentColor;
-  opacity: 0.8;
+/* The little rule to the left of the words. Drawn with ::after and pulled
+   to the front rather than with ::before, because ::before on anything the
+   owner can type into belongs to the builder — that is where it draws the
+   grey prompt for a field she has left empty. Two rules wanting the same
+   pseudo-element means one of them loses, and the prompt would have come
+   out down the side of the page a letter at a time. */
+.lp-eyebrow::after {
+  content: ""; order: -1; flex: none; width: 24px;
+  border-top: 1px solid currentColor; opacity: 0.8;
 }
 .lp-al--center .lp-eyebrow { justify-content: center; }
 .lp-al--right .lp-eyebrow { flex-direction: row-reverse; justify-content: flex-start; }

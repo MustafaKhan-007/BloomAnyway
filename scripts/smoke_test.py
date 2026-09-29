@@ -12891,6 +12891,21 @@ _glyphs = [n for n, line in enumerate(_css.split("\n"), 1)
 ok("Every drawn marker is written as an escape, so it cannot mangle again",
    not _glyphs, f"lines {_glyphs}")
 
+# ::before on anything the owner can type into belongs to the builder: it is
+# where the grey prompt for an empty field is drawn. A second rule wanting
+# the same pseudo-element wins the content and loses the layout, which once
+# put a prompt down the side of the page a letter at a time.
+_fields = set(re.findall(r'class="([^"]+)"[^>]*\{\{ ed\(',
+                         (Path(__file__).resolve().parents[1] / "app"
+                          / "templates" / "partials"
+                          / "landing_blocks.html").read_text(encoding="utf-8")))
+_fields = {c for names in _fields for c in names.split()}
+_taken = sorted(c for c in _fields
+                if re.search(r"(^|[\s,]){}::before\b".format(re.escape("." + c)),
+                             _css))
+ok("Nothing else draws on the pseudo-element the builder puts prompts in",
+   not _taken, f"{_taken} also use ::before")
+
 r = client.get("/this-page-does-not-exist-xyz")
 ok("404 offers problem report", r.status_code == 404 and b"Report this problem" in r.data)
 
