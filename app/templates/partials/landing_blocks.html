@@ -83,7 +83,7 @@
     ``--inked`` exists because the dark backgrounds colour their captions
     and card titles by hand. A colour of her own has to reach those too, or
     picking one changes the paragraphs and leaves everything else behind. -#}
-<section class="lp-block lp-block--{{ b.type }} lp-bg--{{ f.bg|default('cream') }} lp-pad--{{ pad }}{% if align %} lp-al--{{ align }}{% endif %}{% if f.bg_color %} lp-block--tinted{% endif %}{% if lp_block_ink(f) %} lp-block--inked{% endif %}{% if f.pull and f.pull != 'none' %} lp-pull--{{ f.pull }}{% endif %}"
+<section class="lp-block lp-block--{{ b.type }} lp-bg--{{ f.bg|default('cream') }} lp-pad--{{ pad }}{% if align %} lp-al--{{ align }}{% endif %}{% if f.bg_color %} lp-block--tinted{% endif %}{% if lp_block_ink(f) %} lp-block--inked{% endif %}{% if f.pull and f.pull != 'none' %} lp-pull--{{ f.pull }}{% endif %}{% if f.panel == 'card' %} lp-block--panelled{% endif %}"
          {% if f.anchor %}id="{{ f.anchor }}" {% endif %}{% if style %}style="{{ style }}" {% endif %}
          data-block="{{ b.id }}" data-type="{{ b.type }}">
 
@@ -216,7 +216,12 @@
 {%- elif b.type == 'features' %}
   <div class="lp-wrap">
     {{ eyebrow(f, editing) }}
+    {#- A row of cards is often the whole section, with the words already on
+        the cards. Drawing an empty heading over one leaves a gap nobody can
+        click on to find out what it is. -#}
+    {%- if f.heading or editing %}
     <h2 class="lp-h2"{{ ed('heading', editing, 'A heading') }}>{{ f.heading|lpline }}</h2>
+    {%- endif %}
     {%- if f.body or editing %}
     <div class="lp-body lp-body--lede"{{ ed('body', editing, 'An intro line (optional)', True) }}>{{ f.body|lprich }}</div>
     {%- endif %}
@@ -224,9 +229,17 @@
       {%- for it in b['items'] %}
       <div class="lp-card" data-item>
         {{ item_chrome(editing, 'card') }}
+        {%- if it.icon or editing %}
+        <span class="lp-card__icon"{{ ed('icon', editing, '✦') }}>{{ it.icon|lpline }}</span>
+        {%- endif %}
         {%- if it.image or editing %}{{ picture(it.image, editing, 'image', 'lp-pic--card', it.title) }}{% endif %}
+        {%- if it.title or editing %}
         <h3 class="lp-card__title"{{ ed('title', editing, 'Card title') }}>{{ it.title|lpline }}</h3>
+        {%- endif %}
         <div class="lp-card__body"{{ ed('body', editing, 'What it is', True) }}>{{ it.body|lprich }}</div>
+        {%- if it.note or editing %}
+        <p class="lp-card__note"{{ ed('note', editing, 'A small line under (optional)') }}>{{ it.note|lpline }}</p>
+        {%- endif %}
       </div>
       {%- endfor %}
     </div>
