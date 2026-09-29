@@ -12208,6 +12208,23 @@ _jumps = {v[1:] for b in _ch for k, v in b["fields"].items()
 ok("Every button on the challenge page that jumps lands somewhere",
    bool(_jumps) and _jumps <= _anchors, f"{_jumps} vs {_anchors}")
 
+# The builder draws every field whether it is filled in or not, so what the
+# page actually looks like has to be asked of it drawn the way a visitor
+# gets it. Preview is that, without publishing anything.
+_ch_html = (admin.post("/admin/landing/preview",
+                       json={"blocks": _ch, "settings": _lp.default_settings()})
+            .get_json() or {}).get("html", "")
+ok("Three of the challenge page's blocks sit on it as cards, not bands",
+   _ch_html.count("lp-block--panelled") >= 3,
+   _ch_html.count("lp-block--panelled"))
+ok("Its reels carry their figures under a hairline",
+   'class="lp-card__note"' in _ch_html and "24.4K views" in _ch_html)
+ok("And a card with nothing but words draws no empty title over them",
+   _ch_html.count('class="lp-card__title"')
+   < _ch_html.count('class="lp-card"'),
+   f"{_ch_html.count('class=\"lp-card__title\"')} titles, "
+   f"{_ch_html.count('class=\"lp-card\"')} cards")
+
 _picker = admin.get("/admin/landing").get_data(as_text=True)
 ok("The list page lets her choose what a new page starts as",
    all(f'value="{k}"' in _picker for k in _lp.TEMPLATES)

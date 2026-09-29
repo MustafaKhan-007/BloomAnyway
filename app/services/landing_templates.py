@@ -84,7 +84,7 @@ _CHALLENGE_BLOCKS = [
         "heading": "I built this for women juggling a lot more than a "
                    "content calendar",
         "body": "", "columns": "2", "card_style": "raised", "align": "left",
-        "pad": "large", "bg": "cream",
+        "pad": "large", "bg": "soft",
     }, "items": [
         {"icon": "＊", "title": "",
          "body": "You've never posted content before and don't know where to "
@@ -103,14 +103,14 @@ _CHALLENGE_BLOCKS = [
     # The figure and the line she wants remembered, as a dark column beside
     # the story rather than a banner of its own between sections.
     {"type": "text", "fields": {
-        "heading": "5-fig/mo",
+        "heading": "<span class=\"lp-t--blush\">5-fig/mo</span>",
         "body":
-            "<p><span class=\"lp-t--mono lp-t--small lp-t--caps\">From "
-            "digital products, since month 4</span></p>"
+            "<p>" + _CAPS % "From digital products, since month 4" + "</p>"
             "<p><em>“I built this while working full-time and raising my kid "
             "alone. This isn't theory — it's exactly what I did, and I want "
             "to hand it to you.”</em></p>",
-        "pad": "large", "bg": "plum", "col_start": 1, "col_span": 5,
+        "pad": "large", "bg": "dark", "panel": "card",
+        "col_start": 1, "col_span": 5,
     }},
 
     {"type": "text", "fields": {
@@ -134,7 +134,7 @@ _CHALLENGE_BLOCKS = [
             "for good. Today that same business funds multiple vacations a "
             "year and a six-figure investment account — and my whole goal "
             "now is helping other women get there too.</p>",
-        "pad": "large", "bg": "blush", "col_start": 6, "col_span": 7,
+        "pad": "large", "bg": "cream", "col_start": 6, "col_span": 7,
     }},
 
     # The hero's second button jumps here.
@@ -146,7 +146,7 @@ _CHALLENGE_BLOCKS = [
                 "it starts coming in. This is the exact path I took, laid "
                 "out so you don't have to guess.",
         "columns": "4", "card_style": "outlined", "align": "left",
-        "pad": "large", "bg": "plum", "anchor": "curriculum",
+        "pad": "large", "bg": "dark", "anchor": "curriculum",
     }, "items": [
         {"title": "<span class=\"lp-t--mono lp-t--small\">Stage 01</span>"
                   "<br><em>Foundations</em>",

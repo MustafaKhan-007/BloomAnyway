@@ -10963,7 +10963,12 @@ body:has(.lp-bare) .site-header, body:has(.lp-bare) .site-footer { display: none
    section and onto the content, so the page shows around it — which is the
    whole difference between a card and a stripe with rounded corners. After
    the .lp-bg-- rules above, because it has to win the background back. */
-.lp-block--panelled { background: transparent; }
+.lp-block--panelled {
+  background: transparent;
+  /* A card next to a taller block sits in the middle of the row rather
+     than being stretched to match it — otherwise it isn't a card. */
+  display: flex; flex-direction: column; justify-content: center;
+}
 .lp-block--panelled > .lp-wrap {
   background: var(--lp-paint);
   border-radius: 28px;
@@ -11083,8 +11088,10 @@ body:has(.lp-bare) .site-header, body:has(.lp-bare) .site-footer { display: none
 
 /* Numbers. */
 .lp-stats { display: grid; gap: 20px; grid-template-columns: 1fr; text-align: center; }
-@container lpblock (min-width: 640px) {
-  .lp-stats { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+@container lpblock (min-width: 520px) {
+  /* Wide enough that four figures in a narrow block fall two and two
+     rather than stringing out in one column. */
+  .lp-stats { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
 }
 .lp-stat { position: relative; }
 .lp-stat__value {
