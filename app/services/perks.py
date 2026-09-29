@@ -38,14 +38,13 @@ def perk_products() -> list[Product]:
         cached = None
     if cached is not None:
         return cached
-    from ..extensions import db
-
-    rows = (Product.query
-            .filter(Product.perk_membership_tier.isnot(None),
-                    db.or_(Product.perk_membership_months > 0,
-                           Product.perk_ends_at.isnot(None)))
-            .all())
-    out = [p for p in rows if p.has_perk()]
+    # Narrowed on the tier only, and sifted in Python after. A product sold
+    # in rounds can carry its months on a round rather than on itself, and a
+    # round that has closed still owes its buyers what it promised — so the
+    # question is whether any run of it ever carried a perk, which is not
+    # something the columns here can be asked.
+    rows = Product.query.filter(Product.perk_membership_tier.isnot(None)).all()
+    out = [p for p in rows if p.carries_perk_ever()]
     try:
         from flask import g, has_app_context
         if has_app_context():
@@ -108,7 +107,8 @@ def perk_state(user) -> dict:
         product = _match(purchase, products)
         if product is None:
             continue
-        starts, until = product.perk_window(purchase.purchased_at or now)
+        starts, until = product.perk_window(purchase.purchased_at or now,
+                                            product.schedule_for(purchase))
         if until is None:
             # The product no longer carries a perk (its months/tier were
             # cleared). Nothing to grant, and nothing to compare against —
@@ -162,7 +162,8 @@ def months_bought_since(user, when: datetime | None) -> bool:
         if when is not None and bought <= when:
             continue
         # Months that have already run out are not worth reopening.
-        if product.perk_window(bought)[1] <= now:
+        ends = product.perk_window(bought, product.schedule_for(purchase))[1]
+        if ends is None or ends <= now:
             continue
         return True
     return False
@@ -171,9 +172,10 @@ def months_bought_since(user, when: datetime | None) -> bool:
 def perk_summary_for(purchase) -> str:
     """"3 months of Creator membership" for what this purchase carried, or ""."""
     product = _match(purchase, perk_products()) if purchase is not None else None
-    if product is None or not product.has_perk():
+    if product is None:
         return ""
-    return product.perk_offer()
+    # What their own round promised, not what the one on sale now does.
+    return product.perk_offer(product.schedule_for(purchase))
 
 
 def announce(user, purchase, *, held_before: str | None = None) -> bool:
@@ -199,7 +201,10 @@ def announce(user, purchase, *, held_before: str | None = None) -> bool:
     if user is None or purchase is None or not getattr(user, "id", None):
         return False
     product = _match(purchase, perk_products())
-    if product is None or not product.has_perk():
+    if product is None:
+        return False
+    theirs = product.schedule_for(purchase)
+    if not product.has_perk(theirs):
         return False
     tier = product.perk_tier()
     held = (held_before if held_before is not None
@@ -207,8 +212,8 @@ def announce(user, purchase, *, held_before: str | None = None) -> bool:
     if higher_membership(held, tier) == held:
         return False
     now = utcnow()
-    starts, until = product.perk_window(purchase.purchased_at or now)
-    if until <= now:
+    starts, until = product.perk_window(purchase.purchased_at or now, theirs)
+    if until is None or until <= now:
         return False
 
     holds_now = getattr(user, "membership", None) or "none"
@@ -220,7 +225,7 @@ def announce(user, purchase, *, held_before: str | None = None) -> bool:
         log.warning(
             "perk: user %s bought %s for %s months of %s and is still on %s "
             "— saying nothing rather than promising it",
-            user.id, product.id, product.perk_months(), tier, holds_now,
+            user.id, product.id, theirs.perk_months(), tier, holds_now,
         )
         return False
     body = (f"“{product.title}” came with {perk_summary_for(purchase)} — "

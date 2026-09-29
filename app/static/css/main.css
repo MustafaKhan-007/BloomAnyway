@@ -1923,6 +1923,13 @@ body.ci-lightbox-open { overflow: hidden; }
   letter-spacing: 0.12em; text-transform: uppercase;
   color: var(--ink-soft);
 }
+/* Which run of the course this reader is on. Only drawn when there is more
+   than one, and set apart because the dates below it are this round's. */
+.reader-modules__round {
+  display: inline-block; margin-left: 6px; padding: 1px 8px;
+  border-radius: 999px; background: rgba(122, 46, 98, 0.1);
+  color: var(--plum); letter-spacing: 0.08em;
+}
 .reader-modules__note { margin: 0; font-size: 12.5px; color: var(--ink-soft); }
 .reader-modules__list {
   list-style: none; margin: 0; padding: 0;

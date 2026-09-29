@@ -95,6 +95,24 @@ def sync_membership_perk(purchase, *, downgrade: bool = False) -> bool:
     return changed
 
 
+def stamp_round(row: ShopPurchase | None) -> None:
+    """Write down which run of the product this purchase bought into.
+
+    Done once, at the counter, and never again: a round opening later must
+    not move the dates somebody has already paid against. A product not sold
+    in rounds leaves it empty, and everything downstream then reads the
+    product's own dates exactly as it did before there were rounds.
+    """
+    if row is None or row.round_id:
+        return
+    from .course_reader import catalog_product_for_purchase
+
+    product = catalog_product_for_purchase(row)
+    chosen = product.selling_round() if product is not None else None
+    if chosen is not None:
+        row.round_id = chosen.id
+
+
 def upsert_shop_purchase(
     *,
     lemon_squeezy_order_id: str,
@@ -146,6 +164,7 @@ def upsert_shop_purchase(
                 purchased_at=purchased_at or utcnow(),
                 status="refunded",
             )
+            stamp_round(row)
             db.session.add(row)
         else:
             row.status = "refunded"
@@ -192,6 +211,7 @@ def upsert_shop_purchase(
         purchased_at=purchased_at or utcnow(),
         status="linked" if user else "pending_link",
     )
+    stamp_round(row)
     db.session.add(row)
     if user:
         sync_membership_perk(row)
@@ -410,6 +430,9 @@ def grant_product(member: User, product) -> dict:
         purchased_at=utcnow(),
         status="linked",
     )
+    chosen = product.selling_round()
+    if chosen is not None:
+        row.round_id = chosen.id
     db.session.add(row)
     db.session.flush()
     _open_bundle(row)

@@ -1387,7 +1387,8 @@ def course_reader(purchase_id):
         abort(404)
     product = reader_svc.catalog_product_for_purchase(purchase)
     modules = drip_svc.module_rows(product, purchase.purchased_at,
-                                   viewer=current_user)
+                                   viewer=current_user,
+                                   schedule=reader_svc.dates_for(product, purchase))
     wanted_item = request.args.get("item", type=int)
     # Files with no module are open from day one, even on a drip schedule.
     extras = [a for a in (product.top_level_assets() if product else [])
@@ -1443,6 +1444,11 @@ def course_reader(purchase_id):
         extras=extras,
         active_module=active_module,
         next_locked=drip_svc.next_locked(modules),
+        # Which run of it they are on, when it has been run more than once.
+        # Their dates are their round's, so it is worth naming: the module
+        # opening next is not the one a newer round is opening next.
+        bought_round=(product.round_by_id(purchase.round_id)
+                      if product is not None else None),
         # Nothing is locked for an owner, so the reader says why rather than
         # leaving them to wonder whether the schedule works at all.
         reads_whole=(drip_svc.reads_it_whole(current_user)
@@ -1476,7 +1482,8 @@ def course_file(purchase_id, asset_id):
                  asset_id, purchase_id)
         abort(404)
     if not drip_svc.asset_unlocked(product, asset, purchase.purchased_at,
-                                   viewer=current_user):
+                                   viewer=current_user,
+                                   schedule=reader_svc.dates_for(product, purchase)):
         log.info("course file %s refused: module %s hasn't opened for purchase %s",
                  asset_id, asset.module_index, purchase_id)
         abort(404)
@@ -1530,7 +1537,8 @@ def course_h5p_file(purchase_id, asset_id, filename):
             or asset.kind != "h5p"):
         abort(404)
     if not drip_svc.asset_unlocked(product, asset, purchase.purchased_at,
-                                   viewer=current_user):
+                                   viewer=current_user,
+                                   schedule=reader_svc.dates_for(product, purchase)):
         abort(404)
     try:
         reader_svc.ensure_h5p_extracted(asset)

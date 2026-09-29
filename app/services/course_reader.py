@@ -43,6 +43,19 @@ def catalog_product_for_purchase(purchase: ShopPurchase) -> Product | None:
     return None
 
 
+def dates_for(product: Product | None, purchase: ShopPurchase | None):
+    """The calendar this buyer's copy runs on.
+
+    Their own round when the product is sold in rounds and they were stamped
+    with one. A round is theirs from the moment they pay: the woman who
+    joined the first run keeps the first run's dates while the third one is
+    being sold, and nothing about opening a new round moves her.
+    """
+    if product is None:
+        return None
+    return product.schedule_for(purchase)
+
+
 def catalog_products_for(purchases) -> dict[int, Product]:
     """The same match as :func:`catalog_product_for_purchase`, for a whole list.
 

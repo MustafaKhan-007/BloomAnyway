@@ -3011,7 +3011,7 @@ def member_grant_product(user_id):
         else:
             flash(f"{member.public_name()} already has “{name}”.{perk_note}", "info")
     else:
-        shelf_note = "" if product.off_shelf_at is None or not product.is_off_shelf() \
+        shelf_note = "" if not product.is_off_shelf() \
             else " (it's off the shelves, but they've got it)"
         flash(f"Gave “{name}” to {member.public_name()} — it's in their "
               f"My Space now{shelf_note}.{perk_note}", "success")
