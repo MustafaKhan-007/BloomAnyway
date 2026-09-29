@@ -70,8 +70,9 @@ RICH_TAGS = _INLINE_TAGS + _BLOCK_TAGS
 #: Colours and sizes a span may carry. Classes, not inline styles — a style
 #: attribute is a whole grammar to have to police, and this is six words.
 TEXT_CLASSES = (
-    "lp-t--plum", "lp-t--berry", "lp-t--rose", "lp-t--gold", "lp-t--muted",
-    "lp-t--white", "lp-t--big", "lp-t--small", "lp-t--caps",
+    "lp-t--plum", "lp-t--berry", "lp-t--rose", "lp-t--blush", "lp-t--gold",
+    "lp-t--muted", "lp-t--white", "lp-t--big", "lp-t--small", "lp-t--caps",
+    "lp-t--mono",
 )
 
 
@@ -147,7 +148,13 @@ def strip_marks(value) -> str:
 
 #: Background treatments a block may be given. The value is a class suffix;
 #: anything not on this list is dropped back to the default.
-BACKGROUNDS = ("cream", "soft", "plum", "dark", "accent", "none")
+#:
+#: ``gradient`` is a vertical wash rather than a diagonal one on purpose: two
+#: blocks side by side on the same row are the same height, so a gradient
+#: that only varies down the page is identical in both and the seam between
+#: them disappears. A diagonal one would show the join.
+BACKGROUNDS = ("cream", "soft", "blush", "white", "gradient", "plum", "dark",
+               "accent", "none")
 PADDINGS = ("none", "small", "medium", "large", "huge")
 ALIGNMENTS = ("left", "center", "right")
 WIDTHS = ("narrow", "normal", "wide", "full")
@@ -194,6 +201,12 @@ COMMON_FIELDS: dict[str, dict] = {
     # a thing to fiddle with for an hour and get wrong on a phone.
     "pull": {"kind": CHOICE, "options": ("none", "small", "medium", "large"),
              "default": "none", "label": "Pull up into the block above"},
+    # Lifts the block off the page as a rounded card instead of a band
+    # running edge to edge. The background it was given paints the card;
+    # around it the page shows through, which is what makes it read as a
+    # card rather than a stripe with rounded corners.
+    "panel": {"kind": CHOICE, "options": ("band", "card"),
+              "default": "band", "label": "Shape"},
     "visible": {"kind": CHOICE, "options": ("show", "hide"),
                 "default": "show", "label": "On the page"},
     "bg_color": {"kind": COLOR, "default": "", "label": "Background colour"},
@@ -396,9 +409,16 @@ BLOCK_DEFS: dict[str, dict] = {
             "label": "Card",
             "max": 12,
             "fields": {
+                # A mark rather than a picture — one or two characters in a
+                # tinted tile. Cheaper than finding six icons that match,
+                # and it survives being retyped.
+                "icon": {"kind": LINE, "default": "", "label": "Mark"},
                 "image": {"kind": IMAGE, "default": "", "label": "Picture"},
                 "title": {"kind": LINE, "default": "Stage one"},
                 "body": {"kind": RICH, "default": "What happens in it, in a sentence or two."},
+                # A small line under the card, behind a hairline: the figures
+                # under a testimonial, a price under a plan.
+                "note": {"kind": LINE, "default": "", "label": "Small line under"},
             },
             "default_count": 3,
         },

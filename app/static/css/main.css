@@ -10830,6 +10830,10 @@ a.pd-bundle__title:hover { text-decoration: underline; }
   align-items: stretch;
   container-type: inline-size;
   container-name: lp;
+  /* Named rather than inherited from the shell, because a block shaped as
+     a card lets the page show around it and that colour has to be a known
+     one — not whatever the page happens to be sitting in. */
+  background: var(--dawn-ivory);
   /* Its own type, not the shell's. Plenty of landing text takes its size
      by inheritance, and the builder sits inside Studio, whose body is
      15px against the site's 17. So every paragraph without a size of its
@@ -10908,17 +10912,37 @@ body:has(.lp-bare) .site-header, body:has(.lp-bare) .site-footer { display: none
 .lp-pad--large  { padding: 96px 0; }
 .lp-pad--huge   { padding: 140px 0; }
 
-/* Backgrounds. */
-.lp-bg--none  { background: transparent; color: var(--ink); }
-.lp-bg--cream { background: var(--dawn-ivory); color: var(--ink); }
-.lp-bg--soft  { background: var(--ivory-deep); color: var(--ink); }
+/* Backgrounds. Each one also names itself in --lp-paint, which is what a
+   block shaped as a card paints the card with — see .lp-block--panelled. */
+.lp-bg--none  { --lp-paint: transparent; background: transparent; color: var(--ink); }
+.lp-bg--cream { --lp-paint: var(--dawn-ivory); background: var(--lp-paint); color: var(--ink); }
+.lp-bg--soft  { --lp-paint: var(--ivory-deep); background: var(--lp-paint); color: var(--ink); }
+.lp-bg--blush { --lp-paint: #F8EDEA; background: var(--lp-paint); color: var(--ink); }
+.lp-bg--white { --lp-paint: #fff; background: var(--lp-paint); color: var(--ink); }
+/* Straight down rather than across: two blocks side by side on one row are
+   the same height, so a wash that only varies with y is identical in both
+   and the join between them cannot be seen. A diagonal one shows it. */
+.lp-bg--gradient {
+  --lp-paint: linear-gradient(180deg, #F9EDE9 0%, var(--dawn-ivory) 100%);
+  background: var(--lp-paint); color: var(--ink);
+}
 .lp-bg--plum  {
-  background: linear-gradient(160deg, var(--plum) 0%, var(--plum-deep) 100%);
+  --lp-paint: linear-gradient(160deg, var(--plum) 0%, var(--plum-deep) 100%);
+  background: var(--lp-paint);
   color: var(--dawn-ivory);
 }
-.lp-bg--dark   { background: #2D1B2D; color: var(--dawn-ivory); }
-.lp-bg--accent { background: var(--lp-accent); color: var(--lp-accent-ink); }
+.lp-bg--dark   {
+  --lp-paint: radial-gradient(120% 130% at 0% 0%, #5B3050 0%, rgba(91, 48, 80, 0) 58%), #2D1B2D;
+  background: var(--lp-paint); color: var(--dawn-ivory);
+}
+.lp-bg--accent { --lp-paint: var(--lp-accent); background: var(--lp-paint); color: var(--lp-accent-ink); }
 .lp-dark, .lp-bg--plum, .lp-bg--dark { --lp-on-dark: 1; }
+/* Plum is the accent most pages keep, and a plum button on a plum band is a
+   plum button nobody can see. On those bands only, the accent becomes the
+   blush — which is also what carries the figures in a row of numbers. */
+.lp-accent--plum .lp-bg--plum, .lp-accent--plum .lp-bg--dark {
+  --lp-accent: #DE7FA4; --lp-accent-ink: #3A1F33;
+}
 .lp-bg--plum .lp-h2, .lp-bg--dark .lp-h2,
 .lp-bg--plum .lp-hero__title, .lp-bg--dark .lp-hero__title,
 .lp-bg--plum .lp-card__title, .lp-bg--dark .lp-card__title,
@@ -10933,6 +10957,22 @@ body:has(.lp-bare) .site-header, body:has(.lp-bare) .site-footer { display: none
 .lp-bg--plum .lp-card, .lp-bg--dark .lp-card {
   background: rgba(255, 255, 255, 0.07);
   border-color: rgba(255, 255, 255, 0.16);
+}
+
+/* A block shaped as a card rather than a band. The colour moves off the
+   section and onto the content, so the page shows around it — which is the
+   whole difference between a card and a stripe with rounded corners. After
+   the .lp-bg-- rules above, because it has to win the background back. */
+.lp-block--panelled { background: transparent; }
+.lp-block--panelled > .lp-wrap {
+  background: var(--lp-paint);
+  border-radius: 28px;
+  padding: clamp(28px, 4cqi, 56px);
+  box-shadow: 0 18px 44px rgba(61, 20, 49, 0.10);
+}
+.lp-bg--white.lp-block--panelled > .lp-wrap,
+.lp-bg--cream.lp-block--panelled > .lp-wrap {
+  border: 1px solid rgba(61, 20, 49, 0.08);
 }
 
 /* Alignment. */
@@ -10955,10 +10995,22 @@ body:has(.lp-bare) .site-header, body:has(.lp-bare) .site-footer { display: none
 .lp-body li { margin: 0.25em 0; }
 .lp-body--lede { max-width: 62ch; }
 .lp-body a, .lp-lede a, .lp-card__body a, .lp-faq__a a { color: inherit; }
+/* The small line over a heading. The rule in front of it is what stops a
+   short label reading as a stray line of shouting: it ties the words to
+   the heading under them. Drawn with a border on a pseudo-element rather
+   than a character, so it can't be selected, copied or read aloud. */
 .lp-eyebrow {
-  margin: 0 0 12px; font-size: 12px; font-weight: 800;
-  letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.85;
+  margin: 0 0 14px; font-size: 12px; font-weight: 700;
+  font-family: var(--font-mono, ui-monospace, "SFMono-Regular", Menlo, monospace);
+  letter-spacing: 0.16em; text-transform: uppercase; opacity: 0.72;
+  display: flex; align-items: center; gap: 12px;
 }
+.lp-eyebrow::before {
+  content: ""; flex: none; width: 24px; border-top: 1px solid currentColor;
+  opacity: 0.8;
+}
+.lp-al--center .lp-eyebrow { justify-content: center; }
+.lp-al--right .lp-eyebrow { flex-direction: row-reverse; justify-content: flex-start; }
 .lp-text .lp-body { max-width: 68ch; }
 .lp-al--center.lp-block .lp-text .lp-body { margin-inline: auto; }
 
@@ -10966,7 +11018,12 @@ body:has(.lp-bare) .site-header, body:has(.lp-bare) .site-footer { display: none
 .lp-t--plum  { color: var(--plum); }
 .lp-t--berry { color: var(--berry); }
 .lp-t--rose  { color: var(--rose); }
+.lp-t--blush { color: #DE7FA4; }
 .lp-t--gold  { color: var(--gold); }
+.lp-t--mono  {
+  font-family: var(--font-mono, ui-monospace, "SFMono-Regular", Menlo, monospace);
+  letter-spacing: 0.06em;
+}
 .lp-t--muted { opacity: 0.68; }
 .lp-t--white { color: #fff; }
 .lp-t--big   { font-size: 1.28em; }
@@ -11034,7 +11091,6 @@ body:has(.lp-bare) .site-header, body:has(.lp-bare) .site-footer { display: none
   font-family: var(--font-display); font-size: clamp(2rem, 1.4rem + 2cqi, 3rem);
   line-height: 1; margin: 0 0 6px; color: var(--lp-accent);
 }
-.lp-bg--plum .lp-stat__value, .lp-bg--dark .lp-stat__value { color: var(--gold); }
 .lp-stat__label { margin: 0; font-size: 0.95rem; color: var(--ink-soft); }
 
 /* Cards. */
@@ -11048,13 +11104,39 @@ body:has(.lp-bare) .site-header, body:has(.lp-bare) .site-footer { display: none
   position: relative; border-radius: var(--radius-card); padding: 22px;
   background: #fff; border: 1px solid rgba(61, 20, 49, 0.10);
   box-shadow: var(--shadow-card); text-align: left;
+  /* A column so the body can take up the slack: in a row of cards of
+     different lengths that puts every footnote on the same line. */
+  display: flex; flex-direction: column;
 }
 .lp-cards--outlined .lp-card { box-shadow: none; background: transparent; }
 .lp-cards--plain .lp-card {
   box-shadow: none; background: transparent; border-color: transparent; padding: 6px 0;
 }
 .lp-card__title { margin: 0 0 8px; font-family: var(--font-display); font-size: 1.15rem; }
-.lp-card__body { margin: 0; line-height: 1.65; }
+.lp-card__body { margin: 0; line-height: 1.65; flex: 1 1 auto; }
+/* A mark in a tinted tile, for the cards that want one instead of a photo. */
+.lp-card__icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  align-self: flex-start; flex: none;
+  width: 38px; height: 38px; margin: 0 0 14px; border-radius: 12px;
+  background: rgba(222, 127, 164, 0.16); color: #C4527D;
+  font-size: 1.25rem; line-height: 1;
+}
+.lp-bg--plum .lp-card__icon, .lp-bg--dark .lp-card__icon {
+  background: rgba(255, 255, 255, 0.12); color: var(--gold);
+}
+/* The figures under a testimonial, behind a hairline so they read as a
+   footnote to the card rather than more of its sentence. */
+.lp-card__note {
+  margin: 14px 0 0; padding-top: 12px;
+  border-top: 1px solid rgba(61, 20, 49, 0.12);
+  font-family: var(--font-mono, ui-monospace, "SFMono-Regular", Menlo, monospace);
+  font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase;
+  opacity: 0.72;
+}
+.lp-bg--plum .lp-card__note, .lp-bg--dark .lp-card__note {
+  border-top-color: rgba(255, 255, 255, 0.18);
+}
 .lp-pic--card { margin-bottom: 14px; }
 .lp-pic--card img { aspect-ratio: 16/10; object-fit: cover; }
 

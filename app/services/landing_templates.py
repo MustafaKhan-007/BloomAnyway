@@ -17,63 +17,113 @@ from __future__ import annotations
 
 # --- the two-month challenge --------------------------------------------------
 
+#: Small mono capitals, the lettering the mockup uses for every label that
+#: sits under or above something bigger. Written out as a span because that
+#: is all it is — anyone can add or remove it from the panel on the right.
+_CAPS = '<span class="lp-t--mono lp-t--caps lp-t--small">%s</span>'
+
+#: Laid out to the mockup: a left-aligned hero on a wash with her numbers
+#: beside it, a dark band of figures, and then sections alternating between
+#: cream and blush with two of them split into a column of words and a
+#: panel of proof.
 _CHALLENGE_BLOCKS = [
+    # The hero takes seven of the twelve columns and the cards take the
+    # other five, so they sit on one row. Both are on the same wash, and
+    # the wash runs straight down, so the join between them is invisible.
     {"type": "hero", "fields": {
         "eyebrow": "Round 2 · Enrollment opening soon",
-        "heading": "You don't need an audience.<br>You need a plan.",
+        "heading": "You don't need an audience.<br>"
+                   "<span class=\"lp-t--blush\"><em>You need a plan.</em></span>",
         "body":
             "<p>I built this 2-month challenge for moms like me — "
             "stay-at-home moms, single moms, housewives, and women working "
             "full-time jobs who are ready to build a real income online. No "
             "experience needed, I'll show you exactly how, step by step, the "
             "way I wish someone had shown me.</p>"
-            "<p><span class=\"lp-t--small\">2 months of live access · "
-            "Bloom Anyway community included</span></p>",
-        "button_text": "Get on the waitlist →",
+            "<p><span class=\"lp-t--mono lp-t--small\">2 months of live "
+            "access · Bloom Anyway community included</span></p>",
+        "button_text": "Get on the Waitlist →",
         "button_url": "#waitlist",
         "button2_text": "See what's inside",
         "button2_url": "#curriculum",
-        "height": "tall", "align": "center", "bg": "plum",
+        "height": "tall", "align": "left", "bg": "gradient",
+        "col_start": 1, "col_span": 7,
     }},
 
-    {"type": "stats", "fields": {"bg": "soft", "pad": "large"}, "items": [
-        {"value": "5 figures", "label": "A month, since month 4"},
-        {"value": "0 → 170K", "label": "Followers in 7 months"},
-        {"value": "2", "label": "Months of live access"},
-        {"value": "Weekly", "label": "Task sheets + reel reviews"},
+    # Her screenshots, as cards. Five columns is narrower than the point at
+    # which a row of three becomes a row of three, so they stack — which is
+    # how they are stacked in the mockup.
+    {"type": "features", "fields": {
+        "heading": "", "body": "", "columns": "3", "card_style": "raised",
+        "align": "left", "pad": "large", "bg": "gradient",
+        "col_start": 8, "col_span": 5,
+    }, "items": [
+        {"title": "Reel insights",
+         "body": "<p><strong>1.18M</strong> views · <strong>940</strong> "
+                 "follows</p>"},
+        {"title": "Student result",
+         "body": "<p><strong>815.9K</strong> viewers · <strong>32.1s</strong> "
+                 "average watch</p>"},
+        {"title": "My growth",
+         "body": "<p><strong>0 → 170K</strong> in <strong>7 months</strong></p>"},
     ]},
 
-    {"type": "text", "fields": {
+    # The labels are set in small mono capitals so the four figures above
+    # them carry the band on their own.
+    {"type": "stats", "fields": {"bg": "dark", "pad": "medium"}, "items": [
+        {"value": "5-figure", "label": _CAPS % "Months since month 4"},
+        {"value": "0 → 170K", "label": _CAPS % "Followers in 7 months"},
+        {"value": "2", "label": _CAPS % "Months of live access"},
+        {"value": "Weekly", "label": _CAPS % "Task sheets + reel reviews"},
+    ]},
+
+    # Four cards two across, not a bulleted list: each one is a whole
+    # thought and they read as four doors rather than one paragraph.
+    {"type": "features", "fields": {
         "eyebrow": "Is this you",
         "heading": "I built this for women juggling a lot more than a "
                    "content calendar",
-        "body":
-            "<ul>"
-            "<li>You've never posted content before and don't know where to "
-            "even start — camera, editing, none of it.</li>"
-            "<li>You're working full-time, raising kids, or both, and need a "
-            "plan that fits into a busy life, not around it.</li>"
-            "<li>You want more than “just post consistently” — you want the "
-            "actual strategy behind what works.</li>"
-            "<li>You want to turn content into real income: affiliates, paid "
-            "collabs, or your own digital product.</li>"
-            "</ul>",
+        "body": "", "columns": "2", "card_style": "raised", "align": "left",
         "pad": "large", "bg": "cream",
+    }, "items": [
+        {"icon": "＊", "title": "",
+         "body": "You've never posted content before and don't know where to "
+                 "even start — camera, editing, none of it."},
+        {"icon": "＊", "title": "",
+         "body": "You're working full-time, raising kids, or both, and need "
+                 "a plan that fits into a busy life, not around it."},
+        {"icon": "＊", "title": "",
+         "body": "You want more than “just post consistently” — you want the "
+                 "actual strategy behind what works."},
+        {"icon": "＊", "title": "",
+         "body": "You want to turn content into real income: affiliates, "
+                 "paid collabs, or your own digital product."},
+    ]},
+
+    # The figure and the line she wants remembered, as a dark column beside
+    # the story rather than a banner of its own between sections.
+    {"type": "text", "fields": {
+        "heading": "5-fig/mo",
+        "body":
+            "<p><span class=\"lp-t--mono lp-t--small lp-t--caps\">From "
+            "digital products, since month 4</span></p>"
+            "<p><em>“I built this while working full-time and raising my kid "
+            "alone. This isn't theory — it's exactly what I did, and I want "
+            "to hand it to you.”</em></p>",
+        "pad": "large", "bg": "plum", "col_start": 1, "col_span": 5,
     }},
 
-    # Her photo goes in the picture slot. Left empty on purpose: a stock face
-    # on a page about being taught by a real person is worse than no face.
-    {"type": "image_text", "fields": {
+    {"type": "text", "fields": {
         "eyebrow": "Why I'm doing this",
         "heading": "I'm a single mom. I built this from zero, working "
                    "full-time. Now I want to hand you the roadmap.",
         "body":
-            "<p>I'm not teaching from theory. I went from 0 to 170,000 "
-            "followers in 7 months while working a full-time job and raising "
-            "my kid on my own, and I've been making five figures a month "
-            "from digital products since my 4th month as a creator — "
-            "learning it all in real time, with no team and no big following "
-            "to start from.</p>"
+            "<p>I'm not teaching from theory. <strong>I went from 0 to "
+            "170,000 followers in 7 months</strong> while working a "
+            "full-time job and raising my kid on my own, and I've been "
+            "making <strong>five figures a month from digital products "
+            "since my 4th month</strong> as a creator — learning it all in "
+            "real time, with no team and no big following to start from.</p>"
             "<p>I'm here for the moms, the stay-at-home moms, the "
             "housewives, and the women clocking into a 9-to-5 who know "
             "they're capable of more but don't know where to start. I've "
@@ -84,15 +134,7 @@ _CHALLENGE_BLOCKS = [
             "for good. Today that same business funds multiple vacations a "
             "year and a six-figure investment account — and my whole goal "
             "now is helping other women get there too.</p>",
-        "side": "left", "ratio": "words", "pad": "large", "bg": "soft",
-    }},
-
-    {"type": "quote", "fields": {
-        "quote": "I built this while working full-time and raising my kid "
-                 "alone. This isn't theory — it's exactly what I did, and I "
-                 "want to hand it to you.",
-        "attribution": "— Bloom Anyway",
-        "pad": "large", "bg": "plum",
+        "pad": "large", "bg": "blush", "col_start": 6, "col_span": 7,
     }},
 
     # The hero's second button jumps here.
@@ -104,40 +146,38 @@ _CHALLENGE_BLOCKS = [
                 "it starts coming in. This is the exact path I took, laid "
                 "out so you don't have to guess.",
         "columns": "4", "card_style": "outlined", "align": "left",
-        "pad": "large", "bg": "cream", "anchor": "curriculum",
+        "pad": "large", "bg": "plum", "anchor": "curriculum",
     }, "items": [
-        {"title": "<span class=\"lp-t--small lp-t--caps lp-t--muted\">"
-                  "Stage 01</span><br>Foundations",
+        {"title": "<span class=\"lp-t--mono lp-t--small\">Stage 01</span>"
+                  "<br><em>Foundations</em>",
          "body": "<ul><li>Account setup</li>"
                  "<li>Cross-posting to platforms</li>"
                  "<li>Niche selection</li></ul>"},
-        {"title": "<span class=\"lp-t--small lp-t--caps lp-t--muted\">"
-                  "Stage 02</span><br>Create",
+        {"title": "<span class=\"lp-t--mono lp-t--small\">Stage 02</span>"
+                  "<br><em>Create</em>",
          "body": "<ul><li>Speaking to the camera</li><li>Filming</li>"
                  "<li>Editing</li><li>Content ideas</li></ul>"},
-        {"title": "<span class=\"lp-t--small lp-t--caps lp-t--muted\">"
-                  "Stage 03</span><br>Grow",
+        {"title": "<span class=\"lp-t--mono lp-t--small\">Stage 03</span>"
+                  "<br><em>Grow</em>",
          "body": "<ul><li>Engagement strategy</li>"
                  "<li>Building your personal brand</li></ul>"},
-        {"title": "<span class=\"lp-t--small lp-t--caps lp-t--muted\">"
-                  "Stage 04</span><br>Earn",
+        {"title": "<span class=\"lp-t--mono lp-t--small\">Stage 04</span>"
+                  "<br><em>Earn</em>",
          "body": "<ul><li>Affiliates &amp; paid collabs</li>"
                  "<li>Digital products</li>"
                  "<li>Personal brand &amp; how to sell</li>"
                  "<li>Investing basics</li></ul>"},
     ]},
 
-    # The copy and the track record sit side by side on a wide screen, and
-    # stack on a phone the way every placed block does.
     {"type": "text", "fields": {
         "eyebrow": "The part most courses skip",
         "heading": "Most creators can build a product. Almost none know how "
                    "to sell it.",
         "body":
-            "<p>Building a personal brand is one thing — knowing how to "
-            "actually talk to your audience so they buy is a completely "
-            "different skill. It's the piece most courses leave out, or sell "
-            "separately for a premium.</p>"
+            "<p>Building a personal brand is one thing — <strong>knowing how "
+            "to actually talk to your audience so they buy</strong> is a "
+            "completely different skill. It's the piece most courses leave "
+            "out, or sell separately for a premium.</p>"
             "<p>I'm teaching you both: how to build a personal brand people "
             "trust, and how to market and sell to that audience in a way "
             "that actually converts — the exact approach behind my own "
@@ -146,8 +186,8 @@ _CHALLENGE_BLOCKS = [
     }},
 
     {"type": "stats", "fields": {
-        "eyebrow": "My track record", "pad": "large", "bg": "plum",
-        "col_start": 8, "col_span": 5,
+        "eyebrow": "My track record", "pad": "large", "bg": "white",
+        "panel": "card", "col_start": 8, "col_span": 5,
     }, "items": [
         {"value": "5 figures", "label": "Monthly revenue"},
         {"value": "Month 4", "label": "Earning since"},
@@ -161,71 +201,69 @@ _CHALLENGE_BLOCKS = [
         "body": "", "columns": "3", "card_style": "raised", "align": "left",
         "pad": "large", "bg": "soft",
     }, "items": [
-        {"title": "<span class=\"lp-t--gold lp-t--big\">✦</span><br>"
-                  "Bloom Anyway community",
+        {"icon": "✦", "title": "Bloom Anyway community",
          "body": "2 months of access to a private community of women "
                  "learning and building alongside you — ask questions, get "
                  "support, celebrate wins."},
-        {"title": "<span class=\"lp-t--gold lp-t--big\">↻</span><br>"
-                  "Reel reviews",
+        {"icon": "↻", "title": "Reel reviews",
          "body": "I review your reels directly and break down what's working "
                  "in my own content, so you can see the strategy applied in "
                  "real time."},
-        {"title": "<span class=\"lp-t--gold lp-t--big\">▤</span><br>"
-                  "Weekly task sheets",
+        {"icon": "▤", "title": "Weekly task sheets",
          "body": "No guessing what to do next. Each week comes with a clear "
                  "task sheet so the plan fits into a busy schedule instead "
                  "of taking it over."},
-        {"title": "<span class=\"lp-t--gold lp-t--big\">◈</span><br>"
-                  "The showcase",
+        {"icon": "◈", "title": "The showcase",
          "body": "A shared showcase to advertise your products — built "
                  "especially for creators with a smaller following to get in "
                  "front of an audience."},
-        {"title": "<span class=\"lp-t--gold lp-t--big\">●</span><br>"
-                  "Optional 1:1 coaching",
+        {"icon": "●", "title": "Optional 1:1 coaching",
          "body": "Work directly with me for personalized guidance on your "
                  "account, content, and strategy."},
-        {"title": "<span class=\"lp-t--gold lp-t--big\">◐</span><br>"
-                  "Investing basics",
+        {"icon": "◐", "title": "Investing basics",
          "body": "Once the income starts, a lesson on what to actually do "
                  "with it — because building income is only half the plan."},
     ]},
 
-    # Card titles carry the figures, because the screenshot they came from
-    # goes in the card's picture slot.
+    # Her words first, then the figures under a hairline. The card's picture
+    # slot is where the screenshot those figures came from goes.
     {"type": "features", "fields": {
         "eyebrow": "Real results",
         "heading": "From women who started exactly where you are",
         "body": "", "columns": "3", "card_style": "raised", "align": "left",
-        "pad": "large", "bg": "cream",
+        "pad": "large", "bg": "blush",
     }, "items": [
-        {"title": "24.4K views · 339 new follows",
-         "body": "“Thank you for giving me a roadmap that helped me "
-                 "structure my thoughts and create videos like this.”"},
-        {"title": "1.19M views · 940 new follows",
-         "body": "“Can't thank you enough for pushing me and inspiring me. "
-                 "It's not a big number compared to where I want to reach, "
-                 "but it feels like a real achievement.”"},
-        {"title": "29.7K views · 3.1K likes",
-         "body": "“Thank u for guiding us so well — these kinds of results "
-                 "keep me motivated. There's not a single day I'm regretting "
-                 "taking your challenge.”"},
-        {"title": "Her first reel, posted",
-         "body": "“I went through all your course work and it honestly is "
-                 "soooo helpful and in depth. Just posted my first reel — so "
-                 "excited for this journey!”"},
-        {"title": "Heart and soul",
-         "body": "“Woke up to this! What you've taught, the little tips and "
-                 "tricks — everything is so on point. We can tell you put "
-                 "your heart and soul into it.”"},
-        {"title": "Little wins, stacking up",
-         "body": "“Enjoying little wins, and focusing on staying consistent. "
-                 "Thank you for all your guidance!”"},
+        {"title": "",
+         "body": "<p><em>“Thank you for giving me a roadmap that helped me "
+                 "structure my thoughts and create videos like this.”</em></p>",
+         "note": "24.4K views · 339 new follows"},
+        {"title": "",
+         "body": "<p><em>“Can't thank you enough for pushing me and "
+                 "inspiring me. It's not a big number compared to where I "
+                 "want to reach, but it feels like a real "
+                 "achievement.”</em></p>",
+         "note": "1.19M views · 940 new follows"},
+        {"title": "",
+         "body": "<p><em>“Thank u for guiding us so well — these kinds of "
+                 "results keep me motivated. There's not a single day I'm "
+                 "regretting taking your challenge.”</em></p>",
+         "note": "29.7K views · 3.1K likes"},
+        {"title": "",
+         "body": "<p><em>“I went through all your course work and it "
+                 "honestly is soooo helpful and in depth. Just posted my "
+                 "first reel — so excited for this journey!”</em></p>"},
+        {"title": "",
+         "body": "<p><em>“Woke up to this! What you've taught, the little "
+                 "tips and tricks — everything is so on point. We can tell "
+                 "you put your heart and soul into it.”</em></p>"},
+        {"title": "",
+         "body": "<p><em>“Enjoying little wins, and focusing on staying "
+                 "consistent. Thank you for all your guidance!”</em></p>"},
     ]},
 
     {"type": "faq", "fields": {
         "eyebrow": "Questions", "heading": "Before you join",
-        "style": "folded", "pad": "large", "bg": "soft",
+        "style": "folded", "pad": "large", "bg": "cream",
     }, "items": [
         {"question": "Do I need an existing audience?",
          "answer": "No. This challenge is built to take you from zero — no "
@@ -254,17 +292,20 @@ _CHALLENGE_BLOCKS = [
             "everything it actually took me to get to five-figure months — "
             "taught by someone who knows stay-at-home moms and single moms "
             "don't have money to waste on courses that don't deliver.</p>",
-        "align": "center", "width": "narrow", "pad": "large", "bg": "cream",
+        "align": "center", "width": "narrow", "pad": "medium", "bg": "cream",
     }},
 
+    # A card sitting on the page rather than a band running across it, which
+    # is what stops the last thing on the page reading as a footer.
     {"type": "cta", "fields": {
         "heading": "Round 2 is almost open.",
         "body": "Get on the waitlist to be first to know when I open "
                 "enrollment — plus early access before it goes public. I "
                 "can't wait to have you in here.",
-        "button_text": "Join the waitlist →",
+        "button_text": "Join the Waitlist →",
         "button_url": "/challenge",
-        "pad": "huge", "bg": "plum", "anchor": "waitlist",
+        "align": "center", "pad": "large", "bg": "dark", "panel": "card",
+        "anchor": "waitlist",
     }},
 ]
 
