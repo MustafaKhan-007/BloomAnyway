@@ -722,26 +722,28 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
         product.price_reverts_at = None
 
     # A promo needs both halves. Clearing either one takes the banner down,
-    # rather than leaving a code with no price or a price with no code.
+    # rather than leaving a code with no money off or money off with no code.
+    # What is typed is what comes off — 10 for ten dollars off — which is the
+    # same thing the coupon behind the code was set up to do in Stripe.
     promo_code = (form.get("promo_code") or "").strip().upper()[:40]
-    promo_typed = (form.get("promo_price") or "").strip()
-    promo_price = _parse_price_cents(promo_typed)
-    if promo_typed and promo_price is None:
-        # A price with a currency sign in it read as no price at all, which
+    promo_typed = (form.get("promo_off") or "").strip()
+    promo_off = _parse_price_cents(promo_typed)
+    if promo_typed and promo_off is None:
+        # An amount with a currency sign in it read as nothing at all, which
         # saved a code that ran nothing and never said why.
-        flash(f"“{promo_typed}” didn't read as a price — write it in numbers, "
-              "like 19.00 — so the sale was left as it was.", "info")
+        flash(f"“{promo_typed}” didn't read as an amount — write it in numbers, "
+              "like 10.00 — so the sale was left as it was.", "info")
     elif not promo_code or not promo_typed:
         product.promo_code = None
-        product.promo_price_cents = None
+        product.promo_off_cents = None
         product.promo_ends_at = None
     else:
         # Whether this is a new sale or the old one coming back around on a
         # save that was about something else entirely.
         fresh = (promo_code != (product.promo_code or "").strip().upper()
-                 or promo_price != product.promo_price_cents)
+                 or promo_off != product.promo_off_cents)
         product.promo_code = promo_code
-        product.promo_price_cents = promo_price
+        product.promo_off_cents = promo_off
         ends_date = (form.get("promo_ends_date") or "").strip()
         product.promo_ends_at = parse_owner_parts(
             ends_date,
@@ -758,12 +760,17 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
                   "have ended before it started. It's running with no end date "
                   "— set a later one to have it stop on its own.", "info")
             product.promo_ends_at = None
-    if (product.promo_price_cents is not None and product.price_cents is not None
-            and product.promo_price_cents >= product.price_cents):
-        flash("The promo price needs to be lower than the normal price, so "
-              "the banner was left off.", "info")
+    if product.promo_off_cents is not None and product.promo_off_cents <= 0:
+        flash("The amount off needs to be more than nothing, so the banner was "
+              "left off.", "info")
         product.promo_code = None
-        product.promo_price_cents = None
+        product.promo_off_cents = None
+    elif (product.promo_off_cents is not None and product.price_cents is not None
+            and product.promo_off_cents > product.price_cents):
+        flash("That's more off than the product costs, so the banner was left "
+              "off. Take off at most the price itself.", "info")
+        product.promo_code = None
+        product.promo_off_cents = None
 
     if form.get("use_accent"):
         product.accent_color = _parse_accent(form.get("accent"))

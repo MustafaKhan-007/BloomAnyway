@@ -394,9 +394,14 @@
       </div>
       <div class="form-row">
         <div class="field">
-          <label for="promo_price">Promo price (optional)</label>
-          <input type="text" id="promo_price" name="promo_price" placeholder="19.00"
-                 value="{{ '%.2f'|format(product.promo_price_cents / 100) if product.promo_price_cents is not none else '' }}">
+          <label for="promo_off">Money off with a code (optional)</label>
+          <input type="text" id="promo_off" name="promo_off" placeholder="10.00"
+                 value="{{ '%.2f'|format(product.promo_off_cents / 100) if product.promo_off_cents is not none else '' }}">
+          <p class="field-help">
+            What comes off, not what it comes to &mdash; put <strong>10</strong>
+            for ten dollars off. Matches the coupon behind the code in Stripe,
+            and stays right if you change the price later.
+          </p>
         </div>
         <div class="field">
           <label for="promo_code">Promo code</label>
@@ -418,10 +423,11 @@
         <div class="field">
           {% if product.has_promo() %}
           <p class="field-help">
-            <strong>Running now:</strong> {{ product.promo_display() }} with
-            <code>{{ product.promo_code_display() }}</code> —
-            {{ product.promo_saving_display() }} off, shown on the card and the
-            product page.
+            <strong>Running now:</strong> {{ product.promo_saving_display() }} off
+            with <code>{{ product.promo_code_display() }}</code>, which comes to
+            {{ product.promo_display() }}. The price on the card and the product
+            page doesn't move &mdash; they say what comes off beside it, and
+            Stripe takes it when the code is typed.
             {% if product.promo_ends_at %}
             It disappears on its own {{ product.promo_ends_display() }} (your time).
             {{ countdown(product.promo_ends_at, zero='The sale is over') }}
@@ -437,11 +443,11 @@
           </p>
           {% else %}
           <p class="field-help">
-            Fill in a price and a code to put a sale banner on the card and the
-            product page. The code is the one they type at Stripe checkout — make
-            it in Stripe first, with a matching expiry. Leave the end date blank
-            to run it until you take it down; clear the price or code to stop it
-            now.
+            Fill in an amount and a code to say what comes off on the card and
+            the product page. The code is the one they type at Stripe checkout —
+            make it in Stripe first, for the same amount and with a matching
+            expiry. Leave the end date blank to run it until you take it down;
+            clear the amount or the code to stop it now.
           </p>
           {% endif %}
         </div>
