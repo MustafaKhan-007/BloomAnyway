@@ -1768,52 +1768,81 @@ _promo_fields = {
     "price": "24.00", "stripe": "price_rebuild_week", "live": "1",
 }
 r = admin.post(f"/admin/products/{_multi_id}/edit",
-               data=dict(_promo_fields, promo_price="18.00", promo_code="spring25"),
+               data=dict(_promo_fields, promo_off="6.00", promo_code="spring25"),
                follow_redirects=True)
 with app.app_context():
     _p = db.session.get(Product, _multi_id)
-    ok("Studio saves a promo price and its code",
-       _p.has_promo() and _p.promo_price_cents == 1800
+    ok("Studio saves what comes off, and the code for it",
+       _p.has_promo() and _p.promo_off_cents == 600
        and _p.promo_code_display() == "SPRING25",
-       f"got {_p.promo_code!r} {_p.promo_price_cents}")
-    ok("And works out what comes off",
-       _p.promo_display() == "$18" and _p.promo_saving_display() == "$6",
-       f"got {_p.promo_display()} / {_p.promo_saving_display()}")
+       f"got {_p.promo_code!r} {_p.promo_off_cents}")
+    ok("And works out what that comes to",
+       _p.promo_saving_display() == "$6" and _p.promo_display() == "$18",
+       f"got {_p.promo_saving_display()} / {_p.promo_display()}")
+
+# A coupon takes its amount off whatever the price is that day, so the saving
+# is the number the owner typed — not the gap to a price she has since moved.
+with app.app_context():
+    _p = db.session.get(Product, _multi_id)
+    _p.price_cents = 3400
+    db.session.commit()
+    ok("Putting the price up leaves the saving exactly where she set it",
+       _p.promo_saving_display() == "$6" and _p.promo_display() == "$28",
+       f"got {_p.promo_saving_display()} / {_p.promo_display()}")
+    _p.price_cents = 2400
+    db.session.commit()
 
 _pd = client.get("/courses/rebuild-your-week").get_data(as_text=True)
-ok("The product page leads with the promo price and strikes the old one",
-   "pd-promo" in _pd and "$18" in _pd and "<s>$24</s>" in _pd)
+ok("The product page keeps the real price and says what comes off beside it",
+   "pd-promo" in _pd and "Save $6" in _pd and "$24" in _pd
+   and "<s>$24</s>" not in _pd)
 ok("And says which code to type",
    "SPRING25" in _pd and "at checkout" in _pd)
+ok("The lower number is nowhere on it — that's reached at Stripe's checkout",
+   "$18" not in _pd)
 _tile = _catalogue("/courses?b=course")
-ok("The catalogue tile shows the sale price over the old one",
-   "lib-card__price--promo" in _tile and "<s>$24</s>" in _tile)
+ok("The catalogue tile keeps the ordinary price",
+   "lib-card__price" in _tile and "$24" in _tile and "$18" not in _tile)
 ok("With the saving and the code on the card",
-   "lib-card__promo" in _tile and "SPRING25" in _tile and "$6 off" in _tile)
+   "lib-card__promo" in _tile and "SPRING25" in _tile and "Save $6" in _tile)
 # A sale price used to be the whole of the card's bottom row, leaving the one
 # product somebody is most likely to want with no way through to it.
-_sale_card = _tile.split("lib-card__price--promo", 1)[-1].split("</article>", 1)[0]
+_sale_card = _tile.split("lib-card__promo", 1)[-1].split("</article>", 1)[0]
 ok("And a way in, same as every other card",
    "/courses/rebuild-your-week" in _sale_card
    and "lib-card__btn--primary" in _sale_card
    and "View" in _sale_card, _sale_card[-400:])
 
-# Half a promo is no promo, and one that doesn't save anything isn't a sale.
-for _bad, _why in (({"promo_price": "18.00", "promo_code": ""}, "no code"),
-                   ({"promo_price": "", "promo_code": "SPRING25"}, "no price"),
-                   ({"promo_price": "30.00", "promo_code": "SPRING25"}, "dearer")):
+# Half a promo is no promo, and one that takes off more than the thing costs
+# is a sum nobody can make sense of.
+for _bad, _why in (({"promo_off": "6.00", "promo_code": ""}, "no code"),
+                   ({"promo_off": "", "promo_code": "SPRING25"}, "no amount"),
+                   ({"promo_off": "0", "promo_code": "SPRING25"}, "nothing off"),
+                   ({"promo_off": "30.00", "promo_code": "SPRING25"},
+                    "more off than it costs")):
     admin.post(f"/admin/products/{_multi_id}/edit",
                data=dict(_promo_fields, **_bad), follow_redirects=True)
     with app.app_context():
         ok(f"A promo with {_why} isn't advertised",
            not db.session.get(Product, _multi_id).has_promo())
-ok("And the card goes back to the ordinary price",
-   "lib-card__price--promo" not in _catalogue("/courses?b=course"))
+ok("And the card says nothing about a code",
+   "lib-card__promo" not in _catalogue("/courses?b=course"))
+
+# The whole price off is a real coupon — a free week, a giveaway — and the
+# page can say so rather than treating it as a mistake.
+admin.post(f"/admin/products/{_multi_id}/edit",
+           data=dict(_promo_fields, promo_off="24.00", promo_code="ONTHEHOUSE"),
+           follow_redirects=True)
+with app.app_context():
+    _p = db.session.get(Product, _multi_id)
+    ok("A code that takes the whole price off is a sale like any other",
+       _p.has_promo() and _p.promo_saving_display() == "$24"
+       and _p.promo_display() == "$0", f"got {_p.promo_display()}")
 
 # A sale with a deadline takes itself down when the deadline passes.
 _soon = utcnow() + timedelta(days=3)
 r = admin.post(f"/admin/products/{_multi_id}/edit",
-               data=dict(_promo_fields, promo_price="18.00", promo_code="SPRING25",
+               data=dict(_promo_fields, promo_off="6.00", promo_code="SPRING25",
                          promo_ends_date=_soon.strftime("%Y-%m-%d"),
                          promo_ends_time="17:30"),
                follow_redirects=True)
@@ -1841,7 +1870,7 @@ _pd = client.get("/courses/rebuild-your-week").get_data(as_text=True)
 ok("The product page drops the banner and shows the normal price",
    "pd-promo" not in _pd and "SPRING25" not in _pd and "$24" in _pd)
 ok("So does the catalogue card",
-   "lib-card__price--promo" not in _catalogue("/courses?b=course")
+   "lib-card__promo" not in _catalogue("/courses?b=course")
    and "SPRING25" not in _catalogue("/courses?b=course"))
 _sbody = admin.get(f"/admin/products/{_multi_id}/edit").get_data(as_text=True)
 ok("Studio says the sale has ended rather than pretending it's running",
@@ -1866,7 +1895,7 @@ _over_on = _promo_date(
     admin.get(f"/admin/products/{_multi_id}/edit").get_data(as_text=True))
 ok("The form still shows the day the last sale ended", bool(_over_on), _over_on)
 r = admin.post(f"/admin/products/{_multi_id}/edit",
-               data=dict(_promo_fields, promo_price="16.00",
+               data=dict(_promo_fields, promo_off="8.00",
                          promo_code="AUTUMN30", promo_ends_date=_over_on,
                          promo_ends_time="23:59"),
                follow_redirects=True)
@@ -1875,39 +1904,39 @@ with app.app_context():
     _p = db.session.get(Product, _multi_id)
     ok("A new code over a finished sale runs rather than arriving over",
        _p.has_promo() and _p.promo_code_display() == "AUTUMN30"
-       and _p.promo_price_cents == 1600 and _p.promo_ends_at is None,
-       f"got {_p.promo_code!r} {_p.promo_price_cents} ends {_p.promo_ends_at}")
+       and _p.promo_off_cents == 800 and _p.promo_ends_at is None,
+       f"got {_p.promo_code!r} {_p.promo_off_cents} ends {_p.promo_ends_at}")
 ok("And Studio says the old date is why it has no deadline",
    "already gone by" in _said)
 
-# A price nobody can read is worse than a refusal: it used to leave the code
-# saved with no price behind it, running nothing and saying nothing.
+# An amount nobody can read is worse than a refusal: it used to leave the
+# code saved with nothing behind it, running nothing and saying nothing.
 r = admin.post(f"/admin/products/{_multi_id}/edit",
-               data=dict(_promo_fields, promo_price="$14.00",
+               data=dict(_promo_fields, promo_off="$14.00",
                          promo_code="WINTER10", promo_ends_date="",
                          promo_ends_time="23:59"),
                follow_redirects=True)
-ok("A price with a currency sign on it is sent back to be retyped",
-   "didn&#39;t read as a price" in r.get_data(as_text=True)
-   or "didn't read as a price" in r.get_data(as_text=True))
+ok("An amount with a currency sign on it is sent back to be retyped",
+   "didn&#39;t read as an amount" in r.get_data(as_text=True)
+   or "didn't read as an amount" in r.get_data(as_text=True))
 with app.app_context():
     _p = db.session.get(Product, _multi_id)
     ok("And the sale that was running is left exactly as it was",
        _p.has_promo() and _p.promo_code_display() == "AUTUMN30"
-       and _p.promo_price_cents == 1600,
-       f"got {_p.promo_code!r} {_p.promo_price_cents}")
+       and _p.promo_off_cents == 800,
+       f"got {_p.promo_code!r} {_p.promo_off_cents}")
 
 # The other way round: a finished sale that nobody has touched must stay
 # finished, however many times the product is saved for other reasons.
 with app.app_context():
     _p = db.session.get(Product, _multi_id)
-    _p.promo_code, _p.promo_price_cents = "SPRING25", 1800
+    _p.promo_code, _p.promo_off_cents = "SPRING25", 600
     _p.promo_ends_at = utcnow() - timedelta(days=2)
     db.session.commit()
 _dead_on = _promo_date(
     admin.get(f"/admin/products/{_multi_id}/edit").get_data(as_text=True))
 admin.post(f"/admin/products/{_multi_id}/edit",
-           data=dict(_promo_fields, promo_price="18.00", promo_code="SPRING25",
+           data=dict(_promo_fields, promo_off="6.00", promo_code="SPRING25",
                      promo_ends_date=_dead_on, promo_ends_time="23:59"),
            follow_redirects=True)
 with app.app_context():
@@ -1920,7 +1949,7 @@ with app.app_context():
     _p.promo_ends_at = utcnow() + timedelta(days=4)
     db.session.commit()
 admin.post(f"/admin/products/{_multi_id}/edit",
-           data=dict(_promo_fields, promo_price="18.00", promo_code="SPRING25",
+           data=dict(_promo_fields, promo_off="6.00", promo_code="SPRING25",
                      promo_ends_date=(utcnow() - timedelta(days=1)
                                       ).strftime("%Y-%m-%d"),
                      promo_ends_time="23:59"),
@@ -1931,7 +1960,7 @@ with app.app_context():
 
 # Leaving the date blank means it runs until it's taken down.
 admin.post(f"/admin/products/{_multi_id}/edit",
-           data=dict(_promo_fields, promo_price="18.00", promo_code="SPRING25",
+           data=dict(_promo_fields, promo_off="6.00", promo_code="SPRING25",
                      promo_ends_date="", promo_ends_time="23:59"),
            follow_redirects=True)
 with app.app_context():
@@ -1948,7 +1977,7 @@ with app.app_context():
 # its own. The page can at least say when it is going to.
 _soon = utcnow() + timedelta(days=6)
 r = admin.post(f"/admin/products/{_multi_id}/edit",
-               data=dict(_promo_fields, promo_price="", promo_code="",
+               data=dict(_promo_fields, promo_off="", promo_code="",
                          compare_at="49.00",
                          price_reverts_date=_soon.strftime("%Y-%m-%d"),
                          price_reverts_time="23:59"),

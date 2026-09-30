@@ -44,7 +44,7 @@
           {% if product.has_promo() and not owned_purchase_id %}
           <li class="lib-card__promo">
             <span aria-hidden="true">&#10022;</span>
-            {{ product.promo_saving_display() }} off with
+            Save {{ product.promo_saving_display() }} with
             <code>{{ product.promo_code_display() }}</code>
           </li>
           {% endif %}
@@ -52,17 +52,14 @@
       </div>
     </div>
     {# What it costs changes with the card; the way in never does. A price on
-       its own is a dead end, and a sale price is the last one to leave there. #}
+       its own is a dead end, and a sale price is the last one to leave there.
+       A code isn't a price, so it doesn't stand in for one here — what comes
+       off is said among the lines above, and this stays the price. #}
     <div class="lib-card__actions">
       {% if owned_purchase_id %}
       <span class="lib-card__price">Purchased</span>
       {% elif product.is_off_shelf() %}
       <span class="lib-card__price lib-card__price--shelved">No longer sold</span>
-      {% elif product.has_promo() %}
-      <span class="lib-card__price lib-card__price--promo">
-        <strong>{{ product.promo_display() }}{{ product.price_suffix() }}</strong>
-        <s>{{ product.price_display() }}</s>
-      </span>
       {% else %}
       <span class="lib-card__price">{{ product.price_display() or '—' }}{{ product.price_suffix() }}</span>
       {% endif %}

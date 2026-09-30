@@ -9147,10 +9147,6 @@ a.at-handle:hover { text-decoration: underline; }
   font-size: 1.35rem; font-weight: 800; color: var(--plum-deep);
   margin-right: auto;
 }
-.lib-card__price--promo { display: inline-flex; align-items: baseline; gap: 7px; }
-.lib-card__price--promo s {
-  font-size: 0.95rem; font-weight: 600; color: var(--ink-soft);
-}
 /* The sale line on a catalogue card: what comes off, and the code for it. */
 .lib-card__promo { color: var(--plum-deep); font-weight: 700; }
 .lib-card__promo code {

@@ -47,19 +47,25 @@
         </div>
         {% endif %}
         <div class="pd-hero__buy">
-          {% if product.has_promo() %}
           {# The suffix is empty for everything bought once, which is most of
              it. On a subscription it is the difference between a price and a
-             commitment, so it goes wherever the number does. #}
+             commitment, so it goes wherever the number does.
+
+             A code doesn't move this number. What it costs is what it costs
+             until Stripe takes the money off at its own checkout, and the
+             struck-through price beside it is the compare-at — the one thing
+             this product was ever actually sold for. A sale says what comes
+             off underneath instead, where it can't be mistaken for either. #}
           <div class="pd-hero__price">
-            <strong>{{ product.promo_display() }}{{ product.price_suffix() }}</strong>
-            <s>{{ product.price_display() }}</s>
+            <strong>{{ product.price_display() or '—' }}{{ product.price_suffix() }}</strong>
+            {% if product.shows_compare_at() %}<s>{{ product.compare_at_display() }}</s>{% endif %}
           </div>
+          {% if product.has_promo() %}
           <p class="pd-promo">
             <span class="pd-promo__spark" aria-hidden="true">&#10022;</span>
             <span>
-              <strong>{{ product.promo_saving_display() }} off right now.</strong>
-              Enter <code>{{ product.promo_code_display() }}</code> at checkout.
+              <strong>Save {{ product.promo_saving_display() }}</strong> with
+              <code>{{ product.promo_code_display() }}</code> at checkout.
               {% if product.promo_ends_display() %}
               <span class="pd-promo__ends">
                 Ends {{ product.promo_ends_display() }}.
@@ -68,11 +74,6 @@
               {% endif %}
             </span>
           </p>
-          {% else %}
-          <div class="pd-hero__price">
-            <strong>{{ product.price_display() or '—' }}{{ product.price_suffix() }}</strong>
-            {% if product.shows_compare_at() %}<s>{{ product.compare_at_display() }}</s>{% endif %}
-          </div>
           {% endif %}
           {# Both of these are days already set in Studio, and both change what
              this costs or whether it can be bought at all, so they are said

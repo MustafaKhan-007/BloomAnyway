@@ -485,10 +485,15 @@ class Product(db.Model):
     #: price with a date on it says so on the product page, and stops calling
     #: itself a saving once the date is past.
     price_reverts_at = db.Column(db.DateTime)
-    #: A running promo: what it costs with the code, and the code to type at
-    #: Stripe checkout. Both or neither — a price with no code is a mystery and
-    #: a code with no price is nothing to advertise.
-    promo_price_cents = db.Column(db.Integer)
+    #: A running promo: how much money comes off, and the code to type at
+    #: Stripe checkout. Both or neither — an amount with no code is a mystery
+    #: and a code with no amount is nothing to advertise.
+    #:
+    #: Held as the money that comes off rather than as what it comes to, which
+    #: is what the owner set up in Stripe: a coupon takes $10 off whatever the
+    #: price is that day. Kept the other way round, a price rise would quietly
+    #: turn "$10 off" into "$20 off" on the page while Stripe still took ten.
+    promo_off_cents = db.Column(db.Integer)
     promo_code = db.Column(db.String(40))
     #: When the sale stops, stored UTC. None means it runs until taken down.
     promo_ends_at = db.Column(db.DateTime)
@@ -1139,16 +1144,16 @@ class Product(db.Model):
 
     # --- a running promo code -------------------------------------------------
     def has_promo(self) -> bool:
-        """A promo needs a code, a price that beats the normal one, and time left.
+        """A promo needs a code, money off that the price can cover, and time left.
 
         Nothing off the shelves advertises a sale, since there is no longer a
         checkout for the code to be typed into.
         """
         return bool(
             (self.promo_code or "").strip()
-            and self.promo_price_cents is not None
+            and self.promo_off_cents is not None
             and self.price_cents is not None
-            and 0 <= self.promo_price_cents < self.price_cents
+            and 0 < self.promo_off_cents <= self.price_cents
             and not self.promo_expired()
             and not self.is_off_shelf()
         )
@@ -1165,18 +1170,24 @@ class Product(db.Model):
         return format_local(self.promo_ends_at, "%b %d at %I:%M %p")
 
     def promo_display(self) -> str:
+        """What it comes to with the code, for Studio to check her sums against.
+
+        Not shown to a shopper. The page keeps the real price and its
+        compare-at, and says what comes off beside them; the lower number is
+        only reached at Stripe's checkout, once the code is actually typed.
+        """
         if not self.has_promo():
             return ""
-        return self._money_display(self.promo_price_cents)
+        return self._money_display(self.price_cents - self.promo_off_cents)
 
     def promo_code_display(self) -> str:
         return (self.promo_code or "").strip().upper()
 
     def promo_saving_display(self) -> str:
-        """How much comes off, in money — "save $12"."""
+        """How much comes off, in money — "$12"."""
         if not self.has_promo():
             return ""
-        return self._money_display(self.price_cents - self.promo_price_cents)
+        return self._money_display(self.promo_off_cents)
 
     def _money_display(self, cents) -> str:
         if cents is None:
