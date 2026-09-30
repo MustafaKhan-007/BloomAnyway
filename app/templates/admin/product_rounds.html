@@ -1,0 +1,127 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Rounds — {{ product.title }}{% endblock %}
+
+{% block content %}
+<div class="studio-page">
+  <div class="page-head">
+    <div>
+      <p class="eyebrow">
+        <a href="{{ url_for('admin.product_edit', product_id=product.id) }}">&larr; {{ product.title }}</a>
+      </p>
+      <h1>Rounds</h1>
+      <p class="field-help" style="margin:6px 0 0; max-width:660px;">
+        Run the same thing again on a new calendar. A round holds only dates —
+        when each module opens, how long the free membership runs, and the day
+        it stops selling. Everything else is the product, so there is one set of
+        lessons and one price however many times you run it.
+      </p>
+      <p class="field-help" style="margin:8px 0 0; max-width:660px;">
+        Whoever buys is put on whichever round is open that day, and stays on
+        it. Somebody who joined the first run keeps the first run's dates while
+        the third one is selling. Only the newest open round is shown on the
+        product page, so nobody is ever asked to choose between them.
+      </p>
+    </div>
+  </div>
+
+  {% if rows %}
+  <section class="admin-panel studio-card">
+    <table class="studio-table admin-table">
+      <thead>
+        <tr>
+          <th scope="col">Round</th>
+          <th scope="col">Modules open</th>
+          <th scope="col">Stops selling</th>
+          <th scope="col">Membership</th>
+          <th scope="col">Bought in</th>
+          <th scope="col">Status</th>
+          <th scope="col"><span class="visually-hidden">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td>
+            <a class="studio-product-list__title"
+               href="{{ url_for('admin.product_round_edit', product_id=product.id, round_id=r.id) }}">{{ r.label() }}</a>
+            {% if selling and selling.id == r.id %}
+            <p class="field-help" style="margin:4px 0 0;">This is what a shopper sees today.</p>
+            {% endif %}
+          </td>
+          <td>
+            {%- if r.drip_starts_at %}From {{ r.drip_starts_at|localtime('%b %d, %Y') }}
+            {%- else %}When each buyer buys{% endif %}
+            <p class="field-help" style="margin:4px 0 0;">{{ r.spacing()|capitalize }}</p>
+          </td>
+          <td>{{ r.off_shelf_at|localtime('%b %d, %Y') if r.off_shelf_at else '—' }}</td>
+          <td>
+            {%- if not product.perk_tier() %}—
+            {%- elif r.perk_ends_at %}Until {{ r.perk_ends_at|localtime('%b %d, %Y') }}
+            {%- elif r.perk_months() %}{{ r.perk_months() }} month{{ '' if r.perk_months() == 1 else 's' }}
+            {%- else %}—{% endif %}
+          </td>
+          <td>{{ held.get(r.id, 0) }}</td>
+          <td>
+            <span class="status-pill status-pill--{{ 'published' if r.is_live() else 'draft' }}">
+              {{ 'open' if r.is_live() else 'draft' }}
+            </span>
+            {% if r.is_live() and selling and selling.id != r.id %}
+            <span class="status-pill status-pill--shelved">superseded</span>
+            {% endif %}
+          </td>
+          <td class="studio-product-list__actions">
+            <a class="btn btn--secondary btn--sm"
+               href="{{ url_for('admin.product_round_edit', product_id=product.id, round_id=r.id) }}">Edit</a>
+            <button class="btn btn--quiet btn--sm" type="submit" form="round-live-{{ r.id }}">
+              {{ 'Close' if r.is_live() else 'Open' }}
+            </button>
+            {% if not held.get(r.id, 0) %}
+            <button class="btn btn--quiet btn--sm" type="submit" form="round-del-{{ r.id }}">Remove</button>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if unstamped %}
+    <p class="field-help" style="margin:14px 0 0;">
+      {{ unstamped }} {{ 'person' if unstamped == 1 else 'people' }} bought this
+      before it ran in rounds, so {{ 'they are' if unstamped != 1 else 'she is' }}
+      still on the product's own dates. Those live on the product itself, not
+      here, and changing them still moves {{ 'them' if unstamped != 1 else 'her' }}.
+    </p>
+    {% endif %}
+  </section>
+  {% else %}
+  <section class="admin-panel studio-card">
+    <p class="field-help" style="margin:0;">
+      This product isn't run in rounds. It has one set of dates, on the product
+      itself, and everybody who buys works off those. Starting a round copies
+      those dates onto it, so nothing changes for anybody until you say so.
+    </p>
+  </section>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('admin.product_round_new', product_id=product.id) }}"
+        style="margin-top:16px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn btn--primary" type="submit">
+      {{ 'Start another round' if rows else 'Run this in rounds' }}
+    </button>
+  </form>
+
+  {% for r in rows %}
+  <form id="round-live-{{ r.id }}" method="post" hidden
+        action="{{ url_for('admin.product_round_live', product_id=product.id, round_id=r.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  </form>
+  <form id="round-del-{{ r.id }}" method="post" hidden
+        action="{{ url_for('admin.product_round_delete', product_id=product.id, round_id=r.id) }}"
+        data-confirm="Remove {{ r.label() }}? Nobody has bought into it, so nothing is lost."
+        data-confirm-title="Remove round?"
+        data-confirm-ok="Remove">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  </form>
+  {% endfor %}
+</div>
+{% endblock %}

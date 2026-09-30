@@ -86,11 +86,13 @@
             {{ countdown(product.price_reverts_at, zero='The price just went back up', refresh=true) }}
           </p>
           {% endif %}
-          {% if product.off_shelf_at and not product.is_off_shelf() %}
+          {% set closes = product.off_shelf_moment() %}
+          {% if closes and not product.is_off_shelf() %}
           <p class="pd-hero__deadline">
-            Off the shelves on {{ product.off_shelf_display() }}. Buy it before
+            {%- if product.selling_round() %}{{ product.selling_round().label() }} closes
+            {%- else %}Off the shelves{% endif %} on {{ product.off_shelf_display() }}. Buy it before
             then and it stays yours for good.
-            {{ countdown(product.off_shelf_at, zero='Off the shelves now', refresh=true) }}
+            {{ countdown(closes, zero='Off the shelves now', refresh=true) }}
           </p>
           {% endif %}
           {% if product.has_perk() %}
@@ -271,14 +273,19 @@
         {% if curriculum %}
         <section class="pd-section pd-section--wide" aria-labelledby="pd-curriculum-heading">
           <h2 id="pd-curriculum-heading">What’s inside</h2>
+          {# The dates belong to whichever run is being sold, not to the
+             product, so a page read today never shows a closed round's
+             calendar. #}
+          {% set sch = product.schedule() %}
           {% set steps = product.release_steps() if product.is_dripped() else [] %}
           {% if steps %}
           <p class="pd-curriculum__note">
+            {%- if product.selling_round() %}<strong>{{ product.selling_round().label() }}.</strong> {% endif -%}
             Released one module at a time:
             {%- if steps[0].when %} the first opens on {{ steps[0].when|when('%B %d') }}
             {%- else %} the first opens as soon as you buy{% endif -%}
-            {%- if product.drip_mode_key() == 'interval' %}, then a new one every
-            {{ product.drip_days() }} day{{ '' if product.drip_days() == 1 else 's' }}.
+            {%- if sch.drip_mode_key() == 'interval' %}, then a new one every
+            {{ sch.drip_days() }} day{{ '' if sch.drip_days() == 1 else 's' }}.
             {%- else %}, then the rest as listed below.{% endif %}
             {% if steps[0].when %}{{ countdown(steps[0].when, zero='Module one is open now', refresh=true) }}{% endif %}
           </p>

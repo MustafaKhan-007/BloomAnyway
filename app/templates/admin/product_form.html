@@ -64,6 +64,21 @@
         <a href="{{ url_for('main.course_detail', slug=product.slug) }}" target="_blank" rel="noopener">Preview page</a>
         {% endif %}
       </p>
+      <p class="field-help" style="margin:6px 0 0;">
+        {%- set selling = product.selling_round() %}
+        {%- set rounds_url = url_for('admin.product_rounds', product_id=product.id) %}
+        {%- if selling %}
+        <a href="{{ rounds_url }}">Rounds</a> &mdash; new buyers are on
+        <strong>{{ selling.label() }}</strong>, so the dates on this page now
+        only reach the people who bought before there were rounds.
+        {%- elif product.rounds %}
+        <a href="{{ rounds_url }}">Rounds</a> &mdash; none of them is open, so
+        everybody buying works off the dates on this page.
+        {%- else %}
+        Running this again later? <a href="{{ rounds_url }}">Rounds</a> give each
+        run its own dates, with one set of lessons between them.
+        {%- endif %}
+      </p>
       {% endif %}
     </div>
   </div>

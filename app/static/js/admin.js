@@ -949,6 +949,31 @@
     sync();
   })();
 
+  /* ---- one round's dates ----
+     The same three ways of spacing modules the product form offers, on a page
+     with no modules to add or remove — so the machinery above, which needs a
+     module list to hang off, never wakes up here. Same attributes, so a field
+     reads the same in both places. */
+  (function () {
+    var root = document.querySelector("[data-round-dates]");
+    if (!root) return;
+    function showMode() {
+      var picked = root.querySelector("[name='drip_mode']:checked");
+      var mode = picked ? picked.value : "interval";
+      root.querySelectorAll("[data-drip-only]").forEach(function (el) {
+        el.hidden = (el.getAttribute("data-drip-only") || "")
+          .split(/\s+/).indexOf(mode) === -1;
+      });
+      root.querySelectorAll("[data-drip-note]").forEach(function (el) {
+        el.hidden = el.getAttribute("data-drip-note") !== mode;
+      });
+    }
+    root.querySelectorAll("[name='drip_mode']").forEach(function (radio) {
+      radio.addEventListener("change", showMode);
+    });
+    showMode();
+  })();
+
   /* ---- extracts written for one particular file ----
      These hang off a saved file rather than a module, so they also appear
      among the loose files outside the module list. Wired from the document

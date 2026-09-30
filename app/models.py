@@ -571,6 +571,15 @@ class Product(db.Model):
         order_by="ProductGalleryImage.sort_order, ProductGalleryImage.id",
         cascade="all, delete-orphan",
     )
+    #: Every run of this product, oldest first. See :class:`ProductRound`.
+    #: Loaded for the whole page of products at once rather than one at a
+    #: time, because the catalogue asks every product whether it is still
+    #: being sold and that answer now depends on its newest round.
+    rounds = db.relationship(
+        "ProductRound", back_populates="product", lazy="selectin",
+        order_by="ProductRound.number, ProductRound.id",
+        cascade="all, delete-orphan",
+    )
 
     def has_assets(self) -> bool:
         return len(self.assets) > 0
@@ -728,6 +737,65 @@ class Product(db.Model):
         self.curriculum_json = json.dumps(cleaned) if cleaned else None
 
     # --- modules, drip-feed and the membership perk ---------------------------
+    def module_timing(self) -> list[dict]:
+        """When each module opens, off the product's own dates.
+
+        The same shape :meth:`ProductRound.module_timing` returns, so a
+        schedule can be either one without anybody having to ask which.
+        """
+        return [{"release_at": row.get("release_at") or "",
+                 "gap_days": row.get("gap_days") or 0}
+                for row in self.curriculum()]
+
+    # --- runs of this product ------------------------------------------------
+
+    def live_rounds(self) -> list["ProductRound"]:
+        """The rounds that can be sold or bought into, oldest first."""
+        return [r for r in self.rounds if r.is_live()]
+
+    def selling_round(self) -> "ProductRound | None":
+        """The one a shopper is looking at: the newest live round.
+
+        None for a product that is not run in rounds, which is every product
+        until the owner says otherwise — and then everything falls back to
+        the product's own dates, exactly as it did before.
+        """
+        live = self.live_rounds()
+        return live[-1] if live else None
+
+    def round_by_id(self, round_id) -> "ProductRound | None":
+        """One of this product's rounds by id, without another query."""
+        if not round_id:
+            return None
+        for row in self.rounds:
+            if row.id == round_id:
+                return row
+        return None
+
+    def next_round_number(self) -> int:
+        return max((r.number for r in self.rounds), default=0) + 1
+
+    def schedule(self, given=None):
+        """The dates to work from: the one handed in, else whose it should be.
+
+        With nothing handed in that is the round being sold, and for a
+        product not run in rounds, the product itself. Everything that asks
+        when a module opens, when a perk runs or when this stops selling
+        comes through here, so there is one answer to "whose calendar is
+        this" rather than one per caller.
+        """
+        return given if given is not None else (self.selling_round() or self)
+
+    def schedule_for(self, purchase):
+        """The dates one buyer's copy runs on.
+
+        Their own round if they were stamped with one. A purchase made
+        before the product ran in rounds has none, and keeps the product's
+        own dates rather than being moved onto whatever is selling now.
+        """
+        stamped = self.round_by_id(getattr(purchase, "round_id", None))
+        return stamped if stamped is not None else self
+
     def drip_mode_key(self) -> str:
         """Which of the three schedules this product is on."""
         mode = (self.drip_mode or "").strip().lower()
@@ -861,10 +929,11 @@ class Product(db.Model):
         if self.is_dripped():
             # A release date that hasn't come yet is the first thing to say:
             # "right away" is a promise the course wouldn't keep.
+            sch = self.schedule()
             opens = self.first_release_display()
             first = f"First module on {opens}" if opens else "First module right away"
-            if self.drip_mode_key() == "interval":
-                days = self.drip_days()
+            if sch.drip_mode_key() == "interval":
+                days = sch.drip_days()
                 unit = "day" if days == 1 else f"{days} days"
                 facts.append(("Pace", f"{first}, then one every {unit}"))
             elif opens:
@@ -905,29 +974,45 @@ class Product(db.Model):
                     and getattr(user, "is_admin", False))
 
     def is_off_shelf(self, now: datetime | None = None) -> bool:
-        """Past its selling date: still readable, still listed, no longer sold."""
-        if self.off_shelf_at is None:
+        """Past its selling date: still readable, still listed, no longer sold.
+
+        Whichever round is being sold decides this. A product run in rounds
+        can close one and open the next; a product that isn't goes on the
+        date set on the product, the way it always has.
+        """
+        when = self.schedule().off_shelf_at
+        if when is None:
             return False
-        return self.off_shelf_at <= (now or utcnow())
+        return when <= (now or utcnow())
+
+    def off_shelf_moment(self) -> datetime | None:
+        """When it stops selling, on whichever round is being sold.
+
+        The date itself rather than a sentence about it, for the countdowns
+        that have to tick towards it.
+        """
+        return self.schedule().off_shelf_at
 
     def off_shelf_display(self) -> str:
         """The date it stopped (or stops) being sold, in the reader's own day."""
-        if self.off_shelf_at is None:
+        when = self.schedule().off_shelf_at
+        if when is None:
             return ""
         from .services.timefmt import format_local
-        return format_local(self.off_shelf_at, "%b %d, %Y")
+        return format_local(when, "%b %d, %Y")
 
     def drip_starts_display(self) -> str:
         """When module one opens, for a product on a fixed release date."""
-        if self.drip_starts_at is None:
+        when = self.schedule().drip_starts_at
+        if when is None:
             return ""
         from .services.timefmt import format_local
-        return format_local(self.drip_starts_at, "%b %d, %Y")
+        return format_local(when, "%b %d, %Y")
 
-    def release_steps(self) -> list[dict]:
+    def release_steps(self, schedule=None) -> list[dict]:
         """When each module opens, for somebody deciding whether to buy."""
         from .services.drip import public_steps
-        return public_steps(self)
+        return public_steps(self, schedule=schedule)
 
     def first_release_display(self) -> str:
         """The day module one opens, when that is still ahead of everybody."""
@@ -954,57 +1039,84 @@ class Product(db.Model):
             return 0
         return max(0, min(60, months))
 
-    def has_perk(self) -> bool:
-        """Whether buying this hands out free membership — for a length or to a day."""
-        return bool(self.perk_tier()) and (self.perk_months() > 0
-                                           or self.perk_ends_at is not None)
+    def has_perk(self, schedule=None) -> bool:
+        """Whether buying this hands out free membership — for a length or to a day.
 
-    def perk_window(self, bought_at: datetime | None = None):
+        Which tier is the product's; how long it runs belongs to the round,
+        so a run can be two months of Creator where the one before it was
+        three.
+        """
+        sch = self.schedule(schedule)
+        return bool(self.perk_tier()) and (sch.perk_months() > 0
+                                           or sch.perk_ends_at is not None)
+
+    def carries_perk_ever(self) -> bool:
+        """Whether any run of this ever came with membership.
+
+        Asked when gathering the products worth checking a buyer's shelf
+        against: a round that has closed still owes its buyers their months,
+        so a product is worth looking at if any of its rounds carried a perk
+        — not only the one on sale today.
+        """
+        if not self.perk_tier():
+            return False
+        if self.perk_months() > 0 or self.perk_ends_at is not None:
+            return True
+        return any(r.perk_months() > 0 or r.perk_ends_at is not None
+                   for r in self.rounds)
+
+    def perk_window(self, bought_at: datetime | None = None, schedule=None):
         """When the free membership runs for somebody who bought at ``bought_at``.
 
         Nothing set means it starts at the counter and lasts its months. A
         start date holds it until the day it opens, and buying after that day
         starts it there and then. An end date stops everybody together,
         however long each of them has had it.
+
+        ``schedule`` is the round they bought into, when they bought into
+        one. Their round's dates are theirs for good: opening a new one does
+        not move anybody already on an old one.
         """
-        if not self.has_perk():
+        sch = self.schedule(schedule)
+        if not self.has_perk(sch):
             return (None, None)
         from .services.perks import add_months
 
         bought = bought_at or utcnow()
         start = bought
-        if self.perk_starts_at is not None and self.perk_starts_at > bought:
-            start = self.perk_starts_at
-        if self.perk_ends_at is not None:
-            return (start, self.perk_ends_at)
-        return (start, add_months(start, self.perk_months()))
+        if sch.perk_starts_at is not None and sch.perk_starts_at > bought:
+            start = sch.perk_starts_at
+        if sch.perk_ends_at is not None:
+            return (start, sch.perk_ends_at)
+        return (start, add_months(start, sch.perk_months()))
 
     def perk_ended(self, now: datetime | None = None) -> bool:
         """Whether a perk with an end date has already been and gone."""
-        return bool(self.perk_ends_at is not None
-                    and self.perk_ends_at <= (now or utcnow()))
+        ends = self.schedule().perk_ends_at
+        return bool(ends is not None and ends <= (now or utcnow()))
 
-    def perk_offer(self) -> str:
+    def perk_offer(self, schedule=None) -> str:
         """The free membership, as it reads on a page: "3 months of Creator"."""
-        if not self.has_perk():
+        sch = self.schedule(schedule)
+        if not self.has_perk(sch):
             return ""
         from .services.timefmt import format_local
 
         label = MEMBERSHIP_LABELS.get(self.perk_tier(), self.perk_tier())
-        opens = (format_local(self.perk_starts_at, "%b %d, %Y")
-                 if self.perk_starts_at is not None else "")
-        if self.perk_ends_at is None:
-            months = self.perk_months()
+        opens = (format_local(sch.perk_starts_at, "%b %d, %Y")
+                 if sch.perk_starts_at is not None else "")
+        if sch.perk_ends_at is None:
+            months = sch.perk_months()
             length = f"{months} month{'' if months == 1 else 's'} of {label} membership"
             return f"{length} from {opens}" if opens else length
-        closes = format_local(self.perk_ends_at, "%b %d, %Y")
+        closes = format_local(sch.perk_ends_at, "%b %d, %Y")
         if opens:
             return f"{label} membership from {opens} to {closes}"
         return f"{label} membership until {closes}"
 
-    def perk_summary(self) -> str:
+    def perk_summary(self, schedule=None) -> str:
         """The offer with the price on it: "3 months of Creator membership, free"."""
-        offer = self.perk_offer()
+        offer = self.perk_offer(schedule)
         if not offer:
             return ""
         before, sep, after = offer.partition(" membership")
@@ -1350,6 +1462,138 @@ class Product(db.Model):
         """The primary kind, for the one-badge places."""
         key = (self.type or "").lower()
         return PRODUCT_KIND_PILLS.get(key, (self.type or "GUIDE").upper())
+
+
+class ProductRound(db.Model):
+    """One run of a product: the same thing, on a different calendar.
+
+    A course or a challenge is often sold more than once. The lessons, the
+    price and the write-up are the same every time; what changes is the
+    dates — when each module opens, how long the free membership runs, and
+    the day it stops being sold. Copying the whole product to run it again
+    means two products to keep in step and a shopper choosing between them.
+
+    So a round holds the dates and nothing else. Everything a buyer reads
+    still comes from the one product. A round is stamped onto the purchase
+    when somebody buys, and from then on it is their calendar: the woman who
+    joined round one keeps round one's dates even while round three is being
+    sold. Only the newest live round is offered to anybody new.
+
+    A product with no rounds at all behaves exactly as it always did, off
+    its own dates — which is what every product here is until the owner
+    decides to run one twice.
+    """
+    __tablename__ = "product_rounds"
+
+    STATUSES = ("draft", "live")
+
+    id = db.Column(db.Integer, primary_key=True)
+    product_id = db.Column(db.Integer, db.ForeignKey("products.id"),
+                           nullable=False, index=True)
+    #: What it is called: 1, 2, 3. Unique per product and what orders them.
+    number = db.Column(db.Integer, nullable=False, default=1)
+    #: A name for it, when "Round 2" isn't enough ("Spring cohort"). Optional.
+    title = db.Column(db.String(120))
+    #: draft while its dates are being set, live once it can be sold. Only a
+    #: live round is ever offered, so one can be prepared without the product
+    #: page changing under whoever is reading it.
+    status = db.Column(db.String(12), nullable=False, default="draft")
+
+    # The same schedule knobs the product carries, for this run of it.
+    drip_mode = db.Column(db.String(12), nullable=False, default="interval")
+    drip_interval_days = db.Column(db.Integer, nullable=False, default=7)
+    drip_starts_at = db.Column(db.DateTime)
+    #: Per-module dates, as ``[{"release_at": iso, "gap_days": n}, ...]`` in
+    #: module order. Only the timing: the module's title and its files are
+    #: the product's, and are the same whichever round you are on.
+    schedule_json = db.Column(db.Text)
+
+    off_shelf_at = db.Column(db.DateTime)
+
+    #: The perk's length and window. Which tier it grants stays on the
+    #: product — that is what the perk is, not when it runs.
+    perk_membership_months = db.Column(db.Integer, nullable=False, default=0)
+    perk_starts_at = db.Column(db.DateTime)
+    perk_ends_at = db.Column(db.DateTime)
+
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=utcnow,
+                           onupdate=utcnow)
+
+    product = db.relationship("Product", back_populates="rounds")
+
+    __table_args__ = (
+        db.UniqueConstraint("product_id", "number", name="uq_round_number"),
+    )
+
+    def label(self) -> str:
+        """What to call it on a page: her name for it, or "Round 2"."""
+        return (self.title or "").strip() or f"Round {self.number}"
+
+    def is_live(self) -> bool:
+        return self.status == "live"
+
+    def spacing(self) -> str:
+        """How the modules are spread out on this run, in a few words."""
+        mode = self.drip_mode_key()
+        if mode == "dates":
+            return "each on its own date"
+        if mode == "gaps":
+            return "each its own wait after the one before"
+        days = self.drip_days()
+        return f"one every {days} day{'' if days == 1 else 's'}"
+
+    # --- the same questions a product answers about its own dates ------------
+    # Named to match Product's, so anything working out a schedule can be
+    # handed either one and never has to ask which it got.
+
+    def drip_mode_key(self) -> str:
+        mode = (self.drip_mode or "").strip().lower()
+        return mode if mode in DRIP_MODES else "interval"
+
+    def drip_days(self) -> int:
+        try:
+            days = int(self.drip_interval_days or 0)
+        except (TypeError, ValueError):
+            days = 0
+        return max(1, min(365, days or 7))
+
+    def perk_months(self) -> int:
+        try:
+            months = int(self.perk_membership_months or 0)
+        except (TypeError, ValueError):
+            return 0
+        return max(0, min(60, months))
+
+    def module_timing(self) -> list[dict]:
+        """When each of the product's modules opens on this run.
+
+        Padded and trimmed to however many modules the product has now, so
+        adding one to a product that has already run twice gives every round
+        a row for it rather than an index error.
+        """
+        try:
+            raw = json.loads(self.schedule_json) if self.schedule_json else []
+        except ValueError:
+            raw = []
+        if not isinstance(raw, list):
+            raw = []
+        wanted = len(self.product.curriculum()) if self.product else len(raw)
+        out = []
+        for i in range(wanted):
+            row = raw[i] if i < len(raw) and isinstance(raw[i], dict) else {}
+            out.append({
+                "release_at": Product._clean_release(row.get("release_at")),
+                "gap_days": Product._clean_gap(row.get("gap_days")),
+            })
+        return out
+
+    def set_module_timing(self, rows) -> None:
+        cleaned = [{
+            "release_at": Product._clean_release((r or {}).get("release_at")),
+            "gap_days": Product._clean_gap((r or {}).get("gap_days")),
+        } for r in (rows or []) if isinstance(r, dict)]
+        self.schedule_json = json.dumps(cleaned) if cleaned else None
 
 
 class ProductAsset(db.Model):
@@ -2016,6 +2260,13 @@ class ShopPurchase(db.Model):
     download_url = db.Column(db.String(1000))
     file_key = db.Column(db.String(255), index=True)  # self-hosted file id
     purchased_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+    #: Which run of the product they bought into, when it is run in rounds.
+    #: Stamped once, at the counter, and never moved: a later round opening
+    #: must not change the dates somebody already paid against. Empty for
+    #: everything bought before the product ran in rounds, which then goes
+    #: on the product's own dates exactly as it did then.
+    round_id = db.Column(db.Integer, db.ForeignKey("product_rounds.id"),
+                         index=True)
     status = db.Column(db.String(20), nullable=False, default="pending_link")
 
     user = db.relationship("User", backref=db.backref("shop_purchases", lazy="dynamic"))

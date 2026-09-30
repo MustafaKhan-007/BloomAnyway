@@ -3,6 +3,12 @@
 The schedule runs from each buyer's own purchase date, so a module the owner
 adds months after launch still reaches everyone who bought earlier — already
 unlocked for them if their own schedule has passed it.
+
+Which calendar a buyer is on is a separate question from which modules exist.
+A product sold in rounds has one set of modules and a set of dates per round,
+and everything here takes both: ``product`` for what the modules are, and a
+``schedule`` for when they open. Leave the schedule out and it is the
+product's own dates, which is every product not run in rounds.
 """
 from __future__ import annotations
 
@@ -17,16 +23,28 @@ def unlock_at(started_at: datetime, number: int, interval_days: int) -> datetime
     return started_at + timedelta(days=steps * max(1, int(interval_days or 1)))
 
 
-def schedule_start(product, started_at: datetime | None) -> datetime | None:
-    """Where this product's schedule counts from for one buyer.
+def dates_of(product, schedule=None):
+    """Whose calendar to read: the one handed in, or the product's own."""
+    if schedule is not None:
+        return schedule
+    if product is None:
+        return None
+    try:
+        return product.schedule()
+    except AttributeError:
+        return product
+
+
+def schedule_start(schedule, started_at: datetime | None) -> datetime | None:
+    """Where this schedule counts from for one buyer.
 
     Normally each buyer's own purchase, so a course bought today starts today.
-    A product with a release date on it runs off the calendar instead: module
+    A schedule with a release date on it runs off the calendar instead: module
     one opens that day for everybody, and the rest follow from there, which is
     what a launch announced for a date needs. Buying afterwards then opens
     whatever has already been released rather than starting the wait again.
     """
-    fixed = getattr(product, "drip_starts_at", None) if product is not None else None
+    fixed = getattr(schedule, "drip_starts_at", None) if schedule is not None else None
     return fixed or started_at
 
 
@@ -37,7 +55,7 @@ def _parse_release(text) -> datetime | None:
         return None
 
 
-def unlock_times(product, anchor: datetime | None) -> list[datetime | None]:
+def unlock_times(schedule, anchor: datetime | None) -> list[datetime | None]:
     """When each module opens, in order, for a buyer anchored at ``anchor``.
 
     Three ways to space them, chosen per product:
@@ -51,10 +69,10 @@ def unlock_times(product, anchor: datetime | None) -> list[datetime | None]:
 
     A later module never opens before an earlier one, whatever is typed in.
     """
-    rows = product.curriculum() if product is not None else []
+    rows = schedule.module_timing() if schedule is not None else []
     if not rows:
         return []
-    mode = product.drip_mode_key()
+    mode = schedule.drip_mode_key()
 
     raw: list[datetime | None] = []
     if mode == "dates":
@@ -71,7 +89,7 @@ def unlock_times(product, anchor: datetime | None) -> list[datetime | None]:
                 when = when + timedelta(days=int(row.get("gap_days") or 0))
             raw.append(when)
     else:
-        days = product.drip_days()
+        days = schedule.drip_days()
         raw = [anchor + timedelta(days=i * days) for i in range(len(rows))]
 
     out: list[datetime | None] = []
@@ -83,7 +101,7 @@ def unlock_times(product, anchor: datetime | None) -> list[datetime | None]:
     return out
 
 
-def public_steps(product, now=None) -> list[dict]:
+def public_steps(product, now=None, schedule=None) -> list[dict]:
     """What each module's opening is, told to somebody who hasn't bought yet.
 
     There is no purchase to count from, so a schedule pinned to the calendar
@@ -92,12 +110,13 @@ def public_steps(product, now=None) -> list[dict]:
     is day 1 as well: it opens as soon as they buy, which is the truth for
     anybody reading the page now.
     """
-    rows = product.curriculum() if product is not None else []
+    dates = dates_of(product, schedule)
+    rows = dates.module_timing() if dates is not None else []
     if not rows:
         return []
     now = now or utcnow()
-    times = unlock_times(product, getattr(product, "drip_starts_at", None))
-    mode = product.drip_mode_key()
+    times = unlock_times(dates, getattr(dates, "drip_starts_at", None))
+    mode = dates.drip_mode_key()
 
     day = 1
     steps: list[dict] = []
@@ -105,7 +124,7 @@ def public_steps(product, now=None) -> list[dict]:
         if mode == "gaps" and i:
             day += max(0, int(row.get("gap_days") or 0))
         elif mode == "interval" and i:
-            day = i * product.drip_days() + 1
+            day = i * dates.drip_days() + 1
         opens = times[i] if i < len(times) else None
         if opens is not None and opens > now:
             steps.append({"when": opens, "day": None})
@@ -130,20 +149,23 @@ def reads_it_whole(viewer) -> bool:
         return True
 
 
-def module_rows(product, started_at, now=None, viewer=None) -> list[dict]:
+def module_rows(product, started_at, now=None, viewer=None,
+                schedule=None) -> list[dict]:
     """This product's modules with their file and lock state for one buyer.
 
     ``started_at`` is the buyer's purchase time; ``None`` (unknown, e.g. an old
-    import) unlocks everything rather than taking content away.
+    import) unlocks everything rather than taking content away. ``schedule``
+    is the round they bought into, when the product is sold in rounds.
     """
     rows = product.modules() if product is not None else []
     if not rows:
         return []
-    anchor = schedule_start(product, started_at)
+    dates = dates_of(product, schedule)
+    anchor = schedule_start(dates, started_at)
     dripped = product.is_dripped() and not reads_it_whole(viewer) and (
-        anchor is not None or product.drip_mode_key() == "dates")
+        anchor is not None or dates.drip_mode_key() == "dates")
     now = now or utcnow()
-    times = unlock_times(product, anchor) if dripped else []
+    times = unlock_times(dates, anchor) if dripped else []
     for row in rows:
         i = row["number"] - 1
         opens = times[i] if 0 <= i < len(times) else None
@@ -155,17 +177,19 @@ def module_rows(product, started_at, now=None, viewer=None) -> list[dict]:
     return rows
 
 
-def asset_unlocked(product, asset, started_at, now=None, viewer=None) -> bool:
+def asset_unlocked(product, asset, started_at, now=None, viewer=None,
+                   schedule=None) -> bool:
     """False only for a file pinned to a module this buyer hasn't reached yet."""
     number = getattr(asset, "module_index", None)
     if not number or product is None or not product.is_dripped():
         return True
     if reads_it_whole(viewer):
         return True
-    anchor = schedule_start(product, started_at)
-    if anchor is None and product.drip_mode_key() != "dates":
+    dates = dates_of(product, schedule)
+    anchor = schedule_start(dates, started_at)
+    if anchor is None and dates.drip_mode_key() != "dates":
         return True
-    times = unlock_times(product, anchor)
+    times = unlock_times(dates, anchor)
     if number > len(times):
         return True
     opens = times[number - 1]

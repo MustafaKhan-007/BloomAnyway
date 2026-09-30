@@ -12848,6 +12848,234 @@ ok("A landing page carries its own type size, whatever it is sitting in",
 
 admin.post(f"/admin/landing/{_fp_id}/delete")
 
+# --- the same product, run more than once ----------------------------------
+# One set of lessons, one price, and a different calendar each time it is run.
+# The point of the whole thing is that the dates belong to the run somebody
+# bought into, not to the product: the woman who joined the first cohort keeps
+# the first cohort's dates for good, even while the third one is selling.
+_rd_open = utcnow().replace(microsecond=0) + timedelta(days=30)
+r = admin.post("/admin/products/new", data={
+    "title": "Rounds Course", "track": "building", "types": "course",
+    "price": "49.00", "promise": "Run it again and again.",
+    "stripe": "price_rounds_course", "live": "1",
+    "perk_tier": "creator", "perk_months": "3", "perk_start_on_buy": "1",
+    "drip": "1", "drip_mode": "interval", "drip_interval_days": "7",
+    "mod1_title": "Getting started", "mod2_title": "Going deeper",
+}, follow_redirects=True)
+with app.app_context():
+    _rc = Product.query.filter_by(slug="rounds-course").first()
+    ok("A product starts life with no rounds at all",
+       r.status_code == 200 and _rc is not None and _rc.rounds == []
+       and _rc.selling_round() is None and _rc.schedule() is _rc)
+    _rc_id = _rc.id
+
+# Buying before there are any rounds. She must stay exactly where she is, on
+# the product's own dates, however many rounds open later.
+with app.app_context():
+    _before = User(email="beforerounds@example.com", email_verified_at=utcnow())
+    _before.set_password(USER_PW)
+    db.session.add(_before)
+    db.session.commit()
+_rd_pay = _payment_payload("9800", "beforerounds@example.com",
+                           "price_rounds_course", amount=4900,
+                           product_name="Rounds Course")
+client.post("/webhooks/stripe", data=_rd_pay, headers=_stripe_headers(_rd_pay))
+with app.app_context():
+    _early_buy = ShopPurchase.query.filter_by(lemon_squeezy_order_id="9800").first()
+    ok("Somebody buying before there are rounds is stamped with none",
+       _early_buy is not None and _early_buy.round_id is None)
+    _early_buy_id = _early_buy.id
+
+r = admin.post(f"/admin/products/{_rc_id}/rounds/new", follow_redirects=True)
+with app.app_context():
+    from app.services import rounds as _rounds
+    _rc = db.session.get(Product, _rc_id)
+    _r1 = _rc.rounds[0] if _rc.rounds else None
+    ok("Starting the first round copies the dates the product already had",
+       r.status_code == 200 and _r1 is not None and _r1.number == 1
+       and _r1.drip_mode_key() == "interval" and _r1.drip_days() == 7
+       and _r1.perk_months() == 3 and len(_r1.module_timing()) == 2,
+       f"{_r1 and _r1.drip_days()} / {_r1 and _r1.perk_months()}")
+    ok("And it arrives in draft, so nothing about the page changes yet",
+       not _r1.is_live() and _rc.selling_round() is None)
+    _r1_id = _r1.id
+    ok("Studio counts who bought before there were rounds, separately",
+       _rounds.unstamped(_rc) == 1, f"got {_rounds.unstamped(_rc)}")
+
+# Round one: a launch date, a fortnight between modules, one month of perk.
+r = admin.post(f"/admin/products/{_rc_id}/rounds/{_r1_id}", data={
+    "title": "Spring cohort", "live": "1",
+    "drip_mode": "interval", "drip_interval_days": "14",
+    "drip_starts_date": _rd_open.strftime("%Y-%m-%d"), "drip_starts_time": "09:00",
+    "perk_months": "1", "perk_start_on_buy": "1",
+}, follow_redirects=True)
+with app.app_context():
+    _rc = db.session.get(Product, _rc_id)
+    _r1 = _rc.round_by_id(_r1_id)
+    ok("Studio saves a round's own dates and opens it",
+       r.status_code == 200 and _r1.is_live() and _r1.drip_days() == 14
+       and _r1.perk_months() == 1 and _r1.drip_starts_at is not None
+       and _r1.drip_starts_at.date() == _rd_open.date(),
+       f"days={_r1.drip_days()} months={_r1.perk_months()} "
+       f"start={_r1.drip_starts_at}")
+    ok("A round with a name of its own is called by it",
+       _r1.label() == "Spring cohort")
+    ok("And the open round is now the one a shopper is offered",
+       _rc.selling_round() is not None and _rc.selling_round().id == _r1_id
+       and _rc.schedule().id == _r1_id)
+    ok("The person who bought before it still reads the product's own dates",
+       _rc.schedule_for(db.session.get(ShopPurchase, _early_buy_id)) is _rc)
+
+_rbody = client.get("/courses/rounds-course").get_data(as_text=True)
+ok("The product page names the round being sold and uses its dates",
+   "Spring cohort" in _rbody and _rd_open.strftime("%B %d") in _rbody
+   and re.search(r"then a new one every\s+14 days", _rbody) is not None,
+   f"{_rbody.count('Spring cohort')} mentions, "
+   f"{_rd_open.strftime('%B %d') in _rbody} date")
+
+# Somebody buys into round one. From here her dates are the round's.
+with app.app_context():
+    _spring = User(email="springer@example.com", email_verified_at=utcnow())
+    _spring.set_password(USER_PW)
+    db.session.add(_spring)
+    db.session.commit()
+_sp_pay = _payment_payload("9801", "springer@example.com",
+                           "price_rounds_course", amount=4900,
+                           product_name="Rounds Course")
+client.post("/webhooks/stripe", data=_sp_pay, headers=_stripe_headers(_sp_pay))
+with app.app_context():
+    from app.services import course_reader as _rdr
+    _sp_buy = ShopPurchase.query.filter_by(lemon_squeezy_order_id="9801").first()
+    _rc = db.session.get(Product, _rc_id)
+    ok("Buying stamps the round that was open at the counter",
+       _sp_buy is not None and _sp_buy.round_id == _r1_id,
+       f"got {_sp_buy and _sp_buy.round_id}")
+    ok("And her dates are read off it, not off the product",
+       _rdr.dates_for(_rc, _sp_buy).id == _r1_id)
+    ok("Studio counts her against that round",
+       _rounds.buyers(_rc.round_by_id(_r1_id)) == 1)
+    _sp_buy_id = _sp_buy.id
+
+# The second run, months later, with a different pace and a longer perk.
+_rd2_open = _rd_open + timedelta(days=120)
+admin.post(f"/admin/products/{_rc_id}/rounds/new")
+with app.app_context():
+    _rc = db.session.get(Product, _rc_id)
+    _r2_id = _rc.rounds[-1].id
+    ok("The next round is numbered after the last one, not after the product",
+       _rc.rounds[-1].number == 2 and len(_rc.rounds) == 2)
+r = admin.post(f"/admin/products/{_rc_id}/rounds/{_r2_id}", data={
+    "title": "Autumn cohort", "live": "1",
+    "drip_mode": "interval", "drip_interval_days": "3",
+    "drip_starts_date": _rd2_open.strftime("%Y-%m-%d"), "drip_starts_time": "09:00",
+    "perk_months": "12", "perk_start_on_buy": "1",
+}, follow_redirects=True)
+with app.app_context():
+    _rc = db.session.get(Product, _rc_id)
+    ok("Opening a newer round makes it the one on offer",
+       r.status_code == 200 and _rc.selling_round().id == _r2_id
+       and _rc.schedule().id == _r2_id)
+    _r1 = _rc.round_by_id(_r1_id)
+    ok("The older one is left open and untouched, dates and all",
+       _r1.is_live() and _r1.drip_days() == 14 and _r1.perk_months() == 1)
+    _sp_buy = db.session.get(ShopPurchase, _sp_buy_id)
+    ok("And the woman on it keeps hers while the new one sells",
+       _rc.schedule_for(_sp_buy).id == _r1_id
+       and _rc.schedule_for(_sp_buy).drip_days() == 14)
+    _sp_window = _rc.perk_window(_sp_buy.purchased_at, _rc.schedule_for(_sp_buy))
+    _new_window = _rc.perk_window(_sp_buy.purchased_at, _rc.selling_round())
+    ok("Her free membership runs the month she was promised, not the new year",
+       _sp_window[1] < _new_window[1]
+       and (_sp_window[1] - _sp_buy.purchased_at).days < 40
+       and (_new_window[1] - _sp_buy.purchased_at).days > 300,
+       f"{_sp_window} vs {_new_window}")
+    _sp_steps = _rc.release_steps(_rc.schedule_for(_sp_buy))
+    _new_steps = _rc.release_steps(_rc.selling_round())
+    ok("Her modules open on her round's calendar",
+       _sp_steps[0]["when"].date() == _rd_open.date()
+       and _new_steps[0]["when"].date() == _rd2_open.date()
+       and (_sp_steps[1]["when"] - _sp_steps[0]["when"]).days == 14
+       and (_new_steps[1]["when"] - _new_steps[0]["when"]).days == 3,
+       f"{_sp_steps} vs {_new_steps}")
+
+_rbody = client.get("/courses/rounds-course").get_data(as_text=True)
+ok("Only the newest round is on the product page — nobody picks between them",
+   "Autumn cohort" in _rbody and "Spring cohort" not in _rbody
+   and _rd2_open.strftime("%B %d") in _rbody
+   and re.search(r"then a new one every\s+3 days", _rbody) is not None)
+
+# A round nobody is on can go. One with buyers on it cannot: deleting it would
+# drop them onto a schedule they never agreed to.
+admin.post(f"/admin/products/{_rc_id}/rounds/new")
+with app.app_context():
+    _rc = db.session.get(Product, _rc_id)
+    _r3_id = _rc.rounds[-1].id
+r = admin.post(f"/admin/products/{_rc_id}/rounds/{_r3_id}/delete",
+               follow_redirects=True)
+with app.app_context():
+    _rc = db.session.get(Product, _rc_id)
+    ok("An empty round can be taken away again",
+       r.status_code == 200 and _rc.round_by_id(_r3_id) is None
+       and len(_rc.rounds) == 2)
+r = admin.post(f"/admin/products/{_rc_id}/rounds/{_r1_id}/delete",
+               follow_redirects=True)
+with app.app_context():
+    _rc = db.session.get(Product, _rc_id)
+    ok("A round somebody bought into is refused, and says why",
+       _rc.round_by_id(_r1_id) is not None
+       and "bought into Spring cohort" in r.get_data(as_text=True),
+       r.status_code)
+
+# Closing the newest round hands the shop back to the one before it.
+r = admin.post(f"/admin/products/{_rc_id}/rounds/{_r2_id}/live",
+               follow_redirects=True)
+with app.app_context():
+    _rc = db.session.get(Product, _rc_id)
+    ok("Closing a round drops the shop back to the newest one still open",
+       r.status_code == 200 and not _rc.round_by_id(_r2_id).is_live()
+       and _rc.selling_round().id == _r1_id)
+r = admin.post(f"/admin/products/{_rc_id}/rounds/{_r1_id}/live",
+               follow_redirects=True)
+with app.app_context():
+    _rc = db.session.get(Product, _rc_id)
+    ok("With every round closed it is the product's own dates again",
+       _rc.selling_round() is None and _rc.schedule() is _rc)
+    _sp_buy = db.session.get(ShopPurchase, _sp_buy_id)
+    ok("But somebody already on a round is not moved by closing it",
+       _rc.schedule_for(_sp_buy).id == _r1_id)
+
+# A round with a date on it takes the product off the shelves; the product's
+# own date is no longer what is asked.
+with app.app_context():
+    _rc = db.session.get(Product, _rc_id)
+    _r2 = _rc.round_by_id(_r2_id)
+    _r2.off_shelf_at = utcnow() - timedelta(days=1)
+    _r2.status = "live"
+    db.session.commit()
+    ok("A round that has closed takes the product off the shelves with it",
+       _rc.is_off_shelf() and _rc.off_shelf_moment() == _r2.off_shelf_at)
+    ok("And what a past buyer was owed is still owed",
+       _rc.carries_perk_ever())
+    _r2.off_shelf_at = None
+    _r2.status = "draft"
+    db.session.commit()
+
+r = admin.get(f"/admin/products/{_rc_id}/rounds")
+_rl = r.get_data(as_text=True)
+ok("Studio lists every round with its dates and who is on it",
+   r.status_code == 200 and "Spring cohort" in _rl and "Autumn cohort" in _rl
+   and "Start another round" in _rl)
+ok("And says who is still on the product's own dates",
+   "before it ran in rounds" in _rl)
+r = admin.get(f"/admin/products/{_rc_id}/rounds/{_r1_id}")
+_rf = r.get_data(as_text=True)
+ok("A round's page offers its dates and nothing that belongs to the product",
+   r.status_code == 200 and 'name="drip_starts_date"' in _rf
+   and 'name="perk_months"' in _rf and 'name="off_shelf_date"' in _rf
+   and 'name="mod1_release_date"' in _rf and 'name="price"' not in _rf)
+ok("It says out loud that people are on it before she changes a date",
+   "1 person is" in _rf and "on this round" in _rf)
+
 # --- the database URL says which driver ------------------------------------
 # A bare postgresql:// means "whatever this version of SQLAlchemy calls the
 # default driver". In 2.1 that moved from psycopg2 to psycopg 3, and since

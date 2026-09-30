@@ -73,7 +73,9 @@
     {% if modules and modules|selectattr('asset')|list %}
     <nav class="reader-modules" aria-label="Modules">
       <div class="reader-modules__head">
-        <p class="reader-modules__title">Modules</p>
+        <p class="reader-modules__title">
+          Modules{% if bought_round %} <span class="reader-modules__round">{{ bought_round.label() }}</span>{% endif %}
+        </p>
         {% if next_locked %}
         <p class="reader-modules__note">
           Module {{ next_locked.number }} unlocks

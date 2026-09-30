@@ -124,6 +124,10 @@ def grant_contents(purchase: ShopPurchase | None) -> list[ShopPurchase]:
             # a reason for what came inside it to arrive already hidden.
             status="linked" if purchase.user_id else "pending_link",
         )
+        # Each thing inside runs on whichever of its own rounds is selling.
+        chosen = product.selling_round()
+        if chosen is not None:
+            row.round_id = chosen.id
         db.session.add(row)
         made.append(row)
     if not made:
