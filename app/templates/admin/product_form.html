@@ -332,12 +332,16 @@
           <label for="reverts_to">Price goes up to (optional)</label>
           <div class="studio-accent-row">
             <input type="text" id="reverts_to" name="reverts_to" placeholder="247.00"
-                   style="max-width:120px;"
+                   style="max-width:140px;"
                    value="{{ '%.2f'|format(product.reverts_to_cents / 100) if product.reverts_to_cents is not none else '' }}">
             <span class="field-help" style="margin:0;">on</span>
+          </div>
+          <div class="studio-accent-row" style="margin-top:8px;">
             <input type="date" id="price_reverts_date" name="price_reverts_date"
+                   style="max-width:170px;"
                    value="{{ product.price_reverts_at|localtime('%Y-%m-%d') if product.price_reverts_at else '' }}">
             <input type="time" id="price_reverts_time" name="price_reverts_time"
+                   style="max-width:130px;"
                    value="{{ product.price_reverts_at|localtime('%H:%M') if product.price_reverts_at else '23:59' }}">
           </div>
           <p class="field-help">
