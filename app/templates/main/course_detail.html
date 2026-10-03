@@ -53,12 +53,12 @@
 
              A code doesn't move this number. What it costs is what it costs
              until Stripe takes the money off at its own checkout, and the
-             struck-through price beside it is the compare-at — the one thing
-             this product was ever actually sold for. A sale says what comes
+             struck-through price beside it is whatever the owner set as the
+             strikethrough — nothing else reaches it. A sale says what comes
              off underneath instead, where it can't be mistaken for either. #}
           <div class="pd-hero__price">
             <strong>{{ product.price_display() or '—' }}{{ product.price_suffix() }}</strong>
-            {% if product.shows_compare_at() %}<s>{{ product.compare_at_display() }}</s>{% endif %}
+            {% if product.shows_strikethrough() %}<s>{{ product.strikethrough_display() }}</s>{% endif %}
           </div>
           {% if product.has_promo() %}
           <p class="pd-promo">
@@ -82,8 +82,11 @@
              is the question actually being asked in front of a price. #}
           {% if product.price_reverts_display() %}
           <p class="pd-hero__deadline">
-            Reverting to {{ product.compare_at_display() }} on
-            {{ product.price_reverts_display() }}.
+            {% if product.reverts_to_display() -%}
+            Reverting to {{ product.reverts_to_display() }} on {{ product.price_reverts_display() }}.
+            {%- else -%}
+            The price goes up on {{ product.price_reverts_display() }}.
+            {%- endif %}
             {{ countdown(product.price_reverts_at, zero='The price just went back up', refresh=true) }}
           </p>
           {% endif %}
