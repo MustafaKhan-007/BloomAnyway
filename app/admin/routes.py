@@ -704,11 +704,20 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
             product.price_cents = None
         elif price is not None:
             product.price_cents = price
-    compare = _parse_price_cents(form.get("compare_at"))
-    if (form.get("compare_at") or "").strip() == "":
-        product.compare_at_cents = None
-    elif compare is not None:
-        product.compare_at_cents = compare
+    # Two separate decisions that used to be one number. What is struck
+    # through beside the price is hers to set and hers to clear; what a launch
+    # price is going back up to, and when, is the countdown's own business.
+    struck = _parse_price_cents(form.get("strikethrough"))
+    if (form.get("strikethrough") or "").strip() == "":
+        product.strikethrough_cents = None
+    elif struck is not None:
+        product.strikethrough_cents = struck
+
+    reverts_to = _parse_price_cents(form.get("reverts_to"))
+    if (form.get("reverts_to") or "").strip() == "":
+        product.reverts_to_cents = None
+    elif reverts_to is not None:
+        product.reverts_to_cents = reverts_to
 
     reverts_date = (form.get("price_reverts_date") or "").strip()
     if reverts_date:
@@ -716,7 +725,7 @@ def _apply_product_fields(product: Product, form) -> dict[int, int]:
             reverts_date,
             (form.get("price_reverts_time") or "").strip() or "23:59", owner_tz)
         if product.price_reverts_at is None:
-            flash("That date for the price going back up didn't look right, so "
+            flash("That date for the price going up didn't look right, so "
                   "the page won't mention one.", "info")
     else:
         product.price_reverts_at = None

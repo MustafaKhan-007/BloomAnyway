@@ -1978,18 +1978,18 @@ with app.app_context():
 _soon = utcnow() + timedelta(days=6)
 r = admin.post(f"/admin/products/{_multi_id}/edit",
                data=dict(_promo_fields, promo_off="", promo_code="",
-                         compare_at="49.00",
+                         strikethrough="49.00", reverts_to="49.00",
                          price_reverts_date=_soon.strftime("%Y-%m-%d"),
                          price_reverts_time="23:59"),
                follow_redirects=True)
 with app.app_context():
     _p = db.session.get(Product, _multi_id)
-    ok("Studio saves the day a price goes back up",
+    ok("Studio saves the day a price goes up, and what it goes up to",
        r.status_code == 200 and _p.price_reverts_at is not None
-       and _p.compare_at_cents == 4900, f"got {_p.price_reverts_at}")
+       and _p.reverts_to_cents == 4900 and _p.strikethrough_cents == 4900,
+       f"got {_p.price_reverts_at} / {_p.reverts_to_cents}")
     ok("Until then it is still a price held down",
-       _p.price_is_held_down() and _p.shows_compare_at()
-       and not _p.price_reverted())
+       _p.shows_strikethrough() and not _p.price_reverted())
 _pd = client.get("/courses/rebuild-your-week").get_data(as_text=True)
 ok("The product page says what it goes back to, and when",
    "Reverting to $49 on" in _pd and "<s>$49</s>" in _pd, "no notice of the rise")
@@ -2000,27 +2000,84 @@ ok("And how long is left of the price it is on now",
    'data-countdown="' in _pd and re.search(r">\s*\d+ days?(?:,| left)", _pd)
    and 'data-countdown-zero="The price just went back up"' in _pd,
    "no live timer beside the day it goes up")
+
+# The two are separate decisions now. A strikethrough with no date on it is
+# just a struck-through price, and it stays until she takes it off herself.
+admin.post(f"/admin/products/{_multi_id}/edit",
+           data=dict(_promo_fields, strikethrough="49.00", reverts_to="",
+                     price_reverts_date=""),
+           follow_redirects=True)
+_pd = client.get("/courses/rebuild-your-week").get_data(as_text=True)
+with app.app_context():
+    _p = db.session.get(Product, _multi_id)
+    ok("A strikethrough on its own needs no date to be drawn",
+       _p.shows_strikethrough() and _p.price_reverts_at is None
+       and "<s>$49</s>" in _pd and "Reverting to" not in _pd)
+# And a countdown with no strikethrough is just a countdown.
+admin.post(f"/admin/products/{_multi_id}/edit",
+           data=dict(_promo_fields, strikethrough="", reverts_to="59.00",
+                     price_reverts_date=_soon.strftime("%Y-%m-%d"),
+                     price_reverts_time="23:59"),
+           follow_redirects=True)
+_pd = client.get("/courses/rebuild-your-week").get_data(as_text=True)
+with app.app_context():
+    _p = db.session.get(Product, _multi_id)
+    ok("And a price going up needs no strikethrough to count down to it",
+       not _p.shows_strikethrough() and _p.reverts_to_cents == 5900
+       and "Reverting to $59 on" in _pd and "<s>" not in _pd)
+# A date with no figure beside it says what it knows and no more.
+admin.post(f"/admin/products/{_multi_id}/edit",
+           data=dict(_promo_fields, strikethrough="", reverts_to="",
+                     price_reverts_date=_soon.strftime("%Y-%m-%d"),
+                     price_reverts_time="23:59"),
+           follow_redirects=True)
+_pd = client.get("/courses/rebuild-your-week").get_data(as_text=True)
+ok("A day with no figure on it says the price goes up, and leaves it there",
+   "The price goes up on" in _pd and "Reverting to" not in _pd
+   and 'data-countdown="' in _pd)
+
+# A strikethrough under the price would read as the opposite of a saving.
+admin.post(f"/admin/products/{_multi_id}/edit",
+           data=dict(_promo_fields, strikethrough="9.00", reverts_to="",
+                     price_reverts_date=""),
+           follow_redirects=True)
+with app.app_context():
+    _p = db.session.get(Product, _multi_id)
+    ok("One cheaper than the price is kept but not drawn",
+       _p.strikethrough_cents == 900 and not _p.shows_strikethrough())
+_sbody = admin.get(f"/admin/products/{_multi_id}/edit").get_data(as_text=True)
+ok("And Studio says why it isn't showing",
+   "Not drawn at the moment" in _sbody)
+
+admin.post(f"/admin/products/{_multi_id}/edit",
+           data=dict(_promo_fields, strikethrough="49.00", reverts_to="49.00",
+                     price_reverts_date=_soon.strftime("%Y-%m-%d"),
+                     price_reverts_time="23:59"),
+           follow_redirects=True)
 with app.app_context():
     _p = db.session.get(Product, _multi_id)
     _p.price_reverts_at = utcnow() - timedelta(minutes=1)
     db.session.commit()
-    ok("Once the day has passed it stops calling the old price a saving",
-       _p.price_reverted() and not _p.shows_compare_at()
-       and _p.price_reverts_display() == "")
+    ok("Once the day has passed the countdown is over",
+       _p.price_reverted() and _p.price_reverts_display() == "")
+    ok("But the strikethrough is hers, so the day going by doesn't take it",
+       _p.shows_strikethrough())
 _pd = client.get("/courses/rebuild-your-week").get_data(as_text=True)
-ok("So the page drops the notice and the struck-through price with it",
-   "Reverting to" not in _pd and "<s>$49</s>" not in _pd and "$24" in _pd
+ok("So the page drops the notice and keeps the struck-through price",
+   "Reverting to" not in _pd and "<s>$49</s>" in _pd and "$24" in _pd
    and "data-countdown" not in _pd)
 _sbody = admin.get(f"/admin/products/{_multi_id}/edit").get_data(as_text=True)
 ok("And Studio says the day has passed, since only Stripe can put it up",
    "That day has passed" in _sbody and "swap the Stripe price ID" in _sbody)
 admin.post(f"/admin/products/{_multi_id}/edit",
-           data=dict(_promo_fields, compare_at="", price_reverts_date=""),
+           data=dict(_promo_fields, strikethrough="", reverts_to="",
+                     price_reverts_date=""),
            follow_redirects=True)
 with app.app_context():
     _p = db.session.get(Product, _multi_id)
-    ok("Clearing the date puts it back to an ordinary price",
-       _p.price_reverts_at is None and not _p.shows_compare_at())
+    ok("Clearing both puts it back to an ordinary price",
+       _p.price_reverts_at is None and _p.reverts_to_cents is None
+       and not _p.shows_strikethrough())
 
 # --- a guide is bought knowing it can't be handed back ------------------------
 # A guide opens the second it is paid for, so the term has to be read before

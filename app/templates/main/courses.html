@@ -119,7 +119,7 @@
           <div class="cg-bundle__foot">
             <p class="cg-bundle__price">
               <strong>{{ b.price_display() }}</strong>
-              {% if b.shows_compare_at() %}<s>{{ b.compare_at_display() }}</s>{% endif %}
+              {% if b.shows_strikethrough() %}<s>{{ b.strikethrough_display() }}</s>{% endif %}
               {% if b.bundle_saving_display() %}
               <span class="cg-bundle__save">{{ b.bundle_saving_display() }} off buying them apart</span>
               {% endif %}

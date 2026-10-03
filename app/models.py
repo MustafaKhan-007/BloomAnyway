@@ -480,10 +480,15 @@ class Product(db.Model):
     gallery_json = db.Column(db.Text)      # JSON: [url, ...]
 
     price_cents = db.Column(db.Integer)
-    compare_at_cents = db.Column(db.Integer)
-    #: When the price goes back up to the compare-at one, stored UTC. A launch
-    #: price with a date on it says so on the product page, and stops calling
-    #: itself a saving once the date is past.
+    #: The number drawn with a line through it beside the price, and nothing
+    #: else. It is the owner's to set and the owner's to clear; no date moves
+    #: it. One field used to do this *and* name the price a launch was going
+    #: back up to, which meant neither could be set without the other.
+    strikethrough_cents = db.Column(db.Integer)
+    #: What the price goes up to on :attr:`price_reverts_at`, and when. Only
+    #: the countdown on the product page reads these — what is struck through
+    #: beside the price is a separate decision, above.
+    reverts_to_cents = db.Column(db.Integer)
     price_reverts_at = db.Column(db.DateTime)
     #: A running promo: how much money comes off, and the code to type at
     #: Stripe checkout. Both or neither — an amount with no code is a mystery
@@ -1198,32 +1203,38 @@ class Product(db.Model):
         return (f"{symbol}{amount:,.0f}" if cents % 100 == 0
                 else f"{symbol}{amount:,.2f}")
 
-    def compare_at_display(self):
-        return self._money_display(self.compare_at_cents)
+    # --- the number with a line through it ------------------------------------
+    def strikethrough_display(self):
+        return self._money_display(self.strikethrough_cents)
+
+    def shows_strikethrough(self) -> bool:
+        """Whether to draw a struck-through price beside this one.
+
+        Only ever asked of the two numbers. A line through something dearer
+        than the price says a saving, and a line through something cheaper
+        would say the opposite, so the second is simply not drawn.
+        """
+        return bool(self.strikethrough_cents and self.price_cents is not None
+                    and self.strikethrough_cents > self.price_cents)
 
     # --- a launch price with a day it goes back up ----------------------------
-    def price_is_held_down(self) -> bool:
-        """True while this is being sold under its compare-at price."""
-        return bool(self.compare_at_cents and self.price_cents is not None
-                    and self.compare_at_cents > self.price_cents)
-
     def price_reverted(self) -> bool:
         """The day it was meant to go back up has been and gone.
 
         What Stripe charges is set in Stripe, so nothing here can put the
-        price up on its own. It stops advertising the old price as a saving
-        instead, and Studio says the date has passed.
+        price up on its own. The countdown stops instead, and Studio says the
+        date has passed so the owner can go and put it up herself.
         """
         return bool(self.price_reverts_at
                     and self.price_reverts_at <= utcnow())
 
-    def shows_compare_at(self) -> bool:
-        """Whether to strike the old price through beside this one."""
-        return self.price_is_held_down() and not self.price_reverted()
+    def reverts_to_display(self) -> str:
+        """What it goes up to, in money. Empty when she didn't name a figure."""
+        return self._money_display(self.reverts_to_cents)
 
     def price_reverts_display(self) -> str:
-        """The day the price goes back up, in the reader's own day, or empty."""
-        if not self.price_reverts_at or not self.shows_compare_at():
+        """The day the price goes up, in the reader's own day, or empty."""
+        if not self.price_reverts_at or self.price_reverted():
             return ""
         from .services.timefmt import format_local
         return format_local(self.price_reverts_at, "%b %d, %Y")
