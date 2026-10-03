@@ -352,10 +352,23 @@
             {%- else %}, saying the price goes up without naming a figure until
             you put one here,{% endif %} so a launch price reads as one.
             {{ countdown(product.price_reverts_at, zero='That day has come') }}
+            {%- if product.reverts_to_cents %}
+            When the day comes the price goes up on its own: the figure above
+            becomes the price, Stripe gets a new price to match, and this
+            countdown clears itself. Nothing for you to do.
+            {%- else %}
+            Name a figure above and it will go up on its own when the day
+            comes; leave it empty and the countdown is all that happens.
+            {%- endif %}
             {%- if product.price_reverted() %}
-            <strong>That day has passed</strong> and the countdown is gone. Put
-            the price up here and swap the Stripe price ID to match: Stripe is
-            still charging {{ product.price_display() or 'the old price' }}.
+            <strong>That day has passed and the price hasn't moved yet.</strong>
+            {%- if product.stripe_sync_error %} Stripe refused the new price
+            &mdash; {{ product.stripe_sync_error }} It will keep trying, and
+            until it works Stripe carries on charging
+            {{ product.price_display() or 'the old price' }}.
+            {%- else %} It should go up within a minute of somebody visiting
+            the site; refresh this page to check.
+            {%- endif %}
             {%- endif %}
           </p>
         </div>

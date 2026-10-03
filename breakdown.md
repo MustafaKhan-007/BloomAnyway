@@ -74,7 +74,7 @@ prints to the terminal, which is how you read signup verification codes in dev.
 There is no CI, no pre-commit, no pytest. The smoke script is the only gate.
 
 Run the test suite with `python scripts/smoke_test.py`. It takes about 30
-seconds and currently ends with `All 1919 checks passed.`
+seconds and currently ends with `All 1954 checks passed.`
 
 ---
 
@@ -524,7 +524,7 @@ Grouped by what they concern, with line counts.
 | Module | Lines | Concern |
 |---|---:|---|
 | `stripe_pay.py` | 3,231 | checkout sessions, webhook verification, fulfilment, subscription lifecycle |
-| `stripe_catalog.py` | 326 | pushing Studio products/prices/images *to* Stripe |
+| `stripe_catalog.py` | 505 | pushing Studio products/prices/images *to* Stripe, and putting launch prices back up when their day comes |
 | `shop_purchases.py` | 507 | the entitlement shelf |
 | `memberships.py` | 480 | deciding a user's tier |
 | `membership_audit.py` | 186 | explaining a tier against Stripe |
@@ -707,6 +707,37 @@ customer three copies of an email.
 - **`sweep_cancel_flags`** (lines 2939–3005) lists live Stripe subscriptions and
   reconciles `User.membership_cancel_at` with Stripe's cancel-at-period-end,
   clearing stale local flags. Throttled hourly, run from the dashboard and cron.
+
+### A launch price puts itself back up
+
+`Product.price_reverts_at` plus `Product.reverts_to_cents` is a launch price
+with a day it ends. Both are needed: a date on its own is only a countdown on
+the product page, because guessing what she meant the price to become is not
+something to do with somebody's money.
+
+`stripe_catalog.apply_due_reversions()` is what makes it happen, and the order
+inside `apply_reversion` is the whole of the care needed:
+
+1. set `price_cents` to the figure she named,
+2. `sync_product`, which makes the **new Stripe price** and archives the old,
+3. only then clear `price_reverts_at` / `reverts_to_cents`.
+
+If Stripe refuses, the price is put back and the date is left alone, so the
+launch runs a little long and the next sweep tries again — the harmless
+direction. `stripe_sync_error` carries the reason to Studio.
+
+It runs from two places: `maybe_apply_reversions()` in the `before_request`
+hook, and `apply_due_reversions()` from `/cron/support-groups` for a site
+quiet enough to get no requests. The throttle is not a fixed gap — it wakes
+from `earliest_pending()`, the soonest date actually waiting, capped at 60
+seconds. A plain every-sixty-seconds throttle gets spent by a request a
+moment *before* the date, and then the page advertises a price for the rest
+of the minute that the row has not moved to.
+
+Each product is re-read `with_for_update()` and re-checked before its price is
+touched, so two workers hitting the same due product don't both make a price.
+The strikethrough is never touched by any of this — see the next section but
+one; it is hers to set and hers to clear.
 
 ### Promo codes are Stripe coupons
 
@@ -1139,7 +1170,7 @@ as above.
 pytest, no `tests/` directory, no CI.
 
 Run it with `python scripts/smoke_test.py`. It takes ~30 seconds and prints
-`All 1919 checks passed.`
+`All 1954 checks passed.`
 
 ### How it works
 
@@ -1407,6 +1438,12 @@ Ordered roughly by how likely they are to bite.
 
 16. **Promo codes do not discount anything in this codebase.** They are display
     copy; Stripe's own coupon does the arithmetic at checkout.
+
+16b. **A price change means a new Stripe price, never an edited one.** Go
+    through `stripe_catalog.sync_product`, which makes the new one, archives
+    the old and calls `retire_price_id` so orders placed at it still match.
+    Writing `product.price_cents` on its own leaves the page quoting a figure
+    Stripe will not charge.
 
 17. **`ls_order_id`, `lemon_squeezy_order_id`, `ls_variant_id`, `zoom_url`,
     `zoom_meeting_id` are live columns with misleading legacy names.** They hold

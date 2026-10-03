@@ -24,9 +24,12 @@ somebody in the middle of writing a course.
 from __future__ import annotations
 
 import logging
+import time
+from datetime import datetime
 from urllib.parse import urlsplit
 
 from flask import current_app
+from sqlalchemy import func
 
 from ..extensions import db
 from ..models import Product, utcnow
@@ -282,6 +285,182 @@ def sync_product(product: Product) -> dict:
     product.stripe_sync_error = None
     report.update(ok=True, price_id=price_id, product_id=stripe_product_id)
     return report
+
+
+# --- launch prices that put themselves back up --------------------------------
+# A launch price used to be a promise the owner had to keep by hand: the
+# product page counted down, the countdown hit zero, and Studio told her to go
+# and change two things. Miss it by a day and the launch price was still being
+# charged, which is the one mistake here that costs money every time somebody
+# buys.
+#
+# Now the date does it. The order below is the whole of the care needed: the
+# new Stripe price is made *first*, and what the page says only moves once
+# Stripe has agreed to charge it. Fail the other way round and the page
+# advertises a price Stripe will not take.
+
+#: The longest a passing request will go without looking, when there is
+#: nothing known to be waiting.
+_REVERSION_IDLE_SEC = 60
+#: When the next look is allowed, on the monotonic clock. Worked out from the
+#: soonest date actually waiting rather than from a fixed gap — a plain
+#: every-sixty-seconds throttle gets spent by a request a moment *before* the
+#: date, and then the price sits at the launch figure for the rest of the
+#: minute while the page is telling people it has gone up.
+_next_reversion_check = 0.0
+
+
+def due_reversions() -> list[Product]:
+    """Products whose launch window has closed and that named a new price.
+
+    A date with no figure beside it is a countdown and nothing more — the
+    owner is saying "this goes up soon" without having decided to what, and
+    guessing on her behalf is not ours to do.
+    """
+    return (Product.query
+            .filter(Product.price_reverts_at.isnot(None),
+                    Product.price_reverts_at <= utcnow(),
+                    Product.reverts_to_cents.isnot(None),
+                    Product.reverts_to_cents > 0,
+                    Product.status != "archived")
+            .order_by(Product.id).all())
+
+
+def reversion_lock_query(product_id: int):
+    """The locking read used before putting a price up.
+
+    Split out so a test can check the lock is still asked for: SQLite drops
+    ``FOR UPDATE`` silently, so running this proves nothing on its own. Two
+    workers reaching the same due product at the same moment would otherwise
+    both make a price in Stripe.
+    """
+    return Product.query.filter_by(id=product_id).with_for_update()
+
+
+def apply_reversion(product: Product) -> dict:
+    """Put one product's price up to what the launch said it would be.
+
+    Caller commits. Returns a small report; raises nothing, because this runs
+    off an ordinary page request and a Stripe that is down must not turn
+    somebody's visit into a 500.
+    """
+    report = {"ok": False, "changed": False, "slug": product.slug or "",
+              "was": product.price_cents, "now": product.price_cents,
+              "error": "", "stripe": ""}
+    want = int(product.reverts_to_cents or 0)
+    if want <= 0:
+        return report
+
+    was = product.price_cents
+    if was == want:
+        # Already charging it — she got there first, or this is a retry after
+        # Stripe took the price but the save didn't land. Either way the only
+        # thing left is to take the countdown down.
+        product.price_reverts_at = None
+        product.reverts_to_cents = None
+        report.update(ok=True, now=want)
+        return report
+
+    product.price_cents = want
+    sync = sync_product(product)
+    if sync["error"]:
+        # Stripe wouldn't take it. Put the price back and leave the date
+        # where it is: the launch runs a little long, which is the harmless
+        # direction, and the next sweep tries again. ``sync_product`` has
+        # already written the reason onto the row for Studio to show.
+        product.price_cents = was
+        report["error"] = sync["error"]
+        return report
+
+    product.price_reverts_at = None
+    product.reverts_to_cents = None
+    report.update(ok=True, changed=True, now=want,
+                  stripe=sync.get("price_id") or "")
+    log.info("stripe catalog: %s reverted to %s (%s)", product.slug, want,
+             sync.get("skipped") or sync.get("price_id") or "")
+    return report
+
+
+def apply_due_reversions() -> dict:
+    """Put up the price of everything whose launch window has closed."""
+    tally = {"checked": 0, "reverted": 0, "failed": 0, "problems": []}
+    due = due_reversions()
+    if not due:
+        return tally
+    for found in due:
+        tally["checked"] += 1
+        # Re-read with the row held, and check it is still due: another
+        # worker may have finished this one between the list and here.
+        product = reversion_lock_query(found.id).first()
+        if product is None or not product.price_reverts_at \
+                or product.price_reverts_at > utcnow() \
+                or not product.reverts_to_cents:
+            db.session.rollback()
+            continue
+        report = apply_reversion(product)
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            tally["failed"] += 1
+            log.exception("stripe catalog: could not save reversion for %s",
+                          found.slug)
+            continue
+        if report["ok"]:
+            tally["reverted"] += 1
+        else:
+            tally["failed"] += 1
+            if len(tally["problems"]) < 5:
+                tally["problems"].append(
+                    f"{found.title}: {report['error'] or 'not applied'}")
+    return tally
+
+
+def earliest_pending() -> datetime | None:
+    """The soonest a launch price is due to go up, or None if none is.
+
+    One cheap scalar, used to decide when to bother looking again.
+    """
+    return (db.session.query(func.min(Product.price_reverts_at))
+            .filter(Product.price_reverts_at.isnot(None),
+                    Product.reverts_to_cents.isnot(None),
+                    Product.reverts_to_cents > 0,
+                    Product.status != "archived")
+            .scalar())
+
+
+def maybe_apply_reversions() -> dict:
+    """Look if it is worth looking, and put up whatever is due.
+
+    Safe to call from any request. When nothing is waiting this costs one
+    scalar query a minute; when something is, it wakes within a second of
+    the moment rather than whenever a fixed window happens to roll over.
+    """
+    global _next_reversion_check
+    if time.monotonic() < _next_reversion_check:
+        return {}
+    try:
+        result = apply_due_reversions()
+        soonest = earliest_pending()
+        if soonest is None:
+            gap = _REVERSION_IDLE_SEC
+        else:
+            ahead = (soonest - utcnow()).total_seconds()
+            # Still in the past after a sweep means Stripe refused it. Back
+            # off rather than asking it the same question every second.
+            gap = (_REVERSION_IDLE_SEC if ahead <= 0
+                   else max(1.0, min(_REVERSION_IDLE_SEC, ahead)))
+        _next_reversion_check = time.monotonic() + gap
+        return result
+    except Exception:
+        # Don't let a bad query turn every page into a retry storm.
+        _next_reversion_check = time.monotonic() + _REVERSION_IDLE_SEC
+        log.exception("stripe catalog: price reversion sweep failed")
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+        return {}
 
 
 def sync_all() -> dict:

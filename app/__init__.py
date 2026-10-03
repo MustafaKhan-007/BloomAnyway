@@ -217,6 +217,14 @@ def create_app(config_class=None):
             rotw_svc.maybe_sweep()
         except Exception:
             pass
+        try:
+            # A launch price that said it goes up today. The countdown on the
+            # product page reloads itself when it reaches zero, so the first
+            # visit after the moment is usually the one that does it.
+            from .services import stripe_catalog as catalog_svc
+            catalog_svc.maybe_apply_reversions()
+        except Exception:
+            pass
         return None
 
     # --- template globals / filters ------------------------------------------
@@ -351,11 +359,16 @@ def create_app(config_class=None):
         from .services import spotlight as spot_svc
         from .services import stripe_pay as pay
         from .services import support_groups as sg_svc
+        from .services import stripe_catalog as catalog_svc
         n = sg_svc.dispatch_due_reminders()
         spotlight_notices = spot_svc.sweep_expiry_notices()
         cancels = pay.sweep_cancel_flags() if pay.configured() else {}
+        # Belt and braces for the price reversions: a quiet site might not
+        # get a request between the moment and the next morning.
+        reversions = catalog_svc.apply_due_reversions()
         return {"ok": True, "reminders": n, "spotlight": spotlight_notices,
                 "cancel_flags": cancels,
+                "price_reversions": reversions,
                 "reels_cleared": rotw_svc.sweep_old_weeks()}, 200
 
     # --- lightweight page-view counter (no cookies, no IPs) --------------------

@@ -1221,9 +1221,12 @@ class Product(db.Model):
     def price_reverted(self) -> bool:
         """The day it was meant to go back up has been and gone.
 
-        What Stripe charges is set in Stripe, so nothing here can put the
-        price up on its own. The countdown stops instead, and Studio says the
-        date has passed so the owner can go and put it up herself.
+        Normally this is false for about a minute at most:
+        ``stripe_catalog.apply_due_reversions`` puts the price up, makes the
+        new Stripe price and clears the date, so the countdown goes away by
+        having happened rather than by expiring. It stays true while Stripe
+        is refusing the new price — the launch price runs on, which is the
+        harmless direction — and Studio reads it to say so.
         """
         return bool(self.price_reverts_at
                     and self.price_reverts_at <= utcnow())

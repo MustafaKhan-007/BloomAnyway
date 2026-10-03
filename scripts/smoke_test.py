@@ -690,6 +690,185 @@ try:
        re.search(r'id="stripe"[^>]*disabled', _form_body, re.S) is not None)
     ok("It says which Stripe product it is keeping in step",
        "Stripe product <code>prod_" in _form_body)
+
+    # --- a launch price that puts itself back up ----------------------------
+    # The date used to be a countdown and a note to self: it ran out and the
+    # owner had to change two things by hand, and until she did, every sale
+    # went through at the launch price. Now the date does it, and the new
+    # Stripe price is made before the page is allowed to quote it.
+    with app.app_context():
+        _rv = Product(title="Launch Window", slug="launch-window",
+                      type="course", status="published", promise="Eight weeks.",
+                      price_cents=14700, strikethrough_cents=24700,
+                      currency="USD", billing_period="once")
+        db.session.add(_rv)
+        db.session.commit()
+        _rv_id = _rv.id
+        cat_svc.sync_product(_rv)
+        db.session.commit()
+        _rv_first_price = db.session.get(Product, _rv_id).stripe_price_id
+    ok("The launch price has a Stripe price of its own",
+       (_rv_first_price or "").startswith("price_"), _rv_first_price)
+
+    with app.app_context():
+        _rv = db.session.get(Product, _rv_id)
+        _rv.reverts_to_cents = 15700
+        _rv.price_reverts_at = utcnow() + timedelta(hours=5)
+        db.session.commit()
+        ok("Nothing is due while the countdown is still running",
+           cat_svc.due_reversions() == [])
+        ok("And a sweep leaves it alone",
+           cat_svc.apply_due_reversions()["reverted"] == 0
+           and db.session.get(Product, _rv_id).price_cents == 14700)
+
+    _pd = client.get("/courses/launch-window").get_data(as_text=True)
+    ok("The product page counts down to the day, naming the figure",
+       re.search(r"Reverting to\s+\$157\s+on", _pd) is not None
+       and 'data-countdown="' in _pd, "no countdown on the page")
+
+    with app.app_context():
+        _rv = db.session.get(Product, _rv_id)
+        _rv.price_reverts_at = utcnow() - timedelta(minutes=1)
+        db.session.commit()
+        ok("Once the moment passes it is due",
+           [p.id for p in cat_svc.due_reversions()] == [_rv_id])
+        _before = len(_cat.calls)
+        _tally = cat_svc.apply_due_reversions()
+        _rv = db.session.get(Product, _rv_id)
+        ok("The sweep puts exactly one price up",
+           _tally["reverted"] == 1 and not _tally["failed"], _tally)
+        ok("The price is the figure she named", _rv.price_cents == 15700)
+        ok("The countdown clears itself by having happened",
+           _rv.price_reverts_at is None and _rv.reverts_to_cents is None)
+        ok("The strikethrough is hers and is left alone",
+           _rv.strikethrough_cents == 24700)
+
+        # The fake records (name, payload) pairs, oldest first.
+        _new_calls = _cat.calls[_before:]
+        _made = [kw for name, kw in _new_calls if name == "price.create"]
+        ok("A second Stripe price was made, because one can't be re-priced",
+           len(_made) == 1, [name for name, _ in _new_calls])
+        ok("For the new amount, on the same Stripe product",
+           _made and _made[0]["unit_amount"] == 15700
+           and _made[0]["product"] == _rv.stripe_product_id,
+           _made and _made[0])
+        ok("Checkout now points at it",
+           _rv.stripe_price_id != _rv_first_price
+           and _rv.stripe_price_id in _cat.prices)
+        ok("The old price is archived rather than deleted",
+           _cat.prices[_rv_first_price].get("active") is False)
+        ok("And remembered, so orders placed at it still find the product",
+           _rv_first_price in _rv.retired_price_ids(), _rv.retired_price_ids())
+        ok("Nothing is left due, and a second sweep is a no-op",
+           cat_svc.due_reversions() == []
+           and cat_svc.apply_due_reversions()["reverted"] == 0)
+
+    _pd = client.get("/courses/launch-window").get_data(as_text=True)
+    ok("The page now quotes the new price with no countdown left",
+       "$157" in _pd and "Reverting to" not in _pd, "countdown still there")
+
+    # Stripe refusing it must not leave the page quoting a price Stripe
+    # won't take. The launch runs on instead, which costs nothing but time.
+    # A product of its own, because the one above now has a Stripe price at
+    # the new amount and so would need no new price made at all.
+    with app.app_context():
+        _rv2 = Product(title="Stubborn Launch", slug="stubborn-launch",
+                       type="course", status="published", promise="Six weeks.",
+                       price_cents=9900, currency="USD", billing_period="once")
+        db.session.add(_rv2)
+        db.session.commit()
+        _rv2_id = _rv2.id
+        cat_svc.sync_product(_rv2)
+        db.session.commit()
+        _rv2 = db.session.get(Product, _rv2_id)
+        _held = _rv2.stripe_price_id
+        _rv2.reverts_to_cents = 12900
+        _rv2.price_reverts_at = utcnow() - timedelta(minutes=1)
+        db.session.commit()
+    _cat.refuse = "card_declined_on_purpose"
+    try:
+        with app.app_context():
+            _tally = cat_svc.apply_due_reversions()
+            _rv2 = db.session.get(Product, _rv2_id)
+            ok("A Stripe that says no is counted as a failure",
+               _tally["failed"] == 1 and _tally["reverted"] == 0, _tally)
+            ok("The price on the page does not move",
+               _rv2.price_cents == 9900)
+            ok("Checkout stays on the price Stripe actually has",
+               _rv2.stripe_price_id == _held)
+            ok("The date is kept, so the next sweep tries again",
+               _rv2.price_reverts_at is not None
+               and _rv2.reverts_to_cents == 12900)
+            ok("And Studio is given the reason",
+               bool(_rv2.stripe_sync_error), _rv2.stripe_sync_error)
+    finally:
+        _cat.refuse = ""
+    with app.app_context():
+        ok("When Stripe comes back the next sweep puts it through",
+           cat_svc.apply_due_reversions()["reverted"] == 1
+           and db.session.get(Product, _rv2_id).price_cents == 12900)
+        ok("And the error it was showing is cleared",
+           db.session.get(Product, _rv2_id).stripe_sync_error is None)
+
+    # The things it must not touch.
+    with app.app_context():
+        _nofig = Product(title="No Figure", slug="no-figure-named",
+                         type="guide", status="published", promise="A guide.",
+                         price_cents=5000, currency="USD",
+                         billing_period="once",
+                         price_reverts_at=utcnow() - timedelta(minutes=1))
+        _arch = Product(title="Shelved", slug="shelved-one", type="guide",
+                        status="archived", promise="Gone.", price_cents=5000,
+                        currency="USD", billing_period="once",
+                        reverts_to_cents=7000,
+                        price_reverts_at=utcnow() - timedelta(minutes=1))
+        db.session.add_all([_nofig, _arch])
+        db.session.commit()
+        _nofig_id, _arch_id = _nofig.id, _arch.id
+        cat_svc.apply_due_reversions()
+        ok("A date with no figure beside it stays a countdown and nothing more",
+           db.session.get(Product, _nofig_id).price_cents == 5000
+           and db.session.get(Product, _nofig_id).price_reverts_at is not None)
+        ok("An archived product is not re-priced",
+           db.session.get(Product, _arch_id).price_cents == 5000)
+
+        # Two workers reaching the same due product must not both make a price.
+        from sqlalchemy.dialects import postgresql as _pg_rv
+        _rv_lock = str(cat_svc.reversion_lock_query(_rv_id)
+                       .statement.compile(dialect=_pg_rv.dialect()))
+        ok("The row is held while its price is being put up",
+           "FOR UPDATE" in _rv_lock, _rv_lock[-60:])
+
+        # When to look again is worked out from the soonest date waiting. A
+        # plain every-sixty-seconds throttle gets spent by a request a moment
+        # *before* the date, and then the price stays at the launch figure
+        # for the rest of the minute while the page says it has gone up.
+        ok("With nothing waiting, there is no next moment to wake for",
+           cat_svc.earliest_pending() is None, cat_svc.earliest_pending())
+        _soon_p = db.session.get(Product, _nofig_id)
+        _soon_p.reverts_to_cents = 6000
+        _soon_p.price_reverts_at = utcnow() + timedelta(hours=9)
+        _late_p = Product(title="Later Still", slug="later-still", type="guide",
+                          status="published", promise="Later.", price_cents=100,
+                          currency="USD", billing_period="once",
+                          reverts_to_cents=200,
+                          price_reverts_at=utcnow() + timedelta(days=4))
+        db.session.add(_late_p)
+        db.session.commit()
+        _late_id = _late_p.id
+        ok("Otherwise it is the soonest of them, not just any of them",
+           cat_svc.earliest_pending() == _soon_p.price_reverts_at,
+           cat_svc.earliest_pending())
+        _soon_p.price_reverts_at = None
+        _soon_p.reverts_to_cents = None
+        db.session.delete(db.session.get(Product, _late_id))
+        db.session.commit()
+
+        for _pid in (_rv_id, _rv2_id, _nofig_id, _arch_id):
+            _gone = db.session.get(Product, _pid)
+            if _gone is not None:
+                db.session.delete(_gone)
+        db.session.commit()
 finally:
     _catalog_off()
 
@@ -2067,8 +2246,14 @@ ok("So the page drops the notice and keeps the struck-through price",
    "Reverting to" not in _pd and "<s>$49</s>" in _pd and "$24" in _pd
    and "data-countdown" not in _pd)
 _sbody = admin.get(f"/admin/products/{_multi_id}/edit").get_data(as_text=True)
-ok("And Studio says the day has passed, since only Stripe can put it up",
-   "That day has passed" in _sbody and "swap the Stripe price ID" in _sbody)
+# Studio used to tell her to go and change two things by hand here. The date
+# does it now, so the only thing left to say is that it hasn't happened yet —
+# which, with Stripe switched off in the suite, it hasn't.
+ok("And Studio says the day has passed without the price having moved",
+   "That day has passed and the price hasn't moved yet" in _sbody
+   and "swap the Stripe price ID" not in _sbody, _sbody[-200:])
+ok("Telling her it needs no hand from her when a figure is named",
+   "the price goes up on its own" in _sbody)
 admin.post(f"/admin/products/{_multi_id}/edit",
            data=dict(_promo_fields, strikethrough="", reverts_to="",
                      price_reverts_date=""),
