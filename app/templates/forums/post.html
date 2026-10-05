@@ -8,8 +8,13 @@
   {% if images %}
   <div class="forum-images">
     {% for im in images %}
+    {# data-no-loader because this link never navigates: the viewer opens it
+       over the page. The loader watches clicks in the capture phase, so it
+       would otherwise have put the spinner up before the viewer got its turn
+       to cancel the click, and nothing would ever take it down again. The
+       href stays a real address so it still works with no JavaScript. #}
     <a class="forum-images__item" href="{{ url_for('forums.image', image_id=im.id) }}"
-       data-lightbox>
+       data-lightbox data-no-loader>
       <img src="{{ url_for('forums.image', image_id=im.id) }}" alt="Attached image"
            loading="lazy"
            {% if im.width and im.height %}width="{{ im.width }}" height="{{ im.height }}"{% endif %}>
@@ -73,7 +78,7 @@
       <span class="byline__when">{{ c.created_at|when }}</span>
     </div>
   </div>
-  <div class="forum-body">{{ c.body|mentions }}</div>
+  <div class="forum-body">{{ c.body|mentions(c.author) }}</div>
   {{ image_gallery(c.images) }}
   <div class="forum-actions">
     {{ like_button(url_for('forums.like_comment', comment_id=c.id), c.like_count(), c.id in liked_comments) }}
@@ -143,7 +148,7 @@
           <span class="byline__when">{{ post.created_at|when }}</span>
         </span>
       </div>
-      <div class="forum-body">{{ post.body|mentions }}</div>
+      <div class="forum-body">{{ post.body|mentions(post.author) }}</div>
       {{ image_gallery(post.images) }}
       <div class="forum-actions">
         {{ like_button(url_for('forums.like_post', post_id=post.id), post.like_count(), post.id in liked_posts) }}

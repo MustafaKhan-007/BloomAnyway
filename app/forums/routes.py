@@ -237,12 +237,21 @@ def create_post(slug):
     from ..services.community_images import attach_images
     _img_saved, _img_skipped = attach_images(
         request.files.getlist("images"), user=current_user, post=post)
-    from ..services.social_graph import notify_followers_of_post, notify_mentions
+    from ..services.social_graph import (notify_followers_of_post,
+                                         notify_mentions, notify_room)
+    _rang = 0
     if not post.anonymous:
         notify_followers_of_post(current_user, post)
         notify_mentions(current_user, f"{title}\n{body}", post_id=post.id)
+        # @all, which only an owner can send. Separate from the mentions
+        # above because it addresses the room rather than a list of people.
+        _rang = notify_room(current_user, cat, f"{title}\n{body}",
+                            post_id=post.id)
     db.session.commit()
     flash("Posted. Thank you for adding your voice.", "success")
+    if _rang:
+        flash(f"Everyone in {cat.name} was notified — {_rang} "
+              f"{'person' if _rang == 1 else 'people'}.", "info")
     if _img_skipped:
         flash("Some images couldn't be added (max 4, images under 8 MB each).",
               "info")
@@ -373,10 +382,15 @@ def create_comment(post_id):
     from ..services.community_images import attach_images
     _img_saved, _img_skipped = attach_images(
         image_files, user=current_user, comment=comment)
+    _rang = 0
     if not comment.anonymous:
-        from ..services.social_graph import notify_mentions
+        from ..services.social_graph import notify_mentions, notify_room
         notify_mentions(current_user, body, post_id=post.id)
+        _rang = notify_room(current_user, post.category, body, post_id=post.id)
     db.session.commit()
+    if _rang:
+        flash(f"Everyone in {post.category.name} was notified — {_rang} "
+              f"{'person' if _rang == 1 else 'people'}.", "info")
     if _img_skipped:
         flash("Some images couldn't be added (max 4, images under 8 MB each).",
               "info")

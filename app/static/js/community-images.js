@@ -185,6 +185,9 @@
   }
 
   function open(src, alt) {
+    // Nothing is being navigated to, so if the page loader took this click
+    // for a navigation, take it back down.
+    document.dispatchEvent(new CustomEvent("page-loader-hide"));
     ensureBox();
     scale = 1; tx = 0; ty = 0;
     stageImg.src = src;

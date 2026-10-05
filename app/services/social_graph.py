@@ -15,8 +15,19 @@ RESERVED_USERNAMES = frozenset({
     "admin", "administrator", "owner", "support", "help", "bloom",
     "bloomanyway", "mod", "moderator", "staff", "system", "root",
     "null", "undefined", "api", "www", "mail", "email", "me", "you",
-    "everyone", "here", "channel", "community", "official",
+    # "all" is the room-wide mention below. A member holding that handle
+    # would make every @all ambiguous, and would be notified by name every
+    # time an owner addressed the room.
+    "all", "everyone", "here", "channel", "community", "official",
 })
+
+#: The one @ that isn't a person: it addresses the whole room. Only an owner
+#: can send it — a room of several hundred is not something to hand to
+#: everybody — and only inside a community room, where "the room" has a
+#: meaning. Matched case-insensitively because nobody types @All on purpose
+#: but plenty of phones capitalise it.
+ALL_HANDLE = "all"
+ALL_RE = re.compile(r"(?<![\w@])@all\b", re.I)
 
 
 def normalize_username(raw: str) -> str:
@@ -136,8 +147,16 @@ def suggest_usernames(query: str, *, limit: int = 8, exclude_id: int | None = No
     } for u in rows]
 
 
+def mentions_everyone(text: str | None) -> bool:
+    """Whether this writing addresses the whole room."""
+    return bool(ALL_RE.search(text or ""))
+
+
 def find_mentioned_users(text: str) -> list[User]:
     handles = {normalize_username(m) for m in MENTION_RE.findall(text or "")}
+    # @all is the room, not a person. Reserved above, but a handle allocated
+    # before it was reserved would still be sitting in the table.
+    handles.discard(ALL_HANDLE)
     if not handles:
         return []
     users = (User.query
@@ -146,15 +165,32 @@ def find_mentioned_users(text: str) -> list[User]:
     return users
 
 
-def linkify_mentions(text: str) -> Markup:
-    """Escape text, turn @handles into profile links, keep newlines as <br>."""
+def linkify_mentions(text: str, author: User | None = None) -> Markup:
+    """Escape text, turn @handles into profile links, keep newlines as <br>.
+
+    ``author`` is who wrote it, and decides one thing: whether an ``@all`` in
+    here is drawn as the room-wide mention it is. Only an owner's counts, and
+    marking up somebody else's would tell every reader that several hundred
+    people had been rung when nobody had.
+    """
     if not text:
         return Markup("")
+    broadcast = can_mention_everyone(author)
     parts = []
     last = 0
     for m in MENTION_RE.finditer(text):
         parts.append(str(escape(text[last:m.start()])))
         handle = m.group(1)
+        if handle.lower() == ALL_HANDLE:
+            if broadcast:
+                parts.append(
+                    '<span class="mention mention--all" '
+                    'title="Everyone who can read this room">'
+                    f'@{escape(handle)}</span>')
+            else:
+                parts.append(str(escape(m.group(0))))
+            last = m.end()
+            continue
         user = (User.query
                 .filter(func.lower(User.username) == handle.lower(),
                         User.deleted_at.is_(None))
@@ -258,6 +294,48 @@ def notify_mentions(actor: User, text: str, post_id: int | None = None):
             continue
         notify(user.id, kind="mention", body=f"{handle} mentioned you",
                actor_id=actor.id, post_id=post_id)
+
+
+def can_mention_everyone(user: User | None) -> bool:
+    """Whether this account may address a whole room.
+
+    Owners only. Everything else here is one person telling one person; this
+    is one person ringing several hundred phones, and it only takes a couple
+    of those a day before people stop reading any of them.
+    """
+    return bool(user is not None
+                and getattr(user, "is_authenticated", True)
+                and getattr(user, "is_admin", False))
+
+
+def notify_room(actor: User, category, text: str,
+                post_id: int | None = None) -> int:
+    """Tell everyone who can read this room that it was addressed.
+
+    Returns how many were reached, so the owner can be told — they are the
+    actor, so they never get their own, and otherwise have no way of seeing
+    that anything happened.
+
+    Nothing is sent when the writer isn't an owner: a member typing @all is
+    typing three characters, not sending anything.
+    """
+    from .forum_access import readers_of
+
+    if not can_mention_everyone(actor) or not mentions_everyone(text):
+        return 0
+    if category is None:
+        return 0
+    handle = f"@{actor.username}" if actor.username else actor.public_name()
+    room = (getattr(category, "name", None) or "the community").strip()
+    sent = 0
+    for user in readers_of(category).yield_per(200):
+        if user.id == actor.id:
+            continue
+        notify(user.id, kind="mention",
+               body=f"{handle} mentioned everyone in {room}",
+               actor_id=actor.id, post_id=post_id)
+        sent += 1
+    return sent
 
 
 def notify_everyone(*, kind: str, body: str, url: str | None = None,

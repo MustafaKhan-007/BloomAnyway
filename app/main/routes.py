@@ -1951,11 +1951,21 @@ def mention_suggest():
     """
     if not current_user.is_authenticated:
         return jsonify([]), 401
-    from ..services.social_graph import suggest_usernames
+    from ..services.social_graph import (ALL_HANDLE, can_mention_everyone,
+                                         suggest_usernames)
     q = request.args.get("q") or ""
     try:
-        return jsonify(suggest_usernames(
-            q, limit=8, exclude_id=current_user.id))
+        rows = suggest_usernames(q, limit=8, exclude_id=current_user.id)
+        # @all is nobody's handle, so it isn't in the table to be found.
+        # Offered first, and only to the people who can actually send it —
+        # suggesting it to a member would be offering something that does
+        # nothing when they pick it.
+        if can_mention_everyone(current_user) \
+                and ALL_HANDLE.startswith((q or "").strip().lstrip("@").lower()):
+            rows = [{"username": ALL_HANDLE,
+                     "name": "Everyone who can read this room",
+                     "id": 0}] + rows[:7]
+        return jsonify(rows)
     except Exception:
         log.exception("mention suggest failed")
         return jsonify([])

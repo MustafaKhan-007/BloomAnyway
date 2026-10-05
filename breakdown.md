@@ -74,7 +74,7 @@ prints to the terminal, which is how you read signup verification codes in dev.
 There is no CI, no pre-commit, no pytest. The smoke script is the only gate.
 
 Run the test suite with `python scripts/smoke_test.py`. It takes about 30
-seconds and currently ends with `All 1954 checks passed.`
+seconds and currently ends with `All 1986 checks passed.`
 
 ---
 
@@ -550,7 +550,8 @@ Grouped by what they concern, with line counts.
 **Community**
 | Module | Lines | Concern |
 |---|---:|---|
-| `social_graph.py` | 321 | usernames, follows, notifications |
+| `social_graph.py` | 400 | usernames, follows, notifications, the `@all` room mention |
+| `forum_access.py` | 97 | who can read which room — asked about people other than the viewer |
 | `social.py` | 181 | Instagram handles, embeds, previews |
 | `moderation.py` | 69 | profanity blocklist and warning tally |
 | `forum_moderation.py` | 72 | hard-deleting posts from Studio |
@@ -1170,7 +1171,7 @@ as above.
 pytest, no `tests/` directory, no CI.
 
 Run it with `python scripts/smoke_test.py`. It takes ~30 seconds and prints
-`All 1954 checks passed.`
+`All 1986 checks passed.`
 
 ### How it works
 
@@ -1422,6 +1423,11 @@ Ordered roughly by how likely they are to bite.
 11. **No inline `<script>` and no `onclick=` attributes.** The CSP forbids them.
     Use external JS and `data-` attributes.
 
+11b. **A link that opens something in the page needs `data-no-loader`.** The
+    page loader watches clicks in the *capture* phase, so it has already put
+    the spinner up before anything else gets to call `preventDefault` — and
+    then nothing takes it down. Failing that, dispatch `page-loader-hide`.
+
 12. **Jinja line breaks land in the rendered HTML.** A phrase split across two
     template lines will not match a literal substring test. Keep user-visible
     phrases on one source line or assert with a regex.
@@ -1452,6 +1458,12 @@ Ordered roughly by how likely they are to bite.
 18. **Change a user's tier through `memberships.reconcile_user`,** not by
     assigning `user.membership` directly, or the precedence order (manual >
     Stripe > orders > perk) is lost.
+
+18b. **`User.effective_membership` reads the session.** It layers the owner
+    preview on top, which is right for the person looking at the page and
+    wrong for anybody else — asking it about a list of other accounts hands
+    them all whatever tier the viewer is pretending to be. Use
+    `forum_access.tier_of` when the question is about somebody else.
 
 19. **`Product` and `ProductRound` duck-type each other on purpose.** If you add
     a date field to one, add it to the other and to `schedule()` /

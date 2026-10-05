@@ -1362,6 +1362,20 @@ ok("The attached image is served to a member",
 _post_html = client.get(f"/forums/p/{_ipid}").get_data(as_text=True)
 ok("The post page shows the attached image",
    f"/forums/img/{_img_id}" in _post_html)
+# The viewer opens the picture over the page, so the click never navigates.
+# The page loader watches clicks in the capture phase — it had already put
+# the spinner up before the viewer got its turn to cancel the click, and
+# nothing then took it down, so the picture sat behind a full-screen dim.
+ok("The image link tells the loader it isn't going anywhere",
+   "data-lightbox data-no-loader" in _post_html,
+   [ln for ln in _post_html.split("\n") if "forum-images__item" in ln][:1])
+_loader_js = (Path(__file__).resolve().parents[1]
+              / "app" / "static" / "js" / "page-loader.js").read_text(encoding="utf-8")
+_ci_js = (Path(__file__).resolve().parents[1]
+          / "app" / "static" / "js" / "community-images.js").read_text(encoding="utf-8")
+ok("And anything opening in the page can take the spinner back down",
+   'document.addEventListener("page-loader-hide", hide)' in _loader_js
+   and "page-loader-hide" in _ci_js)
 client.post(f"/forums/p/{_ipid}/comment",
             data={"body": "", "images": [(_png_upload((90, 150, 200)), "c.png")]},
             content_type="multipart/form-data", follow_redirects=True)
@@ -1379,6 +1393,143 @@ with app.app_context():
         _del_img_post(_dp)
     ok("Deleting a post clears its attached images",
        _ForumImage.query.filter_by(post_id=_ipid).count() == 0)
+
+# --- @all: one @ that is the room rather than a person ----------------------
+# Owners only. Everything else in the community is one person telling one
+# person; this is one person ringing several hundred phones at once.
+from app.models import ForumCategory as _AllCat
+from sqlalchemy import or_ as _all_or
+from app.models import Notification as _AllNote
+from app.services import forum_access as _facc
+from app.services import social_graph as _sg
+
+with app.app_context():
+    _all_cat = _AllCat.query.filter_by(slug="healing").first()
+    _all_ids = {}
+    for _handle, _tier, _flags in [
+            ("allcreator", "creator", {}),
+            ("allhealing", "healing", {}),
+            ("allfull", "full_bloom", {}),
+            ("allfree", "none", {}),
+            ("allowner2", "none", {"is_admin": True}),
+            ("alldemo", "healing", {"is_demo": True}),
+            ("allgone", "healing", {"deleted_at": utcnow()})]:
+        _u = User(email=f"{_handle}@example.com", username=_handle,
+                  membership=_tier, email_verified_at=utcnow(), **_flags)
+        _u.set_password(USER_PW)
+        db.session.add(_u)
+        db.session.flush()
+        _all_ids[_handle] = _u.id
+    db.session.commit()
+
+    _reach = {u.username for u in _facc.readers_of(_all_cat).all()}
+    ok("The Healing room reaches the Healing tier and Full Bloom",
+       "allhealing" in _reach and "allfull" in _reach, _reach)
+    ok("Every owner is in it, whatever tier their own account is on",
+       "allowner2" in _reach, _reach)
+    ok("A Free member is not", "allfree" not in _reach, _reach)
+    ok("Nor is a stand-in account, which is nobody's inbox",
+       "alldemo" not in _reach, _reach)
+    ok("Nor is a closed one", "allgone" not in _reach, _reach)
+    ok("Asked one account at a time, the answer is the same",
+       _facc.can_read(db.session.get(User, _all_ids["allhealing"]), _all_cat)
+       and not _facc.can_read(db.session.get(User, _all_ids["allfree"]), _all_cat))
+    # effective_membership() reads the owner-preview out of the session, which
+    # would hand every account the tier the *viewer* is pretending to be.
+    ok("Tier is read off the row, never out of the session",
+       _facc.tier_of(db.session.get(User, _all_ids["allowner2"])) == "full_bloom"
+       and _facc.tier_of(db.session.get(User, _all_ids["allfree"])) == "none")
+
+ok("Only an owner may address the room",
+   not _sg.can_mention_everyone(None))
+for _text, _want in [("@all read this", True), ("hey @All", True),
+                     ("@allison wrote", False), ("mail@all.com", False),
+                     ("@alltogether now", False), ("ping @all.", True)]:
+    ok(f"{_text!r} addresses the room: {_want}",
+       _sg.mentions_everyone(_text) is _want)
+ok("The handle itself is spoken for, so nobody can be mistaken for it",
+   not _sg.is_valid_username("all") and not _sg.is_valid_username("ALL")
+   and _sg.is_valid_username("allison"))
+ok("And it is never looked up as a person",
+   _sg.find_mentioned_users("@all") == [])
+
+# A member typing it is typing three characters.
+with app.app_context():
+    _before_n = _AllNote.query.count()
+r = client.post("/forums/c/healing/new", data={
+    "title": "Member tries the room", "body": "@all can I ring everyone?"},
+    follow_redirects=True)
+_mbody = r.get_data(as_text=True)
+ok("A member's post goes up as normal", "Member tries the room" in _mbody)
+ok("But nobody is told it rang the room", "was notified" not in _mbody)
+with app.app_context():
+    ok("And no bells were rung", _AllNote.query.count() == _before_n,
+       _AllNote.query.count() - _before_n)
+    _mpost = (ForumPost.query.filter_by(title="Member tries the room")
+              .order_by(ForumPost.id.desc()).first())
+    _mpost_id = _mpost.id
+ok("It reads as the plain words they typed, not as a broadcast",
+   "mention--all" not in client.get(f"/forums/p/{_mpost_id}").get_data(as_text=True))
+
+# An owner doing the same reaches everyone who can read that room.
+with app.app_context():
+    _before_n = _AllNote.query.count()
+r = admin.post("/forums/c/healing/new", data={
+    "title": "Owner rings the room", "body": "@all please read this."},
+    follow_redirects=True)
+_obody = r.get_data(as_text=True)
+ok("The owner's post says how many it reached",
+   re.search(r"Everyone in\s+\S+\s+was notified", _obody) is not None,
+   _obody[-300:] if "was notified" not in _obody else "")
+with app.app_context():
+    _new = (_AllNote.query.order_by(_AllNote.id.desc())
+            .limit(40).all())
+    _fresh = [n for n in _new if "mentioned everyone" in (n.body or "")]
+    _rung = {n.user_id for n in _fresh}
+    _expect = {u.id for u in _facc.readers_of(_all_cat).all()}
+    _owner_row = User.query.filter_by(is_admin=True).first()
+    ok("Everyone who can read the room was rung, and nobody else",
+       _rung == (_expect - {_fresh[0].actor_id}) and len(_rung) > 1,
+       f"rang {len(_rung)} of {len(_expect)}")
+    ok("The sender is never rung by their own",
+       _fresh[0].actor_id not in _rung)
+    ok("It says who did it and which room",
+       all("mentioned everyone in" in n.body for n in _fresh),
+       [n.body for n in _fresh[:2]])
+    ok("And points at the post they can read it in",
+       all(n.post_id is not None for n in _fresh))
+    _opost = (ForumPost.query.filter_by(title="Owner rings the room")
+              .order_by(ForumPost.id.desc()).first())
+    _opost_id = _opost.id
+_ohtml = client.get(f"/forums/p/{_opost_id}").get_data(as_text=True)
+ok("An owner's @all reads as the room it addressed",
+   'class="mention mention--all"' in _ohtml, "no chip on the page")
+
+# The autocomplete only offers it to the people who can send it.
+_sug_admin = admin.get("/mentions/suggest?q=a").get_json()
+_sug_member = client.get("/mentions/suggest?q=a").get_json()
+ok("An owner is offered @all as they type",
+   any(row["username"] == "all" for row in _sug_admin), _sug_admin[:3])
+ok("Offered first, so it isn't buried under the handles",
+   _sug_admin and _sug_admin[0]["username"] == "all", _sug_admin[:2])
+ok("A member is never offered it",
+   not any(row["username"] == "all" for row in _sug_member), _sug_member[:3])
+
+# These were only here to make the room's audience worth counting. The suite
+# runs in one long sequence and later checks count members, stand-ins and
+# owners, so they go back out again.
+with app.app_context():
+    for _handle, _uid in _all_ids.items():
+        _AllNote.query.filter(
+            _all_or(_AllNote.user_id == _uid,
+                    _AllNote.actor_id == _uid)).delete(
+                synchronize_session=False)
+        _row = db.session.get(User, _uid)
+        if _row is not None:
+            db.session.delete(_row)
+    db.session.commit()
+    ok("The room's extra members are cleared away again",
+       User.query.filter(User.username.like("all%")).count() == 0)
 
 # strangers can comment, but only OP (or the comment author) may reply under a comment
 with app.app_context():

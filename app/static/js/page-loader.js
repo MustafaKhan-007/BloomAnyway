@@ -113,6 +113,13 @@
 
   document.addEventListener("site-confirm-dismiss", hide);
 
+  // Something decided the click it just saw opens in the page rather than
+  // going anywhere. Links that do that should carry data-no-loader, but the
+  // loader watches in the capture phase — it has already shown itself by the
+  // time anything else gets to cancel the click — so there has to be a way
+  // back for whatever was missed.
+  document.addEventListener("page-loader-hide", hide);
+
   /* ---- remember scroll across reload / form redirects / same-page updates ---- */
   (function () {
     var PREFIX = "ba:scroll:";
