@@ -5279,6 +5279,18 @@ a.at-handle:hover { text-decoration: underline; }
   margin: 0 auto 28px; max-width: 58ch; color: var(--rm-ink);
   font-size: 17px; line-height: 1.65;
 }
+/* Where somebody stands on sessions they booked and didn't come to. Amber
+   for a first miss that has cost nothing yet, red once groups are paused. */
+.sg-page__penalty {
+  margin: 0 auto 24px; max-width: 62ch; padding: 12px 18px;
+  border-radius: var(--radius-card); font-size: 15px; line-height: 1.6;
+  background: var(--gold-soft); color: #5A4212;
+  border: 1px solid rgba(239, 167, 51, 0.5);
+}
+.sg-page__penalty.is-paused {
+  background: #FBEAE6; color: #7A2E20;
+  border-color: rgba(166, 75, 63, 0.4);
+}
 .sg-page__tabs {
   display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 12px;
 }

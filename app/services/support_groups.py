@@ -39,10 +39,12 @@ _SWEEP_GAP_SEC = 60
 PEER_MEETING_CAP = 8
 FACILITATOR_MEETING_CAP = 8
 ONE_ON_ONE_CAP = 2
-MAX_OPEN_SESSIONS_PER_CIRCLE = 4
-#: Hosting is a day's work, so a member takes one day at a time. Sitting in
-#: somebody else's session costs nothing and is not counted at all.
-PEER_SESSIONS_HOSTED_PER_DAY = 1
+#: How many sessions members may have coming up in one topic at once. The cap
+#: is on the topic, not on any one member: somebody willing to host five this
+#: week is doing the room a favour, and the only thing worth protecting
+#: against is a single topic filling up so nobody else can put anything in it.
+#: An owner's own sessions sit outside it — see member_hosted_session_count.
+MAX_OPEN_SESSIONS_PER_CIRCLE = 8
 FACILITATOR_DURATION_MINUTES = 60
 ONE_ON_ONE_DURATION_MINUTES = 60
 
@@ -119,6 +121,15 @@ def expire_past_meetings(now: datetime | None = None) -> int:
         room_name = (meeting.zoom_meeting_id or "").strip()
         meeting.status = "completed"
         settle_seats(meeting)
+        # Settling is the only moment the site can honestly say who didn't
+        # come, so it is where a miss is counted. Never fatal: a session
+        # must still close even if the counting goes wrong.
+        try:
+            from . import support_penalties
+            support_penalties.record_for_meeting(meeting)
+        except Exception:
+            log.exception("support groups: could not count no-shows on %s",
+                          meeting.id)
         closed += 1
         if room_name:
             try:
@@ -345,7 +356,7 @@ def open_facilitator_sessions(limit: int = 20) -> list[SupportGroupMeeting]:
 def member_hosted_session_count(circle_id: int) -> int:
     """Upcoming sessions in this topic that a member put up.
 
-    What the four-a-topic cap counts. An owner's own sessions sit outside it
+    What the eight-a-topic cap counts. An owner's own sessions sit outside it
     both ways: no number of them stops her adding another, and no number of
     them takes the topic away from the members who host in it.
     """
@@ -406,6 +417,24 @@ def sessions_hosted_on(user_id: int, when: datetime,
             .all())
 
 
+def host_time_clash(user_id: int, when: datetime,
+                    tz_name: str | None = None) -> SupportGroupMeeting | None:
+    """A session this person already hosts that overlaps ``when``, or None.
+
+    Not a cap on how many they host — only a check that they can be in the
+    room. Two at once is one they are certain to miss.
+    """
+    length = timedelta(minutes=peer_meeting_minutes())
+    for other in sessions_hosted_on(user_id, when, tz_name):
+        start = other.scheduled_at
+        if start is None:
+            continue
+        end = start + timedelta(minutes=meeting_duration_minutes(other))
+        if when < end and start < when + length:
+            return other
+    return None
+
+
 def can_schedule_peer(user: User) -> tuple[bool, str | None]:
     """Whether this person may host at all. Which day is a separate question.
 
@@ -415,6 +444,11 @@ def can_schedule_peer(user: User) -> tuple[bool, str | None]:
     """
     if not user or not user.is_member():
         return False, "Support groups are for Healing, Creator, and Full Bloom members."
+    if not user.is_owner_view():
+        from . import support_penalties
+        paused = support_penalties.block_message(user)
+        if paused:
+            return False, paused
     return True, None
 
 
@@ -729,16 +763,22 @@ def schedule_peer_session(
     if when <= utcnow():
         return None, "Choose a time in the future."
 
-    # One a day to host, for a member.
+    # There is deliberately no limit here on how many a member may host, in a
+    # day or at all. The topic cap above is what stops one person filling a
+    # room; past that, somebody who wants to hold five sessions this week is
+    # the best thing that can happen to a support group.
+    #
+    # Two of their own at the same moment is a different matter, and is still
+    # refused: they can only be in one room, so the other is a session they
+    # are certain to miss — and missing one now earns a strike.
     if not owner_view:
-        held = sessions_hosted_on(user.id, when, zone)
-        if len(held) >= PEER_SESSIONS_HOSTED_PER_DAY:
-            at = format_local(held[0].scheduled_at, "%b %d at %I:%M %p",
+        clash = host_time_clash(user.id, when, zone)
+        if clash is not None:
+            at = format_local(clash.scheduled_at, "%b %d at %I:%M %p",
                               tz_name=zone or "UTC")
             return None, (
-                f"You're already hosting a session that day — {at}. "
-                "One a day is the limit for hosting; sit in as many of "
-                "everybody else's as you like."
+                f"You're already hosting a session then — {at}. Pick another "
+                "time; you can host as many as you like, just not two at once."
             )
 
     custom = is_custom_circle(circle)
@@ -927,6 +967,17 @@ def join_peer_session(user: User, meeting_id: int
     existing = user_selected_on_meeting(user.id, meeting.id)
     if existing:
         return existing, None
+
+    # Taking a seat is the thing the time-out is for: a seat held by somebody
+    # who doesn't come is one a member who would have come couldn't have.
+    # Checked after the seat they already hold is handed back, so a time-out
+    # starting between booking and the session never locks anybody out of
+    # one they had already said yes to.
+    if not user.is_owner_view():
+        from . import support_penalties
+        paused = support_penalties.block_message(user)
+        if paused:
+            return None, paused
 
     # Nothing counts how many seats one person holds, here or anywhere: a seat
     # costs the room nothing and the member only their evening, so somebody

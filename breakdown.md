@@ -74,7 +74,7 @@ prints to the terminal, which is how you read signup verification codes in dev.
 There is no CI, no pre-commit, no pytest. The smoke script is the only gate.
 
 Run the test suite with `python scripts/smoke_test.py`. It takes about 30
-seconds and currently ends with `All 1986 checks passed.`
+seconds and currently ends with `All 2012 checks passed.`
 
 ---
 
@@ -574,7 +574,8 @@ Grouped by what they concern, with line counts.
 **Live sessions**
 | Module | Lines | Concern |
 |---|---:|---|
-| `support_groups.py` | 1,986 | circles, sessions, seats, reminders |
+| `support_groups.py` | 2,038 | circles, sessions, seats, reminders |
+| `support_penalties.py` | 272 | booked a seat and didn't come, and the escalating time-out |
 | `coaching_intake.py` | 878 | 1:1 questionnaire and slot booking |
 | `daily.py` | 306 | thin Daily.co API client |
 
@@ -1171,7 +1172,7 @@ as above.
 pytest, no `tests/` directory, no CI.
 
 Run it with `python scripts/smoke_test.py`. It takes ~30 seconds and prints
-`All 1986 checks passed.`
+`All 2012 checks passed.`
 
 ### How it works
 
@@ -1464,6 +1465,15 @@ Ordered roughly by how likely they are to bite.
     wrong for anybody else — asking it about a list of other accounts hands
     them all whatever tier the viewer is pretending to be. Use
     `forum_access.tier_of` when the question is about somebody else.
+
+18c. **A missed support session is counted when the session is settled,**
+    in `expire_past_meetings` — the only moment the site can honestly say
+    who didn't come. Cancelling sets the seat to `cancelled` and a host
+    pulling out cancels the meeting, so neither is ever settled as a
+    no-show, and neither should ever start counting as one. The time-out is
+    *derived* from the surviving rows (`support_penalties.blocked_until`),
+    not stored on the account, so forgiving one in Studio lifts it in the
+    same breath.
 
 19. **`Product` and `ProductRound` duck-type each other on purpose.** If you add
     a date field to one, add it to the other and to `schedule()` /

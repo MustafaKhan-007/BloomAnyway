@@ -151,9 +151,28 @@
       <h1>Support Groups</h1>
       <p class="sg-page__intro">
         Peer-led circles you schedule yourselves — sit in on as many as you like,
-        and host one of your own a day. Facilitator-led sessions are Studio-scheduled.
-        Book a 1:1 with Saman through the intake form (pick a time, then checkout).
+        and host as many of your own as you want to. Facilitator-led sessions are
+        Studio-scheduled. Book a 1:1 with Saman through the intake form (pick a
+        time, then checkout).
       </p>
+      {% if penalty %}
+      {# Said here rather than only when a button refuses them: somebody who
+         doesn't know they're in a time-out thinks the site is broken. #}
+      <p class="sg-page__penalty{{ ' is-paused' if penalty.blocked }}">
+        {%- if penalty.blocked %}
+        <strong>Support groups are paused for you until
+          {{ penalty.until|localtime('%b %d, %I:%M %p') }}.</strong>
+        You booked {{ 'a session' if penalty.misses == 1 else 'sessions' }} and
+        didn't come. Cancelling a seat you can't use is always free and never
+        counts against you.
+        {%- else %}
+        <strong>You missed a session you booked.</strong> Nothing has changed
+        yet — but miss another and support groups pause for
+        {{ penalty.next_days }} day{{ '' if penalty.next_days == 1 else 's' }}.
+        Cancelling in time is always free.
+        {%- endif %}
+      </p>
+      {% endif %}
       <nav class="sg-page__tabs" aria-label="Support group sections">
         <a href="#healing">Healing Groups</a>
         <a href="#creators">Creator Groups</a>

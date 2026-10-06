@@ -464,5 +464,72 @@
     </table>
   </section>
   {% endif %}
+
+  {# Booked a seat and didn't come. The ladder runs itself; this is here so
+     she can see it happening and let somebody off when there was a reason. #}
+  <section class="admin-panel sg-panel" id="no-shows" style="margin-top: 24px;">
+    <h2 style="margin-top:0;">Missed sessions</h2>
+    <p class="field-help" style="margin:0 0 14px; max-width: 70ch;">
+      Somebody who books a seat and doesn't turn up gets a warning the first
+      time, then support groups pause for
+      {% for d in penalty_ladder[1:] %}{{ d }}{{ ", " if not loop.last }}{% endfor %}
+      days as it keeps happening. Cancelling a seat never counts, and a miss
+      stops counting after {{ penalty_memory_days }} days.
+    </p>
+
+    {% if paused_members %}
+    <h3 style="margin:0 0 8px; font-size:15px;">Paused right now</h3>
+    <table class="admin-table" style="margin-bottom:18px;">
+      <thead><tr><th>Member</th><th>Missed</th><th>Until</th><th></th></tr></thead>
+      <tbody>
+        {% for row in paused_members %}
+        <tr>
+          <td>{{ row.user.public_name() }}</td>
+          <td>{{ row.misses }}</td>
+          <td>{{ row.until|localtime }}</td>
+          <td>
+            <form method="post"
+                  action="{{ url_for('admin.support_clear_no_shows', user_id=row.user.id) }}"
+                  data-confirm="Clear every missed session for {{ row.user.public_name() }}? They'll be able to book again straight away.">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn--quiet btn--sm">Clear their record</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="field-help" style="margin:0 0 14px;"><strong>Nobody is paused.</strong></p>
+    {% endif %}
+
+    {% if recent_no_shows %}
+    <h3 style="margin:0 0 8px; font-size:15px;">Lately</h3>
+    <table class="admin-table">
+      <thead><tr><th>Member</th><th>Session</th><th>Was</th><th>When</th><th></th></tr></thead>
+      <tbody>
+        {% for row in recent_no_shows %}
+        <tr{{ ' style="opacity:.55;"'|safe if row.forgiven_at }}>
+          <td>{{ row.member.public_name() if row.member else "—" }}</td>
+          <td>{{ session_title(row.meeting) if row.meeting else "—" }}</td>
+          <td>{{ "Host" if row.role == "host" else "Had a seat" }}</td>
+          <td>{{ row.created_at|localtime }}</td>
+          <td>
+            {% if row.forgiven_at %}
+            <span class="field-help">Forgiven</span>
+            {% else %}
+            <form method="post"
+                  action="{{ url_for('admin.support_forgive_no_show', row_id=row.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn--quiet btn--sm">Forgive</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </section>
 </div>
 {% endblock %}

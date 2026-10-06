@@ -695,6 +695,12 @@ def _sync_membership_cancel_flag(user) -> None:
             log.exception("membership cancel flag commit failed for user %s", user.id)
 
 
+#: The landing page the membership page's challenge banner points at. A
+#: page built in Studio, so the words on it are hers to change; the slug is
+#: here because the button has to know which of them it is.
+CHALLENGE_LANDING_SLUG = "two-month-challenge-2"
+
+
 @bp.route("/membership")
 def membership():
     from ..services.plan_features import build_membership_matrix
@@ -734,6 +740,18 @@ def membership():
         back_label = "Showcase"
     else:
         back_label = "where you were"
+    # Where the challenge banner's "Learn More" goes. The landing page built
+    # in Studio when there is one, and the hand-built /challenge when there
+    # isn't — an unpublished or renamed page must not leave the button
+    # pointing at a 404 from the middle of the membership page.
+    from ..services.landing_pages import public_page as _landing_public
+    challenge_more_url = url_for("main.challenge")
+    try:
+        _lp = _landing_public(CHALLENGE_LANDING_SLUG)
+        if _lp is not None:
+            challenge_more_url = url_for("main.landing", slug=_lp.slug)
+    except Exception:
+        log.exception("membership: could not resolve the challenge landing page")
     try:
         matrix = build_membership_matrix(all_plans)
     except Exception:
@@ -756,6 +774,7 @@ def membership():
                            matrix=matrix, current=current,
                            checkout=checkout,
                            founder=founder, trial_note=trial_note,
+                           challenge_more_url=challenge_more_url,
                            back_url=back_url, back_label=back_label)
 
 
@@ -2688,11 +2707,20 @@ def support_groups_page():
         m.id: sg_svc.meeting_phase(m) == "live" for m in facilitator_sessions
     }
     my_one_on_ones = []
+    penalty = None
     owner_unlimited = (current_user.is_authenticated
                        and current_user.is_owner_view())
     if current_user.is_authenticated:
         member_tz = account_timezone(current_user)
         if current_user.is_member():
+            # Where they stand on missed sessions. Said once at the top
+            # rather than only when a button refuses them — somebody who
+            # doesn't know they are in a time-out thinks the site is broken.
+            if not current_user.is_owner_view():
+                from ..services import support_penalties as _pen
+                state = _pen.state(current_user)
+                if state["misses"]:
+                    penalty = state
             can_schedule, schedule_err = sg_svc.can_schedule_peer(current_user)
             alert_circle_ids = sg_svc.user_topic_alert_ids(current_user.id)
             for app in sg_svc.upcoming_for_user(current_user, limit=40):
@@ -2709,6 +2737,7 @@ def support_groups_page():
         can_schedule=can_schedule,
         schedule_err=schedule_err,
         owner_unlimited=owner_unlimited,
+        penalty=penalty,
         member_tz=member_tz,
         peer_cap=sg_svc.PEER_MEETING_CAP,
         peer_minutes=sg_svc.peer_meeting_minutes(),

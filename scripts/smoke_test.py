@@ -5175,9 +5175,11 @@ ok("Booked email hands the template the meeting link and the host name",
    and _booked_params.get("HOST_NAME") == "Saman",
    f"got {_booked_params}")
 
-# Hosting is one a day. Two on the same day is the thing that's refused —
-# not the second one this fortnight — and the day is theirs, off their own
-# clock, which is why the zone is pinned before any of this is counted.
+# Hosting has no limit per member: as many as somebody is willing to hold.
+# Two at the *same hour* is still refused, because they can only be in one
+# room and the other is a session they are certain to miss — which now earns
+# a strike. The clash is measured on their own clock, which is why the zone
+# is pinned before any of this is counted.
 with app.app_context():
     _host = User.query.filter_by(email="stranger@example.com").first()
     _host.timezone = "UTC"
@@ -5195,8 +5197,14 @@ r = stranger_client.post("/support-groups/schedule",
                          data={"circle_id": heal_cid, "meeting_date": _day_one,
                                "meeting_time": "20:00"},
                          follow_redirects=True)
-ok("But not twice in one day",
-   "already hosting a session that day" in r.get_data(as_text=True), flashes(r))
+ok("And twice in one day is fine now — there is no per-member cap",
+   "Session scheduled" in r.get_data(as_text=True), flashes(r))
+r = stranger_client.post("/support-groups/schedule",
+                         data={"circle_id": heal_cid, "meeting_date": _day_one,
+                               "meeting_time": "09:00"},
+                         follow_redirects=True)
+ok("But not two at the very same hour, which they could never attend",
+   "already hosting a session then" in r.get_data(as_text=True), flashes(r))
 r = stranger_client.post("/support-groups/schedule",
                          data={"circle_id": heal_cid, "meeting_date": _day_two,
                                "meeting_time": "09:00"},
@@ -5208,14 +5216,14 @@ with app.app_context():
                .filter_by(scheduled_by_user_id=_host_id, kind="peer",
                           status="scheduled")
                .order_by(SupportGroupMeeting.scheduled_at.asc()).all())
-    ok("Which leaves one session standing on each day they asked for",
-       len(_hosted) == 3, f"{len(_hosted)} sessions")
+    ok("Which leaves every one of them standing",
+       len(_hosted) == 4, f"{len(_hosted)} sessions")
     _other_day_id = _hosted[-1].id
 
 # And the day is the one on their clock. Eight in the evening in Karachi and
 # two the following morning are two days to them and one day to the server —
 # counted the server's way, a member loses an evening they never used. Another
-# topic, so this isn't measuring the four-a-topic cap by accident.
+# topic, so this isn't measuring the eight-a-topic cap by accident.
 with app.app_context():
     _heal2_cid = (SupportGroupCircle.query
                   .filter_by(slug="co-parenting").first().id)
@@ -5231,8 +5239,8 @@ ok("Eight in the evening on their own clock is booked as theirs",
 r = stranger_client.post("/support-groups/schedule",
                          data={"circle_id": _heal2_cid, "meeting_date": _kd,
                                "meeting_time": "23:00"}, follow_redirects=True)
-ok("A second one that same evening is one too many",
-   "already hosting a session that day" in r.get_data(as_text=True), flashes(r))
+ok("A second one later that same evening is theirs to hold too",
+   "Session scheduled" in r.get_data(as_text=True), flashes(r))
 r = stranger_client.post("/support-groups/schedule",
                          data={"circle_id": _heal2_cid, "meeting_date": _kd_next,
                                "meeting_time": "02:00"}, follow_redirects=True)
@@ -5242,8 +5250,8 @@ with app.app_context():
     db.session.get(User, _host_id).timezone = "UTC"
     db.session.commit()
 
-# Both caps — four upcoming to a topic, one a day to host — exist so that no
-# one member fills a topic on her own. The owner putting the timetable up is
+# The topic cap — eight upcoming to a topic — exists so that no one member
+# fills a topic on her own. The owner putting the timetable up is
 # not that member: as many as she likes, in one topic, two at the same hour if
 # that is what the week needs. A quiet topic, so nothing here is counting the
 # sessions the tests above left standing.
@@ -5279,7 +5287,7 @@ ok("So the form stays on the page for them however full the topic is",
    and "sessions coming up in this topic" not in _sg_owner_page)
 
 # And a topic the owner has filled is not a topic taken away from the members
-# who host in it — the four they are allowed are four of their own.
+# who host in it — the eight they are allowed are eight of their own.
 r = stranger_client.post("/support-groups/schedule",
                          data={"circle_id": _quiet_cid,
                                "meeting_date": _owner_day,
@@ -5289,7 +5297,7 @@ ok("A member can still host in a topic the owner has filled",
    "Session scheduled" in r.get_data(as_text=True), flashes(r))
 with app.app_context():
     _filler = User.query.filter_by(email="stranger@example.com").first()
-    for _n in range(3):
+    for _n in range(7):
         _m = SupportGroupMeeting(
             circle_id=_quiet_cid, capacity=8, kind="peer",
             scheduled_by_user_id=_filler.id, status="scheduled",
@@ -5304,7 +5312,7 @@ r = stranger_client.post("/support-groups/schedule",
                                                 ).strftime("%Y-%m-%d"),
                                "meeting_time": "19:00"},
                          follow_redirects=True)
-ok("Once four of those four are members', the cap bites again",
+ok("Once eight of them are members', the cap bites again",
    "another topic" in r.get_data(as_text=True), flashes(r))
 admin.post("/admin/preview", data={"tier": "healing"})
 r = admin.post("/support-groups/schedule",
@@ -5749,7 +5757,7 @@ with app.app_context():
             circle_id=heal_cid, kind="peer", status="scheduled").all():
         sg_svc.cancel_meeting(leftover)
     hosts = []
-    for i in range(4):
+    for i in range(sg_svc.MAX_OPEN_SESSIONS_PER_CIRCLE):
         u = User(email=f"sg-host{i}@example.com", username=f"sghost{i}",
                  membership="healing", email_verified_at=utcnow())
         u.set_password(USER_PW)
@@ -5766,22 +5774,169 @@ with app.app_context():
             time_s=when.strftime("%H:%M"),
             tz_name="UTC",
         )
-        ok(f"Peer session {i + 1}/4 schedules for topic cap test",
+        ok(f"Peer session {i + 1}/{sg_svc.MAX_OPEN_SESSIONS_PER_CIRCLE} "
+           "schedules for topic cap test",
            m is not None and not err, err)
-    fifth = User(email="sg-host5@example.com", username="sghost5",
+    fifth = User(email="sg-hostover@example.com", username="sghostover",
                  membership="healing", email_verified_at=utcnow())
     fifth.set_password(USER_PW)
     db.session.add(fifth)
     db.session.commit()
-    when5 = utcnow() + timedelta(days=10, hours=2)
+    when5 = utcnow() + timedelta(days=20, hours=2)
     m5, err5 = sg_svc.schedule_peer_session(
         fifth, circle_id=heal_cid,
         date_s=when5.strftime("%Y-%m-%d"),
         time_s=when5.strftime("%H:%M"),
         tz_name="UTC",
     )
-    ok("Topic blocks a 5th upcoming peer session",
-       m5 is None and err5 and "already have 4 sessions" in err5, err5)
+    ok("The topic turns away one past its cap, whoever is asking",
+       m5 is None and err5
+       and f"already have {sg_svc.MAX_OPEN_SESSIONS_PER_CIRCLE} sessions" in err5,
+       err5)
+
+# --- booking a seat and not turning up --------------------------------------
+# Eight seats and somebody's evening. A seat taken and not used is one a
+# member who would have come couldn't have. First time costs nothing but
+# being told; after that it escalates, slowly at the bottom.
+from app.models import SupportGroupApplication as _Seat
+from app.models import SupportGroupNoShow as _NoShow
+from app.services import support_penalties as _pen
+
+ok("The first miss is a warning and nothing else", _pen.penalty_days(1) == 0)
+ok("The second is a day, the third two, the fourth five",
+   (_pen.penalty_days(2), _pen.penalty_days(3), _pen.penalty_days(4))
+   == (1, 2, 5), _pen.PENALTY_DAYS)
+ok("It climbs and then stops climbing, rather than running away",
+   _pen.penalty_days(7) == _pen.penalty_days(40) == _pen.PENALTY_DAYS[-1],
+   _pen.PENALTY_DAYS)
+ok("Nought misses is nought days", _pen.penalty_days(0) == 0)
+
+
+def _missed_session(member, *, when_ago_days=1, host=None, kind="peer"):
+    """A finished session ``member`` booked and didn't open. Returns its id."""
+    start = utcnow() - timedelta(days=when_ago_days)
+    meeting = SupportGroupMeeting(
+        circle_id=heal_cid, capacity=8, kind=kind, status="scheduled",
+        scheduled_by_user_id=(host or member).id,
+        scheduled_at=start, created_at=start)
+    db.session.add(meeting)
+    db.session.flush()
+    for who in {member.id, (host or member).id}:
+        db.session.add(_Seat(
+            user_id=who, circle_id=heal_cid, meeting_id=meeting.id,
+            status="selected", created_at=start))
+    db.session.commit()
+    return meeting.id
+
+
+with app.app_context():
+    _nsu = User(email="noshow@example.com", username="noshowone",
+                membership="healing", email_verified_at=utcnow())
+    _nsu.set_password(USER_PW)
+    db.session.add(_nsu)
+    db.session.commit()
+    _nsu_id = _nsu.id
+
+    ok("Somebody who has missed nothing is not paused",
+       not _pen.is_blocked(_nsu_id) and _pen.strike_count(_nsu_id) == 0)
+
+    # One miss: counted, told, and nothing taken away.
+    _missed_session(db.session.get(User, _nsu_id))
+    sg_svc.expire_past_meetings()
+    ok("A finished session they never opened is counted once",
+       _pen.strike_count(_nsu_id) == 1, _pen.strike_count(_nsu_id))
+    ok("But the first one closes no doors",
+       not _pen.is_blocked(_nsu_id) and _pen.blocked_until(_nsu_id) is None)
+    ok("And they are told, with what the next one would cost",
+       _AllNote.query.filter_by(user_id=_nsu_id, kind="support_group")
+       .filter(_AllNote.body.like("%pause%")).count() == 1)
+
+    # Running the sweep again must not count the same absence twice.
+    sg_svc.expire_past_meetings()
+    ok("Settling the same session twice counts one miss, not two",
+       _pen.strike_count(_nsu_id) == 1, _pen.strike_count(_nsu_id))
+
+    # Second miss: a day.
+    _missed_session(db.session.get(User, _nsu_id))
+    sg_svc.expire_past_meetings()
+    ok("The second miss pauses them for a day",
+       _pen.strike_count(_nsu_id) == 2 and _pen.is_blocked(_nsu_id))
+    _until = _pen.blocked_until(_nsu_id)
+    ok("Counted from the miss, not from whenever they next look",
+       _until is not None
+       and timedelta(hours=23) < (_until - utcnow()) < timedelta(hours=25),
+       _until)
+
+with app.app_context():
+    _blocked_user = db.session.get(User, _nsu_id)
+    _can, _why = sg_svc.can_schedule_peer(_blocked_user)
+    ok("A paused member can't put a session up",
+       _can is False and "paused for you" in (_why or ""), _why)
+    _other_host = User.query.filter_by(username="sghost0").first()
+    _live = SupportGroupMeeting(
+        circle_id=heal_cid, capacity=8, kind="peer", status="scheduled",
+        scheduled_by_user_id=(_other_host.id if _other_host else _nsu_id),
+        scheduled_at=utcnow() + timedelta(days=2), created_at=utcnow())
+    db.session.add(_live)
+    db.session.commit()
+    _seat, _err = sg_svc.join_peer_session(_blocked_user, _live.id)
+    ok("Nor take a seat on anybody else's",
+       _seat is None and "paused for you" in (_err or ""), _err)
+
+    # Cancelling is the behaviour this is for, so it must never be punished.
+    _before = _pen.strike_count(_nsu_id)
+    _cancel_mid = _missed_session(db.session.get(User, _nsu_id),
+                                  when_ago_days=0)
+    _cm = db.session.get(SupportGroupMeeting, _cancel_mid)
+    _cm.scheduled_at = utcnow() + timedelta(days=1)
+    db.session.commit()
+    sg_svc.leave_peer_session(db.session.get(User, _nsu_id), _cancel_mid)
+    _cm = db.session.get(SupportGroupMeeting, _cancel_mid)
+    _cm.scheduled_at = utcnow() - timedelta(days=1)
+    _cm.status = "scheduled"
+    db.session.commit()
+    sg_svc.expire_past_meetings()
+    ok("Giving a seat back in time is never counted against anybody",
+       _pen.strike_count(_nsu_id) == _before, _pen.strike_count(_nsu_id))
+
+    # A paid 1:1 that somebody misses has already cost them the fee.
+    _before = _pen.strike_count(_nsu_id)
+    _missed_session(db.session.get(User, _nsu_id), kind="one_on_one")
+    sg_svc.expire_past_meetings()
+    ok("A missed 1:1 isn't charged for twice",
+       _pen.strike_count(_nsu_id) == _before)
+
+    # Turning up is what clears it, and so is the owner saying so.
+    _rows = _pen.active_no_shows(_nsu_id)
+    _pen.forgive(_rows[-1], db.session.get(User, _rows[0].user_id))
+    db.session.commit()
+    ok("Forgiving the last one lifts the pause there and then",
+       not _pen.is_blocked(_nsu_id) and _pen.strike_count(_nsu_id) == 1)
+    ok("The forgiven one is kept rather than deleted — it still happened",
+       _NoShow.query.filter_by(user_id=_nsu_id).count() == 2,
+       _NoShow.query.filter_by(user_id=_nsu_id).count())
+    _pen.forgive_all(db.session.get(User, _nsu_id),
+                     db.session.get(User, _nsu_id))
+    db.session.commit()
+    ok("Clearing the record puts them back to nothing",
+       _pen.strike_count(_nsu_id) == 0 and not _pen.is_blocked(_nsu_id))
+
+    # A bad fortnight a year ago is not a pattern.
+    _old = _NoShow(user_id=_nsu_id, role="seat",
+                   created_at=utcnow() - timedelta(days=_pen.MEMORY_DAYS + 5))
+    db.session.add(_old)
+    db.session.commit()
+    ok("A miss stops counting once it is old enough",
+       _pen.strike_count(_nsu_id) == 0 and not _pen.is_blocked(_nsu_id))
+    db.session.delete(_old)
+    db.session.commit()
+
+# Studio can see it and let somebody off.
+_sg_admin = admin.get("/admin/support-groups").get_data(as_text=True)
+ok("Studio has a panel for missed sessions",
+   'id="no-shows"' in _sg_admin and "Missed sessions" in _sg_admin)
+ok("Which says what the ladder is, and that cancelling is free",
+   "Cancelling a seat never counts" in _sg_admin)
 
 # Post-session wrap + silent peer report
 with app.app_context():

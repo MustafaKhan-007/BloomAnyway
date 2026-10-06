@@ -3047,6 +3047,50 @@ class SupportGroupApplication(db.Model):
     meeting = db.relationship("SupportGroupMeeting", back_populates="applications")
 
 
+class SupportGroupNoShow(db.Model):
+    """One session somebody booked a seat on and didn't turn up to.
+
+    A seat already records this — ``SupportGroupApplication.status`` is
+    ``no_show`` once the session has been settled — but a seat is about a
+    session, and this is about a person: the row that the escalating
+    time-out is counted from. One per seat, so a sweep that runs twice over
+    the same finished session cannot count the same absence twice.
+
+    Cancelling never lands here. Leaving a session sets the seat to
+    ``cancelled``, and a host who pulls out cancels the whole meeting, so
+    neither is ever settled as a no-show. Freeing the seat in time is the
+    behaviour this is trying to encourage, and it would be a strange system
+    that punished it.
+    """
+    __tablename__ = "support_group_no_shows"
+    __table_args__ = (
+        db.UniqueConstraint("application_id", name="uq_no_show_application"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"),
+                        nullable=False, index=True)
+    meeting_id = db.Column(
+        db.Integer, db.ForeignKey("support_group_meetings.id"), index=True)
+    #: The seat this came from. Unique, so recording is idempotent.
+    application_id = db.Column(
+        db.Integer, db.ForeignKey("support_group_applications.id"), index=True)
+    #: "host" if they were the one who put the session up, else "seat". The
+    #: time-out is the same either way; the owner wants to be able to tell
+    #: the difference when she looks.
+    role = db.Column(db.String(10), nullable=False, default="seat")
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow,
+                           index=True)
+    #: Set when an owner lets somebody off. A forgiven miss is kept rather
+    #: than deleted — it is still a thing that happened, and the record of
+    #: her having forgiven it is worth as much as the miss.
+    forgiven_at = db.Column(db.DateTime)
+    forgiven_by_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+
+    member = db.relationship("User", foreign_keys=[user_id])
+    meeting = db.relationship("SupportGroupMeeting")
+
+
 class SupportGroupTopicAlert(db.Model):
     """Member opted in to hear when a peer session is scheduled for a topic."""
     __tablename__ = "support_group_topic_alerts"

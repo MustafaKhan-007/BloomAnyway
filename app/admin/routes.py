@@ -4597,9 +4597,14 @@ def support_groups():
         }
         for key, label in coaches
     ]
+    from ..services import support_penalties as pen_svc
     return render_template(
         "admin/support_groups.html",
         circle_stats=stats,
+        paused_members=pen_svc.blocked_members(),
+        recent_no_shows=pen_svc.recent(limit=25),
+        penalty_ladder=pen_svc.PENALTY_DAYS,
+        penalty_memory_days=pen_svc.MEMORY_DAYS,
         open_meetings=open_rows,
         past_meetings=past,
         seat_map=seat_map,
@@ -4615,6 +4620,41 @@ def support_groups():
         weekday_labels=intake_svc.WEEKDAY_LABELS,
         minutes_to_hhmm=intake_svc.minutes_to_hhmm,
     )
+
+
+@bp.route("/support-groups/no-shows/<int:row_id>/forgive", methods=["POST"])
+@admin_required
+def support_forgive_no_show(row_id):
+    """Let somebody off one missed session."""
+    from ..models import SupportGroupNoShow
+    from ..services import support_penalties as pen_svc
+
+    row = db.session.get(SupportGroupNoShow, row_id)
+    if row is None:
+        abort(404)
+    name = row.member.public_name() if row.member else "That member"
+    if pen_svc.forgive(row, current_user):
+        db.session.commit()
+        flash(f"Forgiven. {name} is back in support groups if that was what "
+              "was keeping them out.", "success")
+    return redirect(url_for("admin.support_groups") + "#no-shows")
+
+
+@bp.route("/support-groups/no-shows/<int:user_id>/clear", methods=["POST"])
+@admin_required
+def support_clear_no_shows(user_id):
+    """Wipe one member's record of missed sessions."""
+    from ..services import support_penalties as pen_svc
+
+    member = db.session.get(User, user_id)
+    if member is None:
+        abort(404)
+    n = pen_svc.forgive_all(member, current_user)
+    db.session.commit()
+    flash(f"Cleared {n} missed session{'' if n == 1 else 's'} for "
+          f"{member.public_name()}. They can use support groups again.",
+          "success")
+    return redirect(url_for("admin.support_groups") + "#no-shows")
 
 
 @bp.route("/support-groups/availability", methods=["POST"])
